@@ -23,6 +23,19 @@ const PORTAL_PATH = '/org/freedesktop/portal/Flatpak';
 /* Valores de "status" en la señal Progress del UpdateMonitor. */
 const RUNNING = 0, EMPTY = 1, DONE = 2, FAILED = 3;
 
+/* Los dos errores del portal que el usuario puede arreglar él mismo. */
+function explain(error, message) {
+    if (/NotSupported/.test(error) || /new permissions/.test(message)) {
+        return 'Esta versión necesita permisos nuevos y no se puede instalar desde aquí. '
+             + 'Actualiza desde una terminal con: flatpak update es.melonhub.MelonHub';
+    }
+    if (/AccessDenied/.test(error) || /not allowed/.test(message)) {
+        return 'No se dio permiso para actualizar. Para que el sistema vuelva a preguntar: '
+             + 'flatpak permission-reset es.melonhub.MelonHub';
+    }
+    return message || error || 'Error desconocido';
+}
+
 function isFlatpak() {
     return !!process.env.FLATPAK_ID;
 }
@@ -46,7 +59,7 @@ async function update(onProgress) {
                     case RUNNING: if (onProgress) onProgress(val('progress') || 0); break;
                     case DONE:    resolve(); break;
                     case EMPTY:   reject(new Error('El repositorio no tiene ninguna versión nueva.')); break;
-                    case FAILED:  reject(new Error(val('error_message') || val('error') || 'Error desconocido')); break;
+                    case FAILED:  reject(new Error(explain(val('error') || '', val('error_message') || ''))); break;
                 }
             });
             monitor.Update('', {}).catch(reject);

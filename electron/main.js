@@ -16,11 +16,15 @@
      - F12 herramientas de desarrollador, F5 / Ctrl+R recargar.
      - Se actualiza sola al pulsar "Actualizar" en el aviso del haro
        (updater.js).
+     - Cerrar la ventana la deja en segundo plano con su icono en la barra
+       de tareas, y si suena música sale el reproductor flotante (tray.js,
+       mini-player.js).
    ────────────────────────────────────────────────────────────────────── */
 const { app, BrowserWindow, shell, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const updater = require('./updater');
+const tray = require('./tray');
 
 const START_URL  = process.env.MELONHUB_URL || require('./package.json').melonhub.url;
 const APP_ORIGIN = new URL(START_URL).origin;
@@ -162,15 +166,12 @@ function setupPermissions() {
     session.defaultSession.setPermissionCheckHandler((_wc, _perm, origin) => allowed(origin));
 }
 
-/* Una sola instancia: abrir la app otra vez enfoca la ventana que hay. */
+/* Una sola instancia: abrir la app otra vez enseña la ventana que hay
+   (aunque esté en segundo plano). */
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
-        if (!mainWindow) return;
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-    });
+    app.on('second-instance', () => tray.openMain());
 
     app.whenReady().then(() => {
         Menu.setApplicationMenu(null);
@@ -178,6 +179,7 @@ if (!app.requestSingleInstanceLock()) {
         mainWindow = createWindow();
         mainWindow.on('closed', () => { mainWindow = null; });
         updater.start(mainWindow);
+        tray.start(mainWindow, START_URL);
     });
 
     app.on('window-all-closed', () => app.quit());

@@ -1192,13 +1192,16 @@ let autoplayRandom    = false;
    update tiene < 90s, así que reportamos en cada play/pause/cambio de
    pista (force) y periódicamente desde startProgress (throttled). */
 var __NP_LAST = 0;
-function publishNowPlaying(isPlaying, force) {
-    /* Como GUEST de una sesión de escucha, lo que suena es el track de la
-       sesión (el del host), NO el de mi playlist local. Reportamos ese para
-       que el "escuchando ahora" del perfil muestre la canción real. */
-    var tr = (typeof LT_ROLE !== 'undefined' && LT_ROLE === 'guest' && _ltGuestTrack && _ltGuestTrack.videoId)
+/* Como GUEST de una sesión de escucha, lo que suena es el track de la
+   sesión (el del host), NO el de mi playlist local. */
+function nowPlayingTrack() {
+    return (typeof LT_ROLE !== 'undefined' && LT_ROLE === 'guest' && _ltGuestTrack && _ltGuestTrack.videoId)
         ? _ltGuestTrack
         : ((typeof playlist !== 'undefined' && playlist[currentTrack]) || null);
+}
+function publishNowPlaying(isPlaying, force) {
+    syncSystemMedia(isPlaying);
+    var tr = nowPlayingTrack();
     if (!tr || !tr.videoId) return;
     var now = Date.now();
     if (!force && now - __NP_LAST < 2000) return;
@@ -1225,6 +1228,89 @@ function publishNowPlaying(isPlaying, force) {
         }).catch(function(){});
     } catch (_) {}
 }
+
+/* ── Controles del sistema (MediaSession) y app de escritorio ──
+   MediaSession le dice al navegador (o a la app de escritorio) qué suena:
+   así funcionan las teclas multimedia, los controles del sistema (KDE /
+   GNOME en Linux, los del volumen en Windows) y los botones de los
+   auriculares Bluetooth. Dentro de la app de escritorio, además, se manda
+   lo que enseña este reproductor al reproductor flotante
+   (window.melonDesktop → electron/mini-player.js). Se llama desde
+   publishNowPlaying (play, pausa y progreso) y desde updateTrackUI
+   (cambio de pista). */
+var __SM_VIDEO = null;
+function syncSystemMedia(isPlaying) {
+    var tr = nowPlayingTrack();
+    if (typeof isPlaying !== 'boolean') {
+        try { isPlaying = !!(ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING); }
+        catch (_) { isPlaying = false; }
+    }
+    var dur = 0, pos = 0;
+    try {
+        dur = (ytPlayer && ytPlayer.getDuration    ? ytPlayer.getDuration()    : 0) || 0;
+        pos = (ytPlayer && ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0) || 0;
+    } catch (_) {}
+    if ('mediaSession' in navigator) {
+        try {
+            var ms = navigator.mediaSession;
+            if (tr && tr.videoId && tr.videoId !== __SM_VIDEO) {
+                __SM_VIDEO = tr.videoId;
+                ms.metadata = new MediaMetadata({
+                    title:  tr.title  || '',
+                    artist: tr.artist || '',
+                    artwork: [{ src: 'https://img.youtube.com/vi/' + tr.videoId + '/hqdefault.jpg', sizes: '480x360', type: 'image/jpeg' }]
+                });
+            }
+            ms.playbackState = isPlaying ? 'playing' : 'paused';
+            if (dur > 0 && typeof ms.setPositionState === 'function') {
+                ms.setPositionState({ duration: dur, position: Math.min(pos, dur), playbackRate: 1 });
+            }
+        } catch (_) {}
+    }
+    var md = window.melonDesktop;
+    if (md && typeof md.setNowPlaying === 'function') {
+        var cover = document.getElementById('player-cover');
+        var plName = document.getElementById('player-pl-name');
+        md.setNowPlaying({
+            hasTrack: !!(tr && tr.videoId),
+            title:    tr ? (tr.title  || '') : '',
+            artist:   tr ? (tr.artist || '') : '',
+            cover:    cover ? cover.src : '',
+            playlist: plName ? plName.textContent : '',
+            playing:  !!(tr && isPlaying),
+            position: pos,
+            duration: dur
+        });
+    }
+}
+/* Los botones del sistema y del reproductor flotante hacen lo mismo que
+   los del reproductor: así respetan el modo aleatorio, Listen Together, etc. */
+(function setupSystemMediaControls() {
+    function click(id) { var b = document.getElementById(id); if (b) b.click(); }
+    function playing() {
+        try { return !!(ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING); } catch (_) { return false; }
+    }
+    var actions = {
+        play:          function() { if (!playing()) click('btn-play'); },
+        pause:         function() { if (playing())  click('btn-play'); },
+        previoustrack: function() { click('btn-prev'); },
+        nexttrack:     function() { click('btn-next'); },
+        seekto:        function(d) { if (ytPlayer && d && typeof d.seekTime === 'number') ytPlayer.seekTo(d.seekTime, true); }
+    };
+    if ('mediaSession' in navigator) {
+        Object.keys(actions).forEach(function(a) {
+            try { navigator.mediaSession.setActionHandler(a, actions[a]); } catch (_) {}
+        });
+    }
+    var md = window.melonDesktop;
+    if (md && typeof md.onPlayerCommand === 'function') {
+        md.onPlayerCommand(function(action, value) {
+            if (action === 'toggle') click('btn-play');
+            else if (action === 'seekto') actions.seekto({ seekTime: value });
+            else if (actions[action]) actions[action]();
+        });
+    }
+})();
 
 /* Estado del WRAPPED tracking: guardamos referencia a la última canción
    que se EMPEZÓ a reproducir. Cuando cambia (skip / natural end / cierre
@@ -1933,6 +2019,8 @@ function updateTrackUI(index)
     }
     _wrappedLastTrack      = track;
     _wrappedLastPlaylistId = currentPlaylistId;
+
+    syncSystemMedia();
 }
 
 /* ── Resolución de álbum ──

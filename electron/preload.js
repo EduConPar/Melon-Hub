@@ -16,4 +16,36 @@ contextBridge.exposeInMainWorld('melonDesktop', {
     installUpdate() {
         return ipcRenderer.invoke('melon:update-install');
     },
+
+    /* Reproductor de la ventana principal (apps/reproductor.php): manda lo
+       que suena y obedece los botones del reproductor flotante. */
+    setNowPlaying(info) {
+        ipcRenderer.send('melon:now-playing', info);
+    },
+    onPlayerCommand(cb) {
+        ipcRenderer.on('melon:player-command', (_e, action, value) => cb(action, value));
+    },
+
+    /* Reproductor flotante (apps/mini-player.html, mini-player.js). */
+    mini: {
+        onState(cb) {
+            ipcRenderer.on('melon:mini-state', (_e, s) => cb(s));
+            ipcRenderer.invoke('melon:mini-get').then(cb).catch(() => {});
+        },
+        onLook(cb) {
+            ipcRenderer.on('melon:mini-look', (_e, look) => cb(look));
+        },
+        command(action, value) {
+            ipcRenderer.send('melon:mini-command', action, value);
+        },
+        openMain() {
+            ipcRenderer.send('melon:mini-open-main');
+        },
+        close() {
+            ipcRenderer.send('melon:mini-close');
+        },
+        fit(width, height) {
+            ipcRenderer.send('melon:mini-fit', width, height);
+        },
+    },
 });

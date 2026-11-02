@@ -20,6 +20,9 @@ finish-args:
   # Notificaciones del sistema y, más adelante, el icono de la bandeja.
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
+  # Controles del sistema (MPRIS): teclas multimedia y el reproductor de
+  # KDE / GNOME. Chromium se registra como chromium.instance<pid>.
+  - --own-name=org.mpris.MediaPlayer2.chromium.*
   # Guardar descargas (imagen del Wrapped…). Para subir fotos se usa el
   # selector de archivos del sistema (portal), que no necesita permisos.
   - --filesystem=xdg-download
