@@ -2200,6 +2200,54 @@ window.notifSystem = (function() {
 })();
 
 /* =========================
+   AVISO: ACTUALIZACIÓN DE LA APP DE ESCRITORIO
+   Dentro de la app, la parte nativa (electron/updater.js) avisa de que hay
+   versión nueva y el haro ofrece instalarla: al pulsar "Actualizar" se
+   descarga, se instala y la app se reabre sola. Versiones de la app sin
+   actualizador no traen onUpdate y aquí no pasa nada.
+========================= */
+(function() {
+    var md = window.melonDesktop;
+    if (!md || typeof md.onUpdate !== 'function') return;
+    var ICON = '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">';
+    var offered = {}, installing = false;
+    md.onUpdate(function(s) {
+        if (!s || !window.notifSystem) return;
+        if (s.status === 'available' && !offered[s.version]) {
+            offered[s.version] = true;
+            window.notifSystem.show({
+                id:      'desktop-update-' + s.version,
+                type:    'action',
+                title:   ICON + 'Actualización',
+                message: 'Hay una versión nueva de la app de escritorio (' + s.version + '). Se instala sola y la app se reinicia.',
+                rejectLabel: 'Ahora no',
+                acceptLabel: 'Actualizar',
+                onAccept: function() { md.installUpdate(); }
+            });
+        } else if (s.status === 'downloading' && !installing) {
+            installing = true;
+            window.notifSystem.show({
+                id:      'desktop-update-progress',
+                type:    'info',
+                title:   ICON + 'Actualizando',
+                message: 'Descargando la versión ' + s.version + '… La app se reiniciará sola al terminar.'
+            });
+        } else if (s.status === 'error') {
+            installing = false;
+            window.notifSystem.show({
+                id:      'desktop-update-error-' + Date.now(),
+                type:    'action',
+                title:   ICON + 'No se pudo actualizar',
+                message: s.error || 'Error desconocido.',
+                rejectLabel: 'Cerrar',
+                acceptLabel: 'Reintentar',
+                onAccept: function() { md.installUpdate(); }
+            });
+        }
+    });
+})();
+
+/* =========================
    ARCHIVE
 ========================= */
 (function() {

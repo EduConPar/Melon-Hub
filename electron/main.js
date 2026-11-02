@@ -14,10 +14,13 @@
        se queda la propia web y el login de Discord (vincular cuenta).
      - Recuerda tamaño/posición de la ventana. Una sola instancia.
      - F12 herramientas de desarrollador, F5 / Ctrl+R recargar.
+     - Se actualiza sola al pulsar "Actualizar" en el aviso del haro
+       (updater.js).
    ────────────────────────────────────────────────────────────────────── */
 const { app, BrowserWindow, shell, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const updater = require('./updater');
 
 const START_URL  = process.env.MELONHUB_URL || require('./package.json').melonhub.url;
 const APP_ORIGIN = new URL(START_URL).origin;
@@ -174,6 +177,7 @@ if (!app.requestSingleInstanceLock()) {
         setupPermissions();
         mainWindow = createWindow();
         mainWindow.on('closed', () => { mainWindow = null; });
+        updater.start(mainWindow);
     });
 
     app.on('window-all-closed', () => app.quit());

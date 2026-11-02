@@ -1,19 +1,20 @@
 {
   "name": "melonhub-desktop",
   "productName": "Melon Hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Melon Hub como aplicación de escritorio",
   "author": "Melon Hub",
   "main": "main.js",
   "private": true,
   "desktopName": "es.melonhub.MelonHub.desktop",
   "melonhub": {
-    "url": "https://melonhubdev.melonhub.es/"
+    "url": "https://melonhubdev.melonhub.es/",
+    "updateFeed": "https://github.com/EduConPar/Scrapbook-Online/releases/download/escritorio-dev/"
   },
   "scripts": {
     "start": "electron .",
-    "dist:linux": "electron-builder --linux AppImage",
-    "dist:win": "electron-builder --win nsis"
+    "dist:linux": "electron-builder --linux AppImage --publish never",
+    "dist:win": "electron-builder --win nsis --publish never"
   },
   "build": {
     "appId": "es.melonhub.MelonHub",
@@ -24,8 +25,16 @@
     "files": [
       "main.js",
       "preload.js",
+      "updater.js",
+      "flatpak-update.js",
       "icon.png",
       "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/EduConPar/Scrapbook-Online/releases/download/escritorio-dev/"
+      }
     ],
     "linux": {
       "target": "AppImage",
@@ -45,6 +54,10 @@
       "shortcutName": "Melon Hub",
       "artifactName": "MelonHub-Setup.${ext}"
     }
+  },
+  "dependencies": {
+    "dbus-next": "^0.10.2",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "electron": "^45.2.1",
