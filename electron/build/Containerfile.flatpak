@@ -1,0 +1,5 @@
+# Imagen para construir el Flatpak (la usa build.sh). Los runtimes de
+# Flathub se descargan al construir y se guardan en un volumen de podman
+# (melonhub-flatpak) para no bajarlos cada vez.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install flatpak flatpak-builder && dnf clean all

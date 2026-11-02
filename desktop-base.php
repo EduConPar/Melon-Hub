@@ -71,6 +71,8 @@ require_once __DIR__ . '/assets/php/active-interface.php';
 /* Flag de build solo-dev (define MELON_DEV_BUILD). En main vale false →
    las funciones exclusivas de dev no se renderizan. */
 require_once __DIR__ . '/assets/dev-build.php';
+/* Sistemas con app de escritorio descargable (aviso del haro). */
+require_once __DIR__ . '/assets/desktop/downloads.php';
 
 /* INTERFAZ POR USUARIO:
    La interfaz activa se guarda en BD como SLUG directa
@@ -2035,9 +2037,11 @@ window.notifSystem = (function() {
         if (isAction) {
             var row = document.createElement('div'); row.className = 'field-row';
             row.style.cssText = 'justify-content:flex-end;gap:4px;margin-top:5px;';
-            var rejectBtn = document.createElement('button'); rejectBtn.className = 'button'; rejectBtn.textContent = 'Rechazar';
+            /* rejectLabel / acceptLabel: texto propio de los botones
+               (p. ej. el aviso de la app de escritorio: "Ahora no" / "Descargar"). */
+            var rejectBtn = document.createElement('button'); rejectBtn.className = 'button'; rejectBtn.textContent = opts.rejectLabel || 'Rechazar';
             rejectBtn.addEventListener('click', function() { if (typeof opts.onReject === 'function') opts.onReject(); removeSlot(slot); });
-            var acceptBtn = document.createElement('button'); acceptBtn.className = 'button'; acceptBtn.textContent = 'Aceptar';
+            var acceptBtn = document.createElement('button'); acceptBtn.className = 'button'; acceptBtn.textContent = opts.acceptLabel || 'Aceptar';
             acceptBtn.addEventListener('click', function() { if (typeof opts.onAccept === 'function') opts.onAccept(); removeSlot(slot); });
             row.appendChild(rejectBtn); row.appendChild(acceptBtn); body.appendChild(row);
         }
@@ -2141,6 +2145,58 @@ window.notifSystem = (function() {
         isShown:     function(id) { return !!shownIds[id]; },
         isDismissed: function(id) { return !!dismissedIds[id]; }
     };
+})();
+
+/* =========================
+   AVISO: APP DE ESCRITORIO
+   El haro avisa al entrar de que existe la app de escritorio (electron/)
+   si hay instalable para el sistema del usuario. "Descargar" baja el de
+   su sistema (assets/desktop/download.php → GitHub Releases).
+   No sale dentro de la propia app, en tablets, ni si ya se contestó:
+   "Ahora no" lo calla 14 días y "Descargar", para siempre.
+========================= */
+(function() {
+    var systems = <?= json_encode(desktopDownloadSystems()) ?>;
+    var KEY = 'melonhub.desktopAppPromo';
+    if (window.melonDesktop || document.body.classList.contains('is-tablet')) return;
+
+    var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '') + ' ' + navigator.userAgent;
+    var os = /Win/i.test(platform) ? 'windows'
+           : (/Linux/i.test(platform) && !/Android|CrOS/i.test(platform)) ? 'linux'
+           : '';
+    if (!os || systems.indexOf(os) === -1) return;
+
+    var DAY = 86400000;
+    var until = 0;
+    try { until = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (_) {}
+    if (Date.now() < until) return;
+    function silenceFor(ms) {
+        try { localStorage.setItem(KEY, String(Date.now() + ms)); } catch (_) {}
+    }
+
+    /* Después de las notificaciones del arranque (recordatorios a los 5 s). */
+    setTimeout(function() {
+        if (!window.notifSystem) return;
+        window.notifSystem.show({
+            id:      'desktop-app-promo',
+            type:    'action',
+            title:   '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">App de escritorio',
+            message: 'Melon Hub ya tiene app de escritorio para ' + (os === 'windows' ? 'Windows' : 'Linux') + ', con su propia ventana. ¿Quieres descargarla?',
+            rejectLabel: 'Ahora no',
+            acceptLabel: 'Descargar',
+            onReject: function() { silenceFor(14 * DAY); },
+            onAccept: function() {
+                silenceFor(100 * 365 * DAY);
+                /* Iframe oculto: la descarga empieza sin sacar al usuario
+                   del escritorio (si faltara el archivo, no navega a un 404). */
+                var dl = document.createElement('iframe');
+                dl.style.display = 'none';
+                dl.src = 'assets/desktop/download.php?os=' + os;
+                document.body.appendChild(dl);
+                setTimeout(function() { dl.remove(); }, 60000);
+            }
+        });
+    }, 8000);
 })();
 
 /* =========================

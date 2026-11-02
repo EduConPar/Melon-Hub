@@ -3,8 +3,10 @@
   "productName": "Melon Hub",
   "version": "0.1.0",
   "description": "Melon Hub como aplicación de escritorio",
+  "author": "Melon Hub",
   "main": "main.js",
   "private": true,
+  "desktopName": "es.melonhub.MelonHub.desktop",
   "melonhub": {
     "url": "https://melonhubdev.melonhub.es/"
   },
@@ -14,7 +16,7 @@
     "dist:win": "electron-builder --win nsis"
   },
   "build": {
-    "appId": "es.melonhub.desktop",
+    "appId": "es.melonhub.MelonHub",
     "productName": "Melon Hub",
     "directories": {
       "output": "dist"
@@ -27,8 +29,12 @@
     ],
     "linux": {
       "target": "AppImage",
+      "executableName": "melonhub",
       "icon": "icon.png",
       "category": "Network"
+    },
+    "appImage": {
+      "artifactName": "MelonHub.${ext}"
     },
     "win": {
       "target": "nsis",
@@ -36,7 +42,8 @@
     },
     "nsis": {
       "oneClick": true,
-      "shortcutName": "Melon Hub"
+      "shortcutName": "Melon Hub",
+      "artifactName": "MelonHub-Setup.${ext}"
     }
   },
   "devDependencies": {

@@ -1,2 +1,7 @@
 node_modules/
 dist/
+.build.log
+# Restos de construir el Flatpak (build.sh)
+.flatpak-builder/
+.flatpak-build/
+.flatpak-repo/
