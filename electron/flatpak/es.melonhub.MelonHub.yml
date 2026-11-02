@@ -13,8 +13,11 @@ separate-locales: false
 finish-args:
   - --share=ipc
   - --share=network
+  # X11 siempre (también en escritorios Wayland, vía XWayland): el
+  # lanzador (melonhub.sh) abre la app en X11 para que el reproductor
+  # flotante pueda quedarse encima. Wayland queda de reserva si no hay X11.
+  - --socket=x11
   - --socket=wayland
-  - --socket=fallback-x11
   - --socket=pulseaudio
   - --device=dri
   # Notificaciones del sistema y, más adelante, el icono de la bandeja.
