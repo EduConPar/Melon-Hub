@@ -1,0 +1,3 @@
+# El repo se despliega tal cual en el hosting: esta carpeta es el código de
+# la app de escritorio y no tiene nada que servir por web.
+Require all denied
