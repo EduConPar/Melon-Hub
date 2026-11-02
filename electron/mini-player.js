@@ -3,17 +3,22 @@
    ──────────────────────────────────────────────────────────────────────
    Ventanita sin marco, siempre encima, que sale al cerrar Melon Hub con
    música sonando (tray.js decide cuándo). Carga apps/mini-player.html de
-   la web, una copia de la ventana del reproductor del escritorio.
+   la web: un reproductor vertical en ventana Win98 con panel de playlists,
+   letra y el mismo clic derecho que el reproductor del escritorio.
    La música sigue en la ventana principal (escondida): esta ventana solo
    enseña lo que suena (melon:mini-state) y le reenvía los botones como
-   melon:player-command. El CSS del tema y la interfaz se copia de la
-   ventana principal cada vez que se enseña (melon:mini-look).
+   melon:player-command. El CSS del tema y la interfaz y el tamaño de
+   letra se copian de la ventana principal cada vez que se enseña
+   (melon:mini-look).
    ────────────────────────────────────────────────────────────────────── */
 const { BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const settings = require('./settings');
 
 const MARGIN = 20;   /* separación del borde, como el reproductor del escritorio */
+/* Opciones del clic derecho que abren un diálogo de la ventana principal:
+   antes de mandarlas se enseña Melon Hub (y se esconde el flotante). */
+const NEEDS_MAIN = ['fix', 'add-profile', 'listen-together'];
 
 let win = null;
 let mainWin = null;
@@ -50,6 +55,8 @@ async function sendLook() {
             css: Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.href),
             htmlClass: document.documentElement.className,
             bodyClass: document.body.className,
+            fontScaleDelta: typeof window.getFontScaleDelta === 'function'
+                ? window.getFontScaleDelta() : (window.__fontScaleDelta || 0),
         })`);
         if (win && !win.isDestroyed()) win.webContents.send('melon:mini-look', look);
     } catch (_) { /* la ventana principal aún no ha cargado */ }
@@ -64,10 +71,11 @@ function create() {
         frame: false,
         resizable: false,
         maximizable: false,
-        minimizable: false,
         fullscreenable: false,
         alwaysOnTop: true,
-        skipTaskbar: true,
+        /* En la barra de tareas mientras está abierto: al minimizarlo
+           (botón _ de su barra de título) se recupera desde ahí. */
+        skipTaskbar: false,
         title: 'Melon Hub',
         icon: path.join(__dirname, 'icon.png'),
         backgroundColor: '#c0c0c0',
@@ -94,13 +102,17 @@ function create() {
     win.loadURL(pageUrl);
 }
 
+/* Se recarga cada vez que sale: así coge el tema, la interfaz, el tamaño
+   de letra y el pack de iconos que tenga el usuario en ese momento. Se
+   enseña cuando la página avisa de que ya está pintada con todo eso (fit). */
 function show() {
     wantVisible = true;
-    if (!win) create();
-    else sendLook();
-    if (state) win.webContents.send('melon:mini-state', state);
-    /* La primera vez se enseña cuando la página ha medido su tamaño (fit). */
-    if (fitted) win.show();
+    if (!win) {
+        create();
+        return;
+    }
+    fitted = false;
+    win.webContents.reload();
 }
 
 function hide() {
@@ -123,8 +135,12 @@ function init(mainWindow, startUrl, options) {
     opts = { ...opts, ...options };
 
     ipcMain.handle('melon:mini-get', () => state);
-    ipcMain.on('melon:mini-command', (_e, action, value) => sendToMain('melon:player-command', action, value));
+    ipcMain.on('melon:mini-command', (_e, action, value) => {
+        if (NEEDS_MAIN.includes(action)) opts.onOpenMain();
+        sendToMain('melon:player-command', action, value);
+    });
     ipcMain.on('melon:mini-open-main', () => opts.onOpenMain());
+    ipcMain.on('melon:mini-minimize', () => { if (win) win.minimize(); });
     ipcMain.on('melon:mini-close', () => opts.onClose());
     ipcMain.on('melon:mini-fit', (_e, width, height) => {
         if (!win || !(width > 0) || !(height > 0)) return;
@@ -132,7 +148,10 @@ function init(mainWindow, startUrl, options) {
         if (!fitted) {
             fitted = true;
             place();
-            if (wantVisible) win.show();
+            if (wantVisible) {
+                if (win.isMinimized()) win.restore();
+                win.show();
+            }
         }
     });
 }

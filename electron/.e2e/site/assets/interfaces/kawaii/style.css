@@ -1,0 +1,4998 @@
+/* ══════════════════════════════════════════════════════════════════════
+   GOOGLE FONTS — pixel kawaii (carga al inicio para que las @font-face
+   se descarguen en paralelo al resto del CSS).
+   ══════════════════════════════════════════════════════════════════════
+     · Pixelify Sans → primary, sans pixel kawaii (titles, body, UI)
+     · VT323         → monospace pixel (terminal, code, pre) */
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=VT323&display=swap');
+
+/* ══════════════════════════════════════════════════════════════════════
+   FUENTE GLOBAL — override del "Pixelated MS Sans Serif" de 98.css.
+   ══════════════════════════════════════════════════════════════════════
+   98.css aplica su font a body, .title-bar, .window, button, input, etc.
+   Misma lista de selectores pero con Pixelify Sans + fallback al MS
+   Sans original (por si Google Fonts falla) + monospace genérica.
+
+   font-smoothing desactivado: los pixel fonts pierden su crispness con
+   anti-aliasing — queremos pixel limpio. */
+body,
+.title-bar,
+.window,
+.title-bar-text,
+button,
+.button,
+input:not(.pdf-form-layer *),
+label,
+legend,
+li[role="tab"],
+option,
+select:not(.pdf-form-layer *),
+table,
+textarea:not(.pdf-form-layer *),
+ul.tree-view {
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    font-weight: 500 !important;                /* medium → menos voluminoso */
+    font-size: 17px !important;
+    letter-spacing: -0.8px !important;           /* letras comprimidas */
+    -webkit-font-smoothing: none !important;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
+    image-rendering: pixelated;
+}
+
+/* Body — un poco más grande para textos largos */
+body {
+    font-size: 18px !important;
+}
+
+/* Títulos de ventana — semi-bold (no tan grueso) */
+.title-bar-text,
+.kw-frame > .title-bar .title-bar-text {
+    font-weight: 600 !important;
+    font-size: 17px !important;
+    letter-spacing: -0.8px !important;
+}
+
+/* Botones y labels — un poco más pequeños que el cuerpo general para
+   que no compitan con el texto principal. Los labels suelen ir encima
+   de los buttons en formularios, mismo tamaño = jerarquía consistente. */
+button,
+.button,
+input[type="submit"],
+input[type="reset"],
+input[type="button"],
+label,
+legend,
+.title-bar-controls button {
+    font-size: 14px !important;
+}
+
+/* Monospace (terminal, código, pre-formatted) — VT323 estilo retro CRT */
+code,
+code *,
+pre,
+kbd,
+samp,
+tt,
+.mono {
+    font-family: 'VT323', 'Pixelated MS Sans Serif', 'Courier New', monospace !important;
+    -webkit-font-smoothing: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LABELS DE ICONOS DEL ESCRITORIO — texto blanco + drop-shadow lila
+   ══════════════════════════════════════════════════════════════════════
+   Los iconos del desktop (.desktop-icon) tienen su label en un <span>
+   directo. El fondo del escritorio suele ser oscuro (teal Win98) o con
+   patrón → el texto debe destacar.
+
+   Color blanco + text-shadow lila oscuro multi-direccional crea un
+   "outline" pixel perfecto que se ve bien sobre cualquier bg. */
+.desktop-icon > span,
+.desktop-icon span {
+    color: var(--text, #3D4498) !important;                  /* azul-morado del usuario */
+    font-weight: 500 !important;                /* medium → menos voluminoso */
+    font-size: 13px !important;
+    letter-spacing: -0.8px !important;           /* letras comprimidas */
+    text-shadow: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   WALLPAPER — ligado a la INTERFAZ (cambia al cambiar de interfaz)
+   ══════════════════════════════════════════════════════════════════════
+   desktop-base.php aplica el wallpaper como inline style en <body>
+   (background-image basado en el tema activo del usuario). Para que
+   la interfaz también controle el wallpaper, sobrescribimos con
+   !important — así MelonKawaii siempre tiene su patrón kawaii rosa
+   independientemente del tema activo.
+
+   Si se cambia a MelonOS 98, este override desaparece (no se carga
+   esta CSS) y vuelve a aplicarse el wallpaper del tema/usuario.
+
+   Para personalizar el wallpaper de cada interfaz: reemplazar
+   `wallpaper.svg` en la carpeta de cada interfaz. */
+body {
+    background-image: url('wallpaper.svg') !important;
+    background-repeat: repeat !important;
+    background-size: auto !important;
+    background-position: 0 0 !important;
+    background-color: var(--rose-50, #FAEDF1) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   FIX: marquee del title-bar del reproductor mini se pasa sobre el icono
+   ══════════════════════════════════════════════════════════════════════
+   #player-tb-text contiene:
+     · <img> icono PNG (♪/musicaIcon) — primero
+     · <span id="player-pl-name">     — segundo, recibe translateX(N) del
+       marqueeScroll() cuando el nombre es muy largo
+
+   Al desplazarse a la izquierda, el texto del span se solapaba con el
+   icono. Fix: icono con position:relative + z-index:5 + bg sólido del
+   title-bar → el icono "cubre" cualquier texto que pase detrás. */
+#player-tb-text {
+    position: relative;
+    overflow: hidden;
+}
+
+#player-tb-text > img {
+    position: relative;
+    z-index: 5;
+    background-color: var(--win-body-bg) !important;
+    /* Padding-right extiende el bg 4px más allá del icono → da margen
+       entre el icono y el texto y crea el "área de cubierta". */
+    padding-right: 4px;
+    margin-right: 0 !important;  /* override del margin-right:4px inline */
+    box-sizing: content-box;
+}
+
+/* Cuando la title-bar está inactiva, su bg cambia — el icono debe
+   matchear para mantener la cubierta. */
+.kw-frame > .title-bar.inactive #player-tb-text > img {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   INTERFACE: MelonKawaii
+   ──────────────────────────────────────────────────────────────────────
+   PASO 1+2 (revisado) — Outer THICK lila + cards flotantes dentro
+
+   Nueva estructura según referencia:
+
+     <.window>                  ← borde GRUESO 3px LILA + bg lavanda
+       <.kw-frame>              ← absolute fill, padding 4px (margen del strip)
+         <.title-bar>           ← CARD flotante con borde 1px lila + bg lighter
+         (gap 4px de lavanda)   ← se ve el strip entre las cards
+         <.window-body>         ← CARD flotante con borde 1px lila + bg lighter
+       </.kw-frame>
+     </.window>
+
+   Lo que cambia respecto a la versión anterior:
+     - El borde outer de .window pasa de PÚRPURA fino a LILA GRUESO
+     - .kw-frame ya NO tiene borde ni bg (solo layout container)
+     - title-bar y body llevan su PROPIO borde+bg → flotan como cards
+     - El gap entre ellas deja ver el lavanda del .window
+
+   El init.js sigue siendo el mismo: envuelve hijos de .window en
+   .kw-frame y maneja position:relative si la ventana es static.
+   ────────────────────────────────────────────────────────────────────── */
+
+:root {
+    /* ── Capas globales ── */
+    --win-bg:                  #E0D4E7;   /* lavanda — strip y bg de .window */
+    --win-body-bg:             #F0E8F3;   /* lighter — interior de cada card */
+
+    /* ── Borde DARK PURPLE — el MISMO en outer y en inner cards ── */
+    --border:                  #49388B;   /* dark purple, usado para todo borde */
+    --bezel-dark-2:            #49388B;   /* alias por compat */
+
+    /* ── Title-bar ── */
+    --titlebar-start:          #F0E8F3;   /* mismo lighter que body */
+    --titlebar-end:            #F0E8F3;
+    --titlebar-text:           #472CC7;   /* color principal de letras */
+    --titlebar-icon-color:     #49388B;   /* iconos de title-bar (border) */
+    --titlebar-icon-bg:        #F0E8F3;
+
+    /* ── Texto sobre el lighter ── */
+    --text:                    #472CC7;   /* color principal de letras */
+    --text-muted:              #6B5BA8;   /* tono más claro para subtítulos/secundarios */
+    --text-faint:              #9B7DAF;
+    --text-inset:              #472CC7;   /* texto dentro de inputs */
+
+    /* ── Inputs ── */
+    --inset-bg:                #FFFFFF;
+    --input-bg:                #FFFFFF;
+    --input-text:              #472CC7;
+    --surface-deep:            #E0D4E7;
+
+    /* — Resto: temporal default (siguientes pasos lo ajustarán) — */
+    --btn-bg:                  #c0c0c0;
+    --btn-text:                #000000;
+    --start-btn-bg:            #c0c0c0;
+    --start-btn-text:          #000000;
+    --titlebar-icon-bezel-light:#ffffff;
+    --titlebar-icon-bezel-dark: #0a0a0a;
+    --accent:                  #FF66B2;
+    --accent-text:             #ffffff;
+    --accent-deep:             #CC4499;
+    --bezel-light-1:           #dfdfdf;
+    --bezel-light-2:           #ffffff;
+    --bezel-dark-1:            #0a0a0a;
+    --desktop-bg:              #F4D0E0;
+    --link-text:               #CC4499;
+    --error-text:              #c00000;
+    --warning-bg:              #fffbe6;
+    --warning-text:            #444444;
+    --badge-bg:                #FF66B2;
+    --badge-text:              #ffffff;
+    --star-color:              #ffd700;
+    --overlay-text:            #ffffff;
+    --overlay-text-shadow:     rgba(0,0,0,0.8);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   OVERRIDE DE VARIABLES vs el tema activo del usuario
+   ══════════════════════════════════════════════════════════════════════
+   El tema (body.Capi-Capi, body.Angie, etc.) tiene mayor specificity
+   que :root (0,0,1,1 vs 0,0,1,0) y carga DESPUÉS del kawaii → sin
+   !important nuestros tokens kawaii se ignoran y los apps usan los
+   colores del tema.
+
+   Defaults kawaii — definidos SIN !important para que el tema del
+   user (body.<themeName> { --X: ... }) pueda sobrescribirlos.
+   Specificity:
+     · :root          = (0, 1, 0) → pierde contra cualquier theme
+     · body.<theme>   = (0, 1, 1) → gana
+   Si el user NO tiene tema, :root provee los defaults kawaii. */
+:root {
+    /* — Superficies base — */
+    --win-bg:                  #E0D4E7;
+    --win-body-bg:             #F0E8F3;
+    --surface-deep:            #E0D4E7;
+    --inset-bg:                #FFFFFF;
+    --input-bg:                #FFFFFF;
+    /* — Border / bezel — */
+    --border:                  #49388B;
+    --bezel-dark-1:            #49388B;
+    --bezel-dark-2:            #49388B;
+    --bezel-light-1:           #FFFFFF;
+    --bezel-light-2:           #FCE7F5;
+    /* — Title-bar — */
+    --titlebar-start:          #F0E8F3;
+    --titlebar-end:            #F0E8F3;
+    --titlebar-text:           #472CC7;
+    --titlebar-icon-color:     #49388B;
+    --titlebar-icon-bg:        #F0E8F3;
+    --titlebar-icon-bezel-light:#FFFFFF;
+    --titlebar-icon-bezel-dark: #49388B;
+    /* — Texto — */
+    --text:                    #472CC7;
+    --text-muted:              #6B5BA8;
+    --text-faint:              #9B7DAF;
+    --text-inset:              #472CC7;
+    --input-text:              #472CC7;
+    /* — Botones — */
+    --btn-bg:                  #F0E8F3;
+    --btn-text:                #472CC7;
+    --start-btn-bg:            #F0E8F3;
+    --start-btn-text:          #472CC7;
+    /* — Acento — */
+    --accent:                  #FF66B2;
+    --accent-text:             #FFFFFF;
+    --accent-deep:             #CC4499;
+    --link-text:               #CC4499;
+    --link-hover:              #6B3A6B;
+    /* — Estados/Selección — */
+    --error-text:              #C73C6E;
+    --warning-bg:              #FFF4E6;
+    --warning-text:            #8B6914;
+    --badge-bg:                #FF66B2;
+    --badge-text:              #FFFFFF;
+    --overlay-text:            #FFFFFF;
+    /* — NUEVAS VARS kawaii — para que TODO sea editable: — */
+    --hover-bg:                #CCE7F7;   /* fondo al hacer hover en botones/items (azul claro) */
+    --active-rose:             #FCE7F5;   /* fondo :active en items (touch feedback rose) */
+    --inactive-bg:             #E8DEEB;   /* title-bar inactiva, disabled bg */
+    --shadow-color:            #2D2052;   /* color base para drop shadows (deep wine) */
+    --pale-rose:               #FFF4F9;   /* rose muy claro para fondos sutiles */
+    /* Variantes de uso semántico — editables para granular control */
+    --disabled-text:           #7A6BA8;   /* texto de elementos disabled */
+    --button-blue:             #7DB8DC;   /* azul medio para botones especiales */
+    --button-blue-hover:       #A6D2EE;   /* azul claro al hover */
+    --accent-darker:           #A02E7D;   /* rosa profundo (extra) */
+    --accent-medium:           #8B4A8B;   /* purple medio (decoración) */
+    --rose-50:                 #FAEDF1;   /* rose 50 — banda separadora */
+    --rose-100:                #FFE4F0;   /* rose 100 — bg subtil */
+    --accent-coral:            #E85A8C;   /* coral kawaii (variante accent) */
+    --accent-orange:           #D97A4E;   /* naranja desaturado */
+    --overlay-text-shadow:     rgba(45, 32, 82, 0.8);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   .window — outer GRUESO lila + bg lavanda visible en el strip
+   ════════════════════════════════════════════════════════════════════
+   NO forzamos position aquí (init.js gestiona) ni padding. El borde
+   3px lila es el marco principal de la ventana. */
+.window {
+    background: var(--win-bg) !important;
+    border: 2px solid var(--border) !important;     /* ← uniforme 2px */
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   .kw-frame — wrapper de layout (flex + fill)
+   ════════════════════════════════════════════════════════════════════
+   ESTRATEGIA UNIFICADA — sirve para los 4 casos:
+
+   1) .window con HEIGHT EXPLÍCITO inline (calendar, temas):
+      es flex column. .kw-frame es flex item con flex:1 → fills.
+   2) .window con HEIGHT desde CSS (player-full .pf-window con 100%):
+      es flex column. .kw-frame con flex:1 → fills.
+   3) .window con MAX-HEIGHT (playlist-editor con max-height:85vh):
+      es flex column. .kw-frame con flex:1 → fills hasta el max.
+      flex chain interno hace que el contenido scrollee.
+   4) .window con HEIGHT AUTO (music-player block):
+      .kw-frame es block child con flex:1 ignorado. Auto-sizes por
+      contenido (title-bar + body).
+
+   En todos los casos, los margins de title-bar/body crean el strip
+   lavanda visible (look flotante). */
+.kw-frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    background: transparent;
+    border: none;
+    box-sizing: border-box;
+    padding: 0;
+    position: relative;          /* contexto para hijos absolute opcionales */
+    overflow: visible;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TITLE BAR — card FLOTANTE con borde 1px lila + bg lighter
+   ════════════════════════════════════════════════════════════════════
+   El header "flota" dentro del marco. Tiene SU PROPIO borde lila fino
+   y bg lighter — visualmente es una caja separada del body.
+
+   margin:4px 4px 0 4px crea el strip lavanda visible alrededor del
+   header (top + lados). El gap del .kw-frame crea el strip de abajo
+   (entre title-bar y body). */
+.kw-frame > .title-bar {
+    background: var(--win-body-bg) !important;
+    color: var(--titlebar-text) !important;
+    padding: 4px 8px !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    /* IMPORTANTE: position+z-index para que en apps con body que tiene
+       hijos absolute con z-index:1 (player-full con sus pf-unit /
+       pf-vinyl-floating al z-index 1) los botones de la title-bar
+       sigan recibiendo los clicks. Sin esto, en el reproductor
+       fullscreen los hits van a la pf-body. */
+    position: relative;
+    z-index: 5;
+    box-shadow: none !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-shrink: 0;
+    min-height: 22px;
+    margin: 4px 4px 0 4px !important;   /* strip lavanda alrededor */
+    box-sizing: border-box;
+}
+
+.kw-frame > .title-bar::before {
+    content: none !important;
+    display: none !important;
+}
+
+.title-bar-text {
+    color: var(--titlebar-text) !important;
+    font-weight: normal !important;
+    letter-spacing: -0.8px !important;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    padding: 0 6px 0 0;
+}
+
+/* Title-bar inactiva — bg desaturado */
+.kw-frame > .title-bar.inactive {
+    background: var(--inactive-bg, #E8DEEB) !important;
+}
+.kw-frame > .title-bar.inactive .title-bar-text {
+    color: var(--text-muted, #6B5572) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TITLE-BAR CONTROLS — botones min/max/close en estilo kawaii
+   ════════════════════════════════════════════════════════════════════
+   Aplanan el bezel 3D heredado de 98.css. Cada botón es un cuadradito
+   con borde lila 1px y bg lighter (mismo bg que la title-bar). Los
+   iconos SVG llevan color dark purple (var(--border, #49388B)) en vez del negro
+   original de Win98.
+
+   Estados:
+     · normal: bg lighter + border + icono var(--border, #49388B)
+     · hover:  bg var(--hover-bg, #CCE7F7) azul claro (mismo para los 3 botones)
+     · active: bg var(--button-blue-hover, #A6D2EE) (tono más oscuro)
+
+   Los iconos se mantienen en var(--border, #49388B) en todos los estados — sobre
+   el bg azul claro el contraste sigue siendo bueno. */
+.title-bar-controls {
+    display: flex !important;
+    gap: 3px;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.title-bar-controls button {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    /* Cuadrado 18×18 (border-box → la dimensión incluye los 2px de borde).
+       Content area interna: 14×14. SVG 12×12 centrado → 1px margin
+       simétrico por todos los lados. */
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border-radius: 0 !important;
+    color: var(--text) !important;
+    cursor: pointer;
+    image-rendering: pixelated;
+    flex-shrink: 0;
+}
+
+/* CRÍTICO: themes.css usa ::before con mask-image para recolorar los
+   iconos de 98.css según las CSS vars del tema (--titlebar-icon-color,
+   etc.). En kawaii pintamos los iconos directamente en background-image
+   del botón, así que el ::before genera un SEGUNDO icono encima → se ve
+   doble. Lo desactivamos. */
+.title-bar-controls button[aria-label]::before,
+.title-bar-controls button[aria-label="Close"]::before,
+.title-bar-controls button[aria-label="Maximize"]::before,
+.title-bar-controls button[aria-label="Minimize"]::before,
+.title-bar-controls button[aria-label="Restore"]::before,
+.title-bar-controls button[aria-label="Help"]::before {
+    content: none !important;
+    display: none !important;
+    -webkit-mask-image: none !important;
+            mask-image: none !important;
+    background: transparent !important;
+}
+
+/* Hover unificado — bg azul claro para los 3 botones */
+.title-bar-controls button:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    border-color: var(--border) !important;
+}
+
+/* Active (pulsado) — bg azul medio (más oscuro que el hover var(--hover-bg, #CCE7F7)
+   pero menos que el morado de antes, así los iconos var(--border, #49388B) SE VEN).
+   Borde refuerza para feedback de pulsación.
+
+   CRÍTICO 1: themes.css aplica box-shadow:inset con bezels en :active
+   (líneas 168-173) con !important y selector más específico
+   ([aria-label]:not(:disabled):active). Si solo usamos
+   .title-bar-controls button:active, pierdes en specificity y se ve
+   el bezel 3D Win98. Por eso replicamos el mismo selector.
+
+   CRÍTICO 2: usamos `background-color` (no `background` shorthand)
+   porque el shorthand resetearía bg-image a none → el icono
+   desaparecería. */
+.title-bar-controls button:active,
+.title-bar-controls button[aria-label]:not(:disabled):active {
+    background-color: var(--button-blue, #7DB8DC) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+
+/* ─── ICONOS SVG en color dark purple (var(--border, #49388B)) ─── */
+
+/* Minimize: barra horizontal abajo-centrada */
+.title-bar-controls button[aria-label="Minimize"],
+.title-bar-controls button[aria-label].minimize {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='6' height='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M0 0h6v2H0z'/%3E%3C/svg%3E") !important;
+    background-position: bottom 3px center !important;
+    background-repeat: no-repeat !important;
+}
+
+/* Maximize: cuadrado outline 2px de grosor en SVG 12x12. Dimensiones
+   pares → centrado perfecto en el botón 18x16: (18-12)/2=3px L/R,
+   (16-12)/2=2px T/B, ambos enteros (sin sub-pixel rendering).
+   MISMO icono para Restore — pedido del usuario: el botón no debe
+   cambiar al maximizar la ventana. */
+.title-bar-controls button[aria-label="Maximize"],
+.title-bar-controls button[aria-label="Maximize"]:disabled,
+.title-bar-controls button[aria-label].maximize,
+.title-bar-controls button[aria-label].maximize:disabled,
+.title-bar-controls button[aria-label="Restore"],
+.title-bar-controls button[aria-label="Restore"]:disabled,
+.title-bar-controls button[aria-label].restore,
+.title-bar-controls button[aria-label].restore:disabled {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='12' height='12' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' width='10' height='10' fill='none' stroke='%2349388B' stroke-width='2'/%3E%3C/svg%3E") !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+
+/* Close: X de 2px de grosor que llena el SVG 12x12 (esquina a esquina).
+   Mismo truco de dimensiones pares para centrado. */
+.title-bar-controls button[aria-label="Close"],
+.title-bar-controls button[aria-label].close {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='12' height='12' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0L12 12M12 0L0 12' stroke='%2349388B' stroke-width='2' stroke-linecap='square'/%3E%3C/svg%3E") !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    margin-left: 0 !important;
+}
+
+/* Sobre el bg azul claro var(--hover-bg, #CCE7F7), los iconos quedan en var(--border, #49388B)
+   (heredan del estado normal — buen contraste). No hace falta
+   override de hover para los iconos. */
+
+/* Sobre el azul medio del :active (var(--button-blue, #7DB8DC)) los iconos var(--border, #49388B)
+   mantienen contraste suficiente — no hace falta overrides de
+   icono para :active. */
+
+/* En title-bar inactiva los botones son más desaturados */
+.kw-frame > .title-bar.inactive .title-bar-controls button {
+    background: var(--win-bg, #E0D4E7) !important;
+    border-color: var(--disabled-text, #7A6BA8) !important;
+    opacity: 0.7;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   WINDOW BODY — card FLOTANTE con borde 1px lila + bg lighter
+   ════════════════════════════════════════════════════════════════════
+   El cuerpo es la SEGUNDA card, separada de la title-bar por el gap
+   del .kw-frame. flex:1 para llenar el alto restante.
+
+   CRÍTICO: NO forzamos padding ni display. Muchas apps (music-player
+   con sus controles absolute, dnd con su tablero, etc.) tienen layouts
+   internos que asumen padding:0 en .window-body. Si añadimos padding,
+   los hijos absolute se desplazan y la app queda rota.
+
+   Conservamos border/bg/flex como overrides del look kawaii, pero
+   dejamos que cada app maneje su padding interno. */
+.kw-frame > .window-body {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 4px 4px 4px 4px !important;      /* strip lavanda en los 4 lados */
+    /* padding: dejamos el original de la app */
+    flex: 1 1 auto;
+    /* IMPORTANTE: NO overflow:auto. Algunos apps (playlist-editor) ponen
+       dropdowns absolute dentro del body (#pl-more-menu). overflow:auto
+       los clippearía → invisibles. Win98 tampoco lo pone, los apps que
+       necesitan scroll usan contenedores internos (sunken-panel,
+       overflow-y:auto en listas específicas). */
+    overflow: visible;
+    min-height: 0;
+    box-sizing: border-box;
+    /* position:relative para que hijos absolute tomen el body como
+       reference. Music-player ya lo tiene en su CSS (#player-body),
+       perfil y otros lo necesitan aquí. */
+    position: relative;
+}
+
+.kw-frame > .window-body::before {
+    content: none !important;
+    display: none !important;
+}
+
+/* Para .window-body anidados (apps complejas que ponen .window-body
+   en hijos no-directos) preservamos sus estilos pero les damos el
+   transparent + text color. */
+.kw-frame .window-body {
+    color: var(--text);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   IFRAME como hijo directo de .kw-frame (apps tipo Temas, Calendario,
+   Mascota, Wrapped, DnD, Galería, Dibujo, Companion, Tienda)
+   ════════════════════════════════════════════════════════════════════
+   Cuando la app es un iframe directo dentro del .window (sin
+   .window-body real), aplicamos al iframe MISMO el card style:
+   borde lila 1px + margin lavanda + fondo lighter. Así el iframe
+   queda visualmente igual que el body de Perfil.
+
+   Los iframes en desktop-base.php tienen inline style "flex:1;
+   width:100%". Usamos !important para sobrescribir el width:100%
+   por width:auto, así el margin:4px en los lados respeta el strip. */
+.kw-frame > iframe {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 4px 4px 4px 4px !important;     /* strip lavanda en los 4 lados */
+    flex: 1 1 auto !important;
+    width: auto !important;                 /* sobrescribe inline width:100% */
+    min-height: 0;
+    display: block !important;
+    box-sizing: border-box;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   STATUS BAR — tercera card opcional al fondo
+   ════════════════════════════════════════════════════════════════════ */
+.kw-frame > .status-bar {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    margin: 0 !important;
+    padding: 2px 4px !important;
+    gap: 2px !important;
+    flex-shrink: 0;
+}
+.status-bar-field {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-image: none !important;
+    padding: 1px 4px !important;
+    color: var(--text);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Sunken panels / fieldsets — sub-cards lila bordered
+   ════════════════════════════════════════════════════════════════════ */
+.sunken-panel,
+ul.tree-view,
+pre {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-image: none !important;
+    border-radius: 0 !important;
+}
+
+fieldset {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    border: 2px solid var(--border) !important;
+    border-image: none !important;
+    border-radius: 0 !important;
+    padding: 8px !important;
+    margin: 0 !important;
+}
+legend {
+    background: var(--win-body-bg) !important;
+    padding: 0 4px !important;
+    color: var(--text) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   BOTONES GENERALES (.button, button, input[type=submit], etc.)
+   ════════════════════════════════════════════════════════════════════
+   Flat kawaii — aplanan el bezel 3D heredado de 98.css/themes.css.
+   Consistencia visual con los botones de title-bar:
+     · 2px borde dark purple (var(--border, #49388B))
+     · bg lighter (var(--win-body-bg, #F0E8F3))
+     · texto dark purple (var(--shadow-color, #2D2052))
+     · hover: bg azul claro
+     · active: bg azul medio (sin bezel inset)
+     · default (primario): bg morado lleno, texto blanco
+     · disabled: lavanda desaturado
+
+   IMPORTANTE: excluimos .title-bar-controls button — ya tienen su
+   propio bloque arriba con dimensiones cuadradas e iconos custom.
+
+   CRÍTICO de specificity: usamos !important SOLO en propiedades
+   COSMÉTICAS (bg, border, color, shadow). NO en sizing
+   (padding, width, min-width, min-height) — apps específicas como
+   #player-controls .button (width:34px; padding:2px 0) o #btn-shuffle
+   (width:20px) tienen sus propios sizes que deben prevalecer. Si
+   forzamos !important en padding/width, esos botones se rompen
+   (el padding 10px se come el content area de un botón de 34px). */
+button:not(.title-bar-controls button),
+.button,
+input[type="submit"],
+input[type="reset"],
+input[type="button"] {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    border-image: none !important;
+    text-shadow: none !important;
+    /* NO setear padding ni sizing aquí — algunas apps (.pl-action-btn
+       width:20px, #player-controls .button width:34px, etc.) tienen
+       sus propias padding/width sin !important y con misma specificity
+       que la nuestra. Como nuestro CSS carga DESPUÉS, gana en cascada
+       y rompe los content areas pequeños. Dejamos el padding al
+       default de 98.css (0 12px) más overrides de cada app. */
+    font-family: inherit;
+    cursor: pointer;
+}
+
+/* Hover — azul claro como en title-bar buttons */
+button:not(.title-bar-controls button):hover,
+.button:hover,
+input[type="submit"]:hover,
+input[type="reset"]:hover,
+input[type="button"]:hover {
+    background-color: var(--hover-bg, #CCE7F7) !important;
+    border-color: var(--border) !important;
+}
+
+/* Active — azul medio. NO usamos `background` shorthand para evitar
+   resetear bg-image en botones que tengan iconos. Sobrescribimos
+   también el box-shadow inset 3D de 98.css/themes.css. */
+button:not(.title-bar-controls button):active,
+button:not(.title-bar-controls button):not(:disabled):active,
+.button:active,
+input[type="submit"]:active,
+input[type="reset"]:active,
+input[type="button"]:active {
+    background-color: var(--button-blue, #7DB8DC) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+    /* Sin padding override → apps específicas no se desplazan al hacer click */
+}
+
+/* Default (botón primario) — bg lleno morado + texto blanco. Usado
+   por <button class="default"> o <input class="default"> en formularios
+   como "Guardar". */
+button.default,
+.button.default,
+input.default[type="submit"] {
+    background-color: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+button.default:hover,
+.button.default:hover,
+input.default[type="submit"]:hover {
+    background-color: var(--accent-medium, #5D4DA0) !important;       /* tono más claro del morado */
+    border-color: var(--border) !important;
+}
+button.default:active,
+.button.default:active,
+input.default[type="submit"]:active {
+    background-color: var(--shadow-color, #2D2052) !important;       /* tono más oscuro */
+    border-color: var(--border) !important;
+}
+
+/* ── Botón TOGGLED ON (clase .btn-active) ──
+   Aplicado por JS a botones que tienen estado on/off persistente
+   (#btn-shuffle, #pf-shuffle, etc.). reproductor.css lo pintaba con
+   var(--accent) + bezel Win98, pero mi generic .button con
+   background:!important + box-shadow:none !important lo aplastaba.
+
+   Visualmente: bg azul claro (mismo que el :hover) → el botón
+   queda "permanently hovered" mientras esté ON. Borde queda igual
+   que en estado normal para no romper el layout. */
+.btn-active,
+.button.btn-active,
+button.btn-active {
+    background-color: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+.btn-active:hover,
+.button.btn-active:hover,
+button.btn-active:hover {
+    background-color: var(--button-blue-hover, #A6D2EE) !important;       /* un poco más oscuro al pasar el ratón */
+}
+
+/* Disabled — desaturado, sin cursor pointer */
+button:disabled,
+.button:disabled,
+button[disabled],
+.button[disabled],
+input[type="submit"]:disabled,
+input[type="reset"]:disabled,
+input[type="button"]:disabled {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+    color: var(--text-faint, #9B7DAF) !important;
+    border-color: var(--text-faint, #9B7DAF) !important;
+    cursor: not-allowed;
+    opacity: 1;                                 /* no doble desaturación */
+    text-shadow: none !important;
+}
+
+/* Excepción: los botones del title-bar-controls (minimize/maximize/
+   close) mantienen su look kawaii cuando están disabled — el border
+   lila oscuro + bg lighter como cualquier botón activo. En móvil,
+   maximize siempre está `disabled` (la ventana ya es fullscreen) y
+   se veía con borde lila claro descolorido por la regla de arriba. */
+.title-bar-controls button:disabled,
+.title-bar-controls button[disabled] {
+    background-color: var(--win-body-bg) !important;
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+}
+
+/* Focus visible — outline lila punteado al tabular (accesibilidad) */
+button:not(.title-bar-controls button):focus-visible,
+.button:focus-visible,
+input[type="submit"]:focus-visible,
+input[type="reset"]:focus-visible,
+input[type="button"]:focus-visible {
+    outline: 2px dotted var(--border);
+    outline-offset: 1px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   INPUTS DE TEXTO + TEXTAREA + SELECT
+   ════════════════════════════════════════════════════════════════════
+   Flat kawaii — aplanan el bezel hundido 3D de 98.css/themes.css.
+
+   98.css tenía estilo "sunken panel" con box-shadow inset oscuro
+   arriba/izq + claro abajo/der → simula campo hundido. En kawaii lo
+   reemplazamos por borde lila plano consistente con el resto.
+
+   Cubrimos:
+     · input[type=text/email/password/search/tel/url/number/date/time/url/etc.]
+     · textarea
+     · select (caja, el dropdown se trata aparte)
+
+   Mismo aprendizaje que con buttons: !important SOLO en cosmético
+   (bg, border, color, shadow). Sizing (padding, width, height) lo
+   dejamos sin !important para que apps específicas ganen. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+textarea,
+select {
+    background-color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    border-image: none !important;
+    text-shadow: none !important;
+    font-family: inherit;
+    /* NO setear padding/height aquí — algunos apps tienen tamaños
+       específicos (calendario tiene input fechas, etc.). 98.css pone
+       padding: 3px 4px por defecto, lo aceptamos. */
+}
+
+/* Placeholder muted */
+input::placeholder,
+textarea::placeholder {
+    color: var(--text-faint, #9B7DAF) !important;
+    opacity: 1;
+}
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+    color: var(--text-faint, #9B7DAF) !important;
+}
+input::-moz-placeholder,
+textarea::-moz-placeholder {
+    color: var(--text-faint, #9B7DAF) !important;
+    opacity: 1;
+}
+
+/* Focus — outline lila claro para visibilidad sin chocar con el
+   borde. NO usamos outline-offset:1 porque pega contra el borde
+   pre-existente del input; mejor outline-offset:-2px para que se
+   inserte como segundo anillo. */
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus,
+input[type="month"]:focus,
+input[type="week"]:focus,
+textarea:focus,
+select:focus {
+    outline: none !important;
+    border-color: var(--text-muted, #6B5BA8) !important;     /* tono más claro al focusear */
+    background-color: var(--pale-rose, #FCFAFE) !important; /* sutil tinte lila al focusear */
+}
+
+/* Disabled — bg muted, texto y borde desaturados */
+input:disabled,
+textarea:disabled,
+select:disabled {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+    color: var(--text-faint, #9B7DAF) !important;
+    border-color: var(--text-faint, #9B7DAF) !important;
+    cursor: not-allowed;
+    text-shadow: none !important;
+}
+
+/* Read-only — bg ligeramente lavanda para indicar que no se edita */
+input[readonly],
+textarea[readonly] {
+    background-color: var(--pale-rose, #F4ECF7) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+
+/* Select — además del estilo base, hace falta limpiar la flecha y
+   el bg de 98.css (que viene con SVG embebido pixel-art). Mantenemos
+   un padding-right para dejar espacio a la flecha custom. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M0 0h8L4 5z'/%3E%3C/svg%3E") !important;
+    background-position: right 6px center !important;
+    background-repeat: no-repeat !important;
+    padding-right: 22px !important;
+}
+
+/* Select abierto/focuseado — opcional, el dropdown nativo se ve raro
+   en algunos browsers pero el estilo del select queda kawaii. */
+select:focus option {
+    background-color: var(--accent-text, var(--accent-text, #FFFFFF));
+    color: var(--text);
+}
+select:focus option:checked,
+select:focus option:hover {
+    background-color: var(--hover-bg, #CCE7F7);
+    color: var(--text);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CHECKBOXES y RADIOS — kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   98.css usa el patrón "hide input, show pseudo on label":
+     · input[type=checkbox/radio] está visualmente oculto (opacity:0)
+     · label::before dibuja la caja/círculo
+     · label::after dibuja el check/punto cuando :checked
+
+   Override de los SVG pixel-art Win98 con look kawaii flat:
+     · Caja/círculo: 14x14, borde 2px lila, bg blanco, sin bezel
+     · Check: SVG checkmark lila limpio (no el pixel art del 98)
+     · Radio dot: círculo sólido lila */
+
+/* CHECKBOX — caja cuadrada flat con borde lila */
+input[type="checkbox"] + label:before {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    width: 14px !important;
+    height: 14px !important;
+    left: -22px !important;
+    top: 0 !important;
+    box-sizing: border-box;
+}
+
+/* CHECKBOX :active — bg azul claro */
+input[type="checkbox"]:active + label:before {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* CHECKBOX :checked — añade checkmark SVG lila */
+input[type="checkbox"]:checked + label:after {
+    background: url("data:image/svg+xml;charset=utf-8,%3Csvg width='10' height='8' viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4L4 7L9 1' fill='none' stroke='%2349388B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+    background-size: 10px 8px !important;
+    background-repeat: no-repeat !important;
+    width: 10px !important;
+    height: 8px !important;
+    left: -20px !important;
+    top: 4px !important;
+}
+
+/* CHECKBOX [disabled] — desaturado */
+input[type="checkbox"][disabled] + label:before {
+    background: var(--inactive-bg, #E8DEEB) !important;
+    border-color: var(--text-faint, #9B7DAF) !important;
+}
+input[type="checkbox"][disabled]:checked + label:after {
+    background: url("data:image/svg+xml;charset=utf-8,%3Csvg width='10' height='8' viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4L4 7L9 1' fill='none' stroke='%239B7DAF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+}
+
+/* CHECKBOX :focus — outline lila punteado en el label */
+input[type="checkbox"]:focus + label,
+input[type="radio"]:focus + label {
+    outline: none !important;
+}
+input[type="checkbox"]:focus + label:before {
+    outline: 2px dotted var(--border);
+    outline-offset: 1px;
+}
+
+/* RADIO — círculo flat con borde lila */
+input[type="radio"] + label:before {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 50% !important;
+    width: 14px !important;
+    height: 14px !important;
+    left: -22px !important;
+    top: 0 !important;
+    margin-right: 6px;
+    box-sizing: border-box;
+}
+
+/* RADIO :active — bg azul claro */
+input[type="radio"]:active + label:before {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* RADIO :checked — punto lila central (sin SVG, círculo CSS-only) */
+input[type="radio"]:checked + label:after {
+    background: var(--border) !important;
+    border-radius: 50% !important;
+    width: 6px !important;
+    height: 6px !important;
+    left: -18px !important;
+    top: 4px !important;
+}
+
+/* RADIO [disabled] — desaturado */
+input[type="radio"][disabled] + label:before {
+    background: var(--inactive-bg, #E8DEEB) !important;
+    border-color: var(--text-faint, #9B7DAF) !important;
+}
+input[type="radio"][disabled]:checked + label:after {
+    background: var(--text-faint, #9B7DAF) !important;
+}
+
+/* RADIO :focus — outline lila punteado */
+input[type="radio"]:focus + label:before {
+    outline: 2px dotted var(--border);
+    outline-offset: 1px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MENÚS CONTEXTUALES — kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   El proyecto tiene 2 tipos de menús contextuales:
+
+   1) .desk-ctx (UL) — menu del desktop al click derecho.
+      Definido en base.css con bezel Win98 (border light top-left,
+      dark bottom-right) + hover en accent rosa. Lo aplanamos.
+
+   2) ctxMenu dinámico (DIV.window) — menu de tracks/canciones al
+      click derecho en el reproductor. Se crea con createElement con
+      className="window" → ya hereda el look kawaii del .window
+      (border 2px lila). Los items son .pl-menu-item que ya tenían
+      estilo básico, pero el hover en accent rosa choca con el tema.
+
+   Ambos comparten el patrón visual: caja lila + items con hover azul. */
+
+/* === .desk-ctx (UL del desktop) === */
+.desk-ctx {
+    background: var(--win-body-bg) !important;     /* lighter, mismo que body cards */
+    color: var(--text) !important;
+    border-top: 2px solid var(--border) !important;
+    border-left: 2px solid var(--border) !important;
+    border-right: 2px solid var(--border) !important;
+    border-bottom: 2px solid var(--border) !important;
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--border) 20%, transparent) !important;   /* drop shadow sutil */
+    padding: 4px 0 !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    font-size: 14px !important;
+    border-radius: 0 !important;
+}
+
+.desk-ctx li {
+    padding: 6px 16px !important;
+    cursor: pointer;
+    color: var(--text) !important;
+    text-shadow: none !important;
+}
+
+.desk-ctx li:hover {
+    background: var(--hover-bg, #CCE7F7) !important;                 /* azul claro como buttons */
+    color: var(--text) !important;
+}
+
+.desk-ctx li:active {
+    background: var(--button-blue, #7DB8DC) !important;                  /* azul medio (pressed) */
+}
+
+/* === .pl-menu-item (items dentro de los ctxMenu dinámicos
+       y del dropdown 3-puntos del playlist editor) === */
+.pl-menu-item {
+    padding: 6px 12px !important;
+    font-size: 14px !important;
+    color: var(--text) !important;
+    cursor: pointer !important;
+    text-shadow: none !important;
+}
+
+.pl-menu-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;                  /* azul claro consistente */
+    color: var(--text) !important;
+}
+
+.pl-menu-item:active {
+    background: var(--button-blue, #7DB8DC) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MENÚS CONTEXTUALES DE APPS — perfil, temas, galería
+   ════════════════════════════════════════════════════════════════════
+   Cada app tiene su propio ctx-menu definido en su CSS con el mismo
+   patrón Win98:
+     · Border bezel (light top-left + dark bottom-right)
+     · Bg --btn-bg o --win-bg
+     · Items con hover accent rosa
+     · Variantes danger con color rojo
+
+   Como las apps cargan en iframes y el kawaii CSS también se emite
+   ahí, estos overrides aplican universalmente. */
+
+/* === Contenedores de menú contextual === */
+.profile-ctx-menu,
+.temas-ctx-menu,
+#gal-ctx-menu {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--border) 20%, transparent) !important;
+    padding: 4px 0 !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    font-size: 14px !important;
+    border-radius: 0 !important;
+}
+
+/* === Items normales === */
+.profile-ctx-option,
+.temas-ctx-opt,
+.gal-ctx-opt {
+    padding: 6px 14px !important;
+    font-size: 14px !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    color: var(--text) !important;
+    cursor: pointer !important;
+    text-shadow: none !important;
+    white-space: nowrap;
+}
+
+.profile-ctx-option:hover,
+.temas-ctx-opt:hover,
+.gal-ctx-opt:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.profile-ctx-option:active,
+.temas-ctx-opt:active,
+.gal-ctx-opt:active {
+    background: var(--button-blue, #7DB8DC) !important;
+}
+
+/* === Items disabled === */
+.profile-ctx-option.disabled,
+.profile-ctx-option.disabled:hover {
+    background: transparent !important;
+    color: var(--text-faint) !important;
+    cursor: not-allowed !important;
+}
+
+/* === Items DANGER (eliminar, etc.) === */
+.temas-ctx-opt.danger,
+.gal-ctx-opt.gal-ctx-danger {
+    color: var(--error-text, #C73C6E) !important;                   /* rosa coral en vez del rojo Win98 */
+}
+
+.temas-ctx-opt.danger:hover,
+.gal-ctx-opt.gal-ctx-danger:hover {
+    background: var(--accent-coral, #E85A8C) !important;              /* coral más vivo */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PROFILE SIDEBAR NAV — items de "Mis Listas" (Películas, Series...)
+   ════════════════════════════════════════════════════════════════════
+   No es un context-menu pero comparte el patrón: items con hover
+   en accent rosa. Lo cambiamos a azul claro consistente con todo. */
+.profile-nav-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+.profile-nav-item:hover .profile-nav-count {
+    background: var(--border) !important;        /* badge del contador en lila */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FIX: countdown del calendario se sale de la ventana
+   ════════════════════════════════════════════════════════════════════
+   Mi kawaii puso `overflow: visible` en .window-body (para el fix
+   del dropdown del playlist-editor), pero el .cd-body del calendario
+   necesita `overflow: hidden` para contener el panel del countdown
+   (el .cd-grid puede crecer más ancho que el body con cells de 17vw).
+
+   También seteamos max-width 100% en .cd-grid para que no exceda el
+   .cd-content, y reducimos un poco las cell-widths para que quepan
+   mejor en windows estrechas. */
+
+/* Restaurar overflow:hidden del .cd-body (que mi rule de window-body
+   tumbaba). Specificity 0,0,2,0 al combinar las dos clases ganando
+   sobre mi rule genérica `.kw-frame > .window-body`. */
+.window-body.cd-body {
+    overflow: hidden !important;
+}
+
+/* Constrain del grid del countdown al ancho del cd-content */
+.cd-content .cd-grid {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 16px 20px !important;       /* antes 24px 30px → más compacto */
+}
+
+/* Reducir cell-min-width — antes era clamp(110px, 17vw, 210px) que
+   con .cell × 4 + separators no cabe en ventanas estrechas. Bajamos
+   a clamp(80px, 11vw, 180px) → 4 cells * 11vw ~= 44vw + separators
+   ~ 60% del viewport → encaja cómodo en min(1100px, 96vw). */
+.cd-content .cd-flap-wrap {
+    min-width: clamp(80px, 11vw, 180px) !important;
+    padding: 0 8px !important;
+}
+
+/* Reducir tamaño de dígitos para que coincida con cells más pequeños */
+.cd-content .cd-flap-ghost,
+.cd-content .cd-flap {
+    font-size: clamp(48px, 8vw, 100px) !important;
+}
+
+/* Separadores ":" también ajustados al nuevo tamaño */
+.cd-content .cd-sep {
+    font-size: clamp(40px, 7vw, 80px) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PERFIL — cards kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   Las cards del perfil usan el patrón Win98:
+     · bg --win-bg gris
+     · box-shadow bezel 3D inset (4 layers)
+     · headers con titlebar-gradient azul Win98
+
+   Las aplanamos a:
+     · bg lighter o blanco
+     · border 2px lila sólido (mismo que windows)
+     · headers con bg lila + texto blanco (matcha title-bar de ventanas)
+     · hover azul claro
+
+   Cards cubiertas:
+     · .profile-encurso-slot       — "En curso" slots
+     · .profile-social-card        — usuarios seguidos
+     · .profile-gallery-card       — items galería (pelis/series/etc)
+     · .profile-notif-row          — notificaciones
+     · .profile-add-suggest-row    — sugerencias en diálogo añadir */
+
+/* === Cards generales — outer card === */
+.profile-encurso-slot,
+.profile-social-card,
+.profile-gallery-card {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.profile-social-card:hover,
+.profile-gallery-card:hover {
+    background: var(--active-rose, #FCE7F5) !important;                /* rose claro al pasar */
+    border-color: var(--border) !important;
+}
+
+/* "En curso" slot filled — un tono más claro para indicar "ocupado" */
+.profile-encurso-slot.filled {
+    background: var(--active-rose, #FCE7F5) !important;
+}
+
+/* === Title-bar interna de cards (headers tipo titlebar) === */
+.profile-encurso-slot-tb,
+.profile-gallery-tb,
+.profile-sidebar-heading,
+.profile-encurso-heading {
+    background: var(--border) !important;          /* lila sólido en vez de gradient azul */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700 !important;
+    text-shadow: none !important;
+    border-bottom: 1px solid var(--shadow-color, #2D2052) !important;
+}
+
+/* Slot filled — header más claro para distinguir */
+.profile-encurso-slot.filled .profile-encurso-slot-tb {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* Slot vacío — header desaturado */
+.profile-encurso-slot:not(.filled) .profile-encurso-slot-tb {
+    background: var(--text-faint, #9B7DAF) !important;
+    color: color-mix(in srgb, var(--accent-text) 70%, transparent) !important;
+}
+
+/* === Body interno de slot — inset bezel removed === */
+.profile-encurso-slot-body {
+    background: var(--win-body-bg) !important;
+    box-shadow: none !important;
+}
+
+/* === Container de slots — el bg gris sucio del Win98 → lavanda === */
+#profile-catview-encurso-slots {
+    background: var(--win-bg) !important;          /* lavanda en vez de surface-deep gris */
+}
+
+/* === Notif rows — usaban accent rosa color-mix, ahora azul claro === */
+.profile-notif-row {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+.profile-notif-row:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+.profile-notif-row.unread {
+    background: color-mix(in srgb, var(--hover-bg) 40%, transparent) !important;  /* azul muy sutil para indicar no-leído */
+}
+.profile-notif-row.unread:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* === Suggest rows en add-dialog — hover azul claro === */
+.profile-add-suggest-row:hover,
+.profile-add-suggest-row.active {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.profile-add-suggest-thumb {
+    border: 1px solid var(--border) !important;
+}
+
+/* === Topbar del catview (cabecera de cada categoría) === */
+#profile-catview-topbar {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+#profile-catview-title {
+    color: var(--text) !important;
+    text-shadow: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MELONARCHIVE — items y toolbar kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   Layout: toolbar arriba + grid 3-cols con thumbnails + título +
+   meta. Aplanamos el bg gris y le damos bordes lila + hover rose. */
+
+/* === Toolbar superior === */
+#archive-toolbar {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 6px 8px !important;
+}
+
+#archive-toolbar .button {
+    font-size: 12px !important;
+    padding: 2px 8px !important;
+    height: auto !important;
+    color: var(--text) !important;
+    text-shadow: none !important;
+}
+
+#archive-breadcrumb {
+    font-size: 13px !important;
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+#archive-status {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* === Items del grid === */
+.archive-item {
+    background: var(--win-body-bg) !important;
+    border: 2px solid transparent !important;
+    color: var(--text) !important;
+    padding: 4px !important;
+    transition: border-color 0.1s, background 0.1s;
+}
+
+.archive-item:hover {
+    border-color: var(--border) !important;
+    background: var(--active-rose, #FCE7F5) !important;                 /* rose claro consistente con cards */
+}
+
+/* Cover image — border 1px sutil para que destaque sobre el card */
+.archive-item img {
+    border: 1px solid var(--border);
+    box-sizing: border-box;
+}
+
+/* Título — kawaii type */
+.archive-item-title {
+    font-size: 12px !important;
+    color: var(--text) !important;
+    font-weight: 600;
+    margin-top: 4px !important;
+}
+
+/* Meta info (count, duration) — texto muted */
+.archive-item-meta {
+    font-size: 11px !important;
+    color: var(--text-muted) !important;
+    margin-top: 2px !important;
+}
+
+/* === Background del archive-content === */
+#archive-content {
+    background: var(--win-body-bg) !important;
+}
+
+#archive-grid {
+    background: var(--win-body-bg) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CALENDARIO — day cells, momentos, recordatorios kawaii
+   ════════════════════════════════════════════════════════════════════
+   Estructura:
+     · Grid mensual con .cal-cell (cada día)
+     · Hoy → .cal-cell-today (bg accent)
+     · Cells con foto → .cal-cell-foto
+     · Popup del día con .momento-card (rosa) y .rec-row (azul) */
+
+/* === Day cells === */
+.cal-cell {
+    border: 1px dashed var(--border) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+.cal-cell:hover {
+    border: 1px solid var(--border) !important;     /* sólida al pasar */
+    background: var(--active-rose, #FCE7F5) !important;                  /* rose claro consistente */
+}
+
+/* === Hoy === */
+.cal-cell-today {
+    background: var(--border) !important;            /* lila sólido kawaii */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    text-shadow: none !important;
+}
+
+/* === Cell con foto de fondo === */
+.cal-cell-foto {
+    border: 2px solid var(--inset-bg, var(--accent-text, #FFFFFF)) !important;            /* borde blanco para destacar la foto */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    text-shadow:
+         1px  1px 0 var(--shadow-color, #2D2052),
+        -1px  1px 0 var(--shadow-color, #2D2052),
+         1px -1px 0 var(--shadow-color, #2D2052),
+        -1px -1px 0 var(--shadow-color, #2D2052) !important;
+}
+
+/* === Inputs del calendario — calendario.css fuerza bezel hundido,
+       lo aplanamos === */
+body input[type="text"],
+body input[type="date"],
+body input[type="number"],
+body input[type="email"],
+body input[type="password"],
+body input[type="search"],
+body input[type="tel"],
+body input[type="url"],
+body textarea,
+body select {
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    background-color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === Popup day — sections === */
+.popup-section-title {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* Sección "Momentos" → lila kawaii en vez de pink hex */
+.popup-section-title.popup-section-momentos {
+    color: var(--accent, var(--accent-deep, #CC4499)) !important;        /* rosa accent kawaii */
+}
+
+/* Sección "Recordatorios" → azul medio kawaii en vez de #4a90d9 */
+.popup-section-title.popup-section-recs {
+    color: var(--button-blue, #6FA3D1) !important;                       /* azul medio suave */
+}
+
+/* === Momento card (rosa) === */
+.momento-card {
+    border: 2px solid var(--accent, var(--accent-deep, #CC4499)) !important;
+    border-radius: 0 !important;
+    background: var(--rose-100, #FFE4F0) !important;                  /* rose muy claro */
+    font-size: 12px !important;
+    padding: 10px !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-deep) 10%, transparent);
+}
+
+/* === Recordatorio row (azul) === */
+.rec-row {
+    border: 2px solid var(--button-blue, #6FA3D1) !important;
+    border-radius: 0 !important;
+    background: var(--hover-bg, #E0EFF7) !important;                  /* azul muy claro */
+    font-size: 12px !important;
+    padding: 8px !important;
+}
+
+/* === Empty state === */
+.popup-empty {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+    font-style: normal;
+}
+
+/* === Botón eliminar dentro de cards === */
+.btn-del-row {
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+}
+
+/* === Fondo del calendar — distinto al desktop ===
+   El calendar carga la misma kawaii CSS en su iframe, así que sin
+   esto comparte el wallpaper de escamas del escritorio.
+
+   Detectamos el contexto via `body:has(.cal-cell)` — solo la página
+   del calendar tiene .cal-cell elements. */
+body:has(.cal-cell) {
+    background-image: none !important;
+    background-color: var(--win-bg) !important;                    /* fondo de ventana (editable en Temas) */
+    background-repeat: initial !important;
+    background-size: initial !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   EVENTOS — overrides kawaii (Overdose)
+   ════════════════════════════════════════════════════════════════════
+   El CSS base (assets/events/events.css) está pensado para Win98 (con
+   bezels duros, fuentes MS Sans Serif, badges con border 1px negro).
+   En la interfaz Overdose aplanamos los bezels, usamos rose-100 como
+   fondo de cards, accent rosa para badges y la fuente Pixelify Sans
+   global se hereda. Mismo lenguaje que `.momento-card` / `.rec-row`. */
+
+/* Tabs activos — bezel inset duro → llano + accent fill */
+.ev-tab-active {
+    box-shadow: none !important;
+    background: color-mix(in srgb, var(--accent, #FF66B2) 18%, var(--win-bg, #E0D4E7)) !important;
+    border-color: var(--accent, #FF66B2) !important;
+    color: var(--accent-deep, #CC4499) !important;
+    font-weight: 700 !important;
+}
+
+/* Panes — quitar el doble bezel duro, usar el card kawaii estándar */
+.ev-pane-inset,
+.ev-friends-box,
+.ev-detail-meta,
+.ev-detail-desc,
+.ev-invite-panel,
+.ev-invite-list {
+    box-shadow: none !important;
+    border: 2px solid var(--border, #49388B) !important;
+    border-radius: 0 !important;
+    background: var(--win-body-bg, var(--win-bg, #E0D4E7)) !important;
+}
+
+/* Cards de evento — look kawaii rosa, mismo lenguaje que momento-card */
+.ev-card {
+    border: 2px solid var(--accent, #FF66B2) !important;
+    border-radius: 0 !important;
+    background: var(--rose-100, #FFE4F0) !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-deep, #CC4499) 12%, transparent) !important;
+    font-size: 12px !important;
+    padding: 9px 11px !important;
+}
+.ev-card:hover {
+    background: color-mix(in srgb, var(--rose-100, #FFE4F0) 70%, var(--accent, #FF66B2) 30%) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--accent-deep, #CC4499) 22%, transparent) !important;
+}
+.ev-card:active {
+    border-color: var(--accent-deep, #CC4499) !important;
+    background: color-mix(in srgb, var(--rose-100, #FFE4F0) 55%, var(--accent, #FF66B2) 45%) !important;
+}
+.ev-card-title {
+    color: var(--accent-deep, #CC4499) !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+}
+.ev-card-meta {
+    color: var(--text-muted, #7A6BA8) !important;
+    font-size: 11px !important;
+}
+
+/* Badges — bordes accent + tipo en Pixelify, sin uppercase tan duro */
+.ev-badge {
+    border: 1.5px solid var(--accent-deep, #CC4499) !important;
+    border-radius: 6px !important;
+    font-size: 10px !important;
+    padding: 1px 7px !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    font-weight: 700 !important;
+}
+.ev-badge.is-joined {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+}
+.ev-badge.is-waitlist {
+    background: var(--accent-orange, #D97A4E) !important;
+    color: #fff !important;
+    border-color: var(--accent-orange, #D97A4E) !important;
+}
+.ev-badge.is-invited {
+    background: var(--button-blue, #6FA3D1) !important;
+    color: #fff !important;
+    border-color: var(--button-blue, #6FA3D1) !important;
+}
+.ev-badge.is-private {
+    background: var(--accent-medium, #8B4A8B) !important;
+    color: #fff !important;
+    border-color: var(--accent-medium, #8B4A8B) !important;
+}
+
+/* Formularios — labels en accent suave, inputs ya cubiertos por el override
+   global de inputs (línea ~1493). */
+.ev-field > label {
+    color: var(--accent-deep, #CC4499) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+}
+.ev-radio-line label {
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+
+/* Friends hover — pinta con accent kawaii */
+.ev-friends-box label:hover {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+}
+
+/* Detail meta — los dt en accent para destacar el label */
+.ev-detail-meta {
+    font-size: 12px !important;
+    padding: 10px 12px !important;
+}
+.ev-detail-meta dt {
+    color: var(--accent-deep, #CC4499) !important;
+}
+.ev-detail-desc {
+    background: var(--rose-100, #FFE4F0) !important;
+    border-color: var(--accent, #FF66B2) !important;
+    color: var(--text) !important;
+    font-size: 12px !important;
+}
+.ev-detail-participants h4 {
+    color: var(--accent-deep, #CC4499) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+.ev-waitlist-tag {
+    color: var(--accent-orange, #D97A4E) !important;
+    font-style: italic !important;
+}
+
+/* Action bars — separador con tono accent suave */
+.ev-actions,
+.ev-detail-actions {
+    border-top: 1px dashed var(--accent, #FF66B2) !important;
+    padding-top: 9px !important;
+}
+.ev-btn-danger {
+    color: var(--accent-orange, #D97A4E) !important;
+    font-weight: 700 !important;
+}
+
+/* Status pills */
+.ev-status.is-error   { color: var(--accent-orange, #D97A4E) !important; }
+.ev-status.is-success { color: var(--accent-deep, #CC4499) !important; }
+
+/* Empty state */
+.ev-empty {
+    color: var(--text-muted, #7A6BA8) !important;
+    font-size: 12px !important;
+    font-style: normal;
+}
+
+/* Invite panel — más tarjeta, menos bezel */
+.ev-invite-panel h4 {
+    color: var(--accent-deep, #CC4499) !important;
+    font-size: 12px !important;
+}
+.ev-invite-row + .ev-invite-row {
+    border-top: 1px dashed color-mix(in srgb, var(--accent, #FF66B2) 50%, transparent) !important;
+}
+
+/* Botón "Eventos" en la barra del calendario y en cm-actions móvil —
+   se destaca con el accent kawaii. */
+#btn-eventos,
+#cm-events-btn {
+    border: 2px solid var(--accent, #FF66B2) !important;
+    background: var(--rose-100, #FFE4F0) !important;
+    color: var(--accent-deep, #CC4499) !important;
+    font-weight: 700 !important;
+}
+#btn-eventos:hover,
+#cm-events-btn:hover {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+}
+
+/* Time picker — overrides kawaii. Aplanar bezels del wrap, reloj con
+   bordes rosa, manecillas en accent. */
+.w98-time-wrap {
+    box-shadow: none !important;
+    border: 2px solid var(--accent, #FF66B2) !important;
+    border-radius: 0 !important;
+    background: var(--rose-100, #FFE4F0) !important;
+}
+.w98-clock-bezel-outer { fill: var(--accent, #FF66B2) !important; }
+.w98-clock-bezel-mid   { fill: var(--rose-100, #FFE4F0) !important; }
+.w98-clock-bezel-inner {
+    fill: var(--accent-text, #fff) !important;
+    stroke: var(--accent-deep, #CC4499) !important;
+    stroke-width: 0.6 !important;
+}
+.w98-clock-mark        { fill: var(--accent-deep, #CC4499) !important; }
+.w98-clock-mark-hour   { fill: var(--accent, #FF66B2) !important; }
+.w98-clock-hand-hour {
+    stroke: var(--accent-deep, #CC4499) !important;
+    stroke-width: 3.2 !important;
+}
+.w98-clock-hand-min {
+    stroke: var(--accent, #FF66B2) !important;
+    stroke-width: 2 !important;
+}
+.w98-clock-center {
+    fill: var(--accent, #FF66B2) !important;
+    stroke: var(--accent-deep, #CC4499) !important;
+}
+
+.w98-time-input {
+    box-shadow: none !important;
+    border: 2px solid var(--accent, #FF66B2) !important;
+    background: var(--accent-text, #fff) !important;
+    color: var(--accent-deep, #CC4499) !important;
+    border-radius: 0 !important;
+}
+.w98-time-sep {
+    color: var(--accent-deep, #CC4499) !important;
+}
+
+/* Context menu — overrides kawaii */
+.ev-ctx-menu {
+    box-shadow: none !important;
+    border: 2px solid var(--accent, #FF66B2) !important;
+    background: var(--win-body-bg, var(--win-bg, #E0D4E7)) !important;
+}
+.ev-ctx-menu .button:hover {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+}
+.ev-part-actionable {
+    cursor: context-menu;
+}
+.ev-part-actionable:hover {
+    background: color-mix(in srgb, var(--accent, #FF66B2) 18%, transparent) !important;
+}
+.ev-detail-image {
+    box-shadow: none !important;
+    border: 2px solid var(--accent, #FF66B2) !important;
+    border-radius: 0 !important;
+    background: var(--rose-100, #FFE4F0) !important;
+}
+
+/* Friends dialog — overrides kawaii */
+#ev-friends-dialog-list {
+    box-shadow: none !important;
+    border: 2px solid var(--accent, #FF66B2) !important;
+    background: var(--accent-text, #fff) !important;
+    border-radius: 0 !important;
+}
+.ev-friend-row {
+    border-bottom: 1px dashed color-mix(in srgb, var(--accent, #FF66B2) 50%, transparent) !important;
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+.ev-friend-row:last-child { border-bottom: 0 !important; }
+.ev-friend-invite-btn {
+    font-size: 11px !important;
+    padding: 3px 12px !important;
+}
+.ev-friend-invite-btn.is-invited {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+    border-color: var(--accent-deep, #CC4499) !important;
+}
+.ev-friend-status {
+    color: var(--accent-orange, #D97A4E) !important;
+}
+.ev-invite-trigger-count {
+    color: var(--accent-deep, #CC4499) !important;
+    font-style: normal !important;
+    font-weight: 700 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   GALERÍA — sidebar, grid de cards, chips, preview kawaii
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Fondo de galería distinto al desktop === */
+body:has(#gal-main) {
+    background-image: none !important;
+    background-color: var(--win-body-bg) !important;
+    background-repeat: initial !important;
+    background-size: initial !important;
+}
+
+/* === Sidebar izquierdo === */
+#gal-sidebar {
+    background: var(--win-body-bg) !important;
+    border-right: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    width: 240px !important;                       /* un poco más ancho para Pixelify Sans */
+}
+
+.gal-side-head {
+    background: var(--border) !important;          /* lila sólido como otros headers */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    text-shadow: none !important;
+    padding: 6px 10px !important;
+    letter-spacing: 0 !important;
+}
+
+/* === Tag items en sidebar === */
+.gal-tag-item {
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 15%, transparent) !important;
+    font-size: 13px !important;
+    color: var(--text) !important;
+    padding: 6px 8px !important;
+}
+
+.gal-tag-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.gal-tag-item.active {
+    background: var(--border) !important;          /* lila sólido para activo */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700;
+}
+
+.gal-tag-count {
+    background: color-mix(in srgb, var(--border) 15%, transparent);
+    color: var(--text);
+    padding: 1px 6px;
+    border-radius: 0;
+    font-size: 11px !important;
+}
+
+.gal-tag-item.active .gal-tag-count {
+    background: color-mix(in srgb, var(--accent-text) 30%, transparent) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === Toolbar superior === */
+#gal-toolbar {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 6px 8px !important;
+}
+
+#gal-status,
+#gal-count {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+/* === Grid de cards === */
+#gal-grid {
+    background: var(--win-body-bg) !important;
+    padding: 8px !important;
+    gap: 6px !important;
+}
+
+.gal-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid transparent !important;
+    color: var(--text) !important;
+    padding: 6px !important;
+    border-radius: 0 !important;
+}
+
+.gal-card:hover {
+    background: var(--active-rose, #FCE7F5) !important;                /* rose claro consistente */
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+}
+
+.gal-card:hover .gal-name {
+    color: var(--text) !important;
+}
+
+/* === Thumbnail dentro de card === */
+.gal-thumb {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* === Nombre debajo del thumb === */
+.gal-name {
+    font-size: 12px !important;
+    color: var(--text) !important;
+    font-weight: 600;
+    margin-top: 6px !important;
+}
+
+/* === Chips de tags en card === */
+.gal-chip {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-radius: 0 !important;
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+}
+
+.gal-card:hover .gal-chip {
+    background: var(--shadow-color, #2D2052) !important;                /* tono más oscuro al pasar */
+}
+
+/* === Empty state === */
+.gal-empty,
+#gal-grid-empty {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* === Sidebar footer === */
+#gal-sidebar-footer {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    padding: 8px !important;
+}
+
+/* === Preview a pantalla completa — bg semitransparente sobre desktop === */
+#gal-preview {
+    background: color-mix(in srgb, var(--shadow-color) 85%, transparent) !important;  /* dark purple overlay */
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TIENDA — sidebar tabs, wallet, cards de items, donaciones
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Fondo de tienda distinto al desktop === */
+body:has(#tienda-main) {
+    background-image: none !important;
+    background-color: var(--win-body-bg) !important;
+    background-repeat: initial !important;
+    background-size: initial !important;
+}
+
+/* === Sidebar (lila con tabs de categorías) === */
+#tienda-sidebar {
+    background: var(--win-body-bg) !important;
+    border-right: 2px solid var(--border) !important;
+}
+
+/* === Tabs del sidebar === */
+.tienda-tab {
+    color: var(--text) !important;
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 10%, transparent);
+}
+
+.tienda-tab:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.tienda-tab.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700 !important;
+}
+
+/* === Wallet superior (puntos del usuario) === */
+#tienda-wallet {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+#tienda-wallet-label {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+#tienda-wallet-amount {
+    color: var(--text) !important;
+    font-weight: 700;
+}
+
+#tienda-wallet-unit {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* === Discord section === */
+#tienda-discord {
+    background: var(--win-body-bg) !important;
+    border-top: 1px solid color-mix(in srgb, var(--border) 20%, transparent) !important;
+}
+
+#tienda-discord-label {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+#tienda-discord-name {
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+/* === Status messages === */
+#tienda-status.is-ok {
+    color: var(--border) !important;
+    font-weight: 700;
+}
+
+/* === Cards de items === */
+.tienda-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    padding: 10px !important;
+    border-radius: 0 !important;
+}
+
+/* Card icon — bezel inset 4 capas → flat con border lila */
+.tienda-card-icon {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.tienda-card-name {
+    font-size: 13px !important;
+    color: var(--text) !important;
+    font-weight: 700 !important;
+}
+
+.tienda-card-desc {
+    font-size: 11px !important;
+    color: var(--text-muted) !important;
+}
+
+/* Badge de precio (esquina superior derecha del icon) */
+.tienda-card-price {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--border) 40%, transparent) !important;
+    border-radius: 0 !important;
+    font-size: 12px !important;
+    padding: 2px 8px !important;
+    /* Misma fuente sans-serif limpia que los precios de encargos —
+       Pixelify Sans confunde los números pequeños sobre lila. */
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+    letter-spacing: 0 !important;
+}
+
+/* Card is-owned (item ya comprado) */
+.tienda-card.is-owned {
+    opacity: 0.7;
+}
+
+.tienda-card.is-owned .tienda-card-icon::after {
+    color: var(--border) !important;
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--border) 40%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+/* === Donaciones view === */
+#tienda-view-donaciones {
+    background: var(--win-body-bg) !important;
+}
+
+.donar-intro {
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.donar-intro-title {
+    color: var(--text) !important;
+    font-size: 16px !important;
+}
+
+/* Cuadro contenedor de encargos — antes bezel inset 4 capas */
+.donar-encargos {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;                  /* mata el bezel inset Win98 */
+    color: var(--text) !important;
+    padding: 12px !important;
+    border-radius: 0 !important;
+}
+
+.donar-encargos-title {
+    color: var(--text) !important;
+    font-weight: 700 !important;
+    font-size: 12px !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent) !important;
+    padding-bottom: 6px !important;
+    margin-bottom: 6px !important;
+    letter-spacing: 0.1em !important;
+}
+
+.donar-encargo-btn {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    color: var(--text) !important;
+    text-decoration: none !important;
+    border-radius: 0 !important;
+    font-size: 12px !important;
+    min-height: 32px !important;
+}
+
+.donar-encargo-btn:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    border-color: var(--border) !important;
+}
+
+.donar-encargo-btn .price {
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700 !important;
+    background: var(--border) !important;
+    padding: 2px 8px !important;
+    border-radius: 0 !important;
+    font-size: 12px !important;
+    text-decoration: none !important;
+    /* Override de la pixel font Pixelify Sans (que confunde "2€" / "5€"
+       a tamaños pequeños por sus glifos cuadrados). Usamos system
+       sans-serif limpia solo para los números. */
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+    letter-spacing: 0 !important;
+}
+
+/* Info debajo de los botones */
+.donar-encargos-info {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    border-top: 1px solid color-mix(in srgb, var(--border) 30%, transparent) !important;
+    padding-top: 8px !important;
+    margin-top: 6px !important;
+}
+
+.donar-donors-section {
+    border-top: 2px solid var(--border) !important;
+}
+
+.donar-donors-title {
+    color: var(--text) !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+}
+
+/* Texto y hints del intro */
+.donar-intro-text {
+    color: var(--text) !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+}
+
+.donar-intro-hint {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+/* === Cards de donantes (.donar-donor) === */
+.donar-donor {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+/* Avatar del donante — bezel inset 4 capas → flat con border lila */
+.donar-donor-avatar {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.donar-donor-name {
+    color: var(--text) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* Caja del mensaje — inset bezel → border flat */
+.donar-donor-msg {
+    background: var(--pale-rose, #FFF4F9) !important;                /* rose muy claro */
+    box-shadow: none !important;
+    border: 1px solid color-mix(in srgb, var(--border) 30%, transparent) !important;
+    color: var(--text) !important;
+    font-size: 11px !important;
+    border-radius: 0 !important;
+}
+
+/* Badges de tipo de aportación — colores kawaii */
+.donar-donor-tipo {
+    border-radius: 0 !important;
+    text-shadow: none !important;
+    font-size: 10px !important;
+    padding: 3px 8px !important;
+}
+
+.donar-donor-tipo.donacion {
+    background: var(--border) !important;          /* lila kawaii */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.donar-donor-tipo.suscripcion {
+    background: var(--accent-medium, #7C4DCC) !important;                /* lila más claro (era #7c4dff demasiado azul) */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.donar-donor-tipo.encargo {
+    background: var(--accent-orange, #D97A4E) !important;                /* naranja desaturado kawaii */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   DnD — toolbar, tabs, sheet, fichas, dados kawaii
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Fondo de DnD distinto al desktop === */
+body:has(#dnd-toolbar) {
+    background-image: none !important;
+    background-color: var(--win-body-bg) !important;
+    background-repeat: initial !important;
+    background-size: initial !important;
+}
+
+/* === Toolbar superior === */
+#dnd-toolbar,
+#mf-toolbar {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 6px 10px !important;
+}
+
+/* === Botones toolbar (.tb-btn) === */
+.tb-btn {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 12px !important;
+    padding: 3px 10px !important;
+    text-shadow: none !important;
+    border-radius: 0 !important;
+}
+
+.tb-btn:hover:not(.active):not(:active) {
+    background: var(--hover-bg, #CCE7F7) !important;
+    filter: none !important;
+}
+
+.tb-btn:active,
+.tb-btn.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-color: var(--border) !important;
+    filter: none !important;
+}
+
+/* === Tabs Oficial/Melon/MisFichas activas === */
+#tab-oficial.active,
+#tab-melon.active,
+#tab-misfichas.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700 !important;
+}
+
+/* === Separadores === */
+.tb-sep {
+    background: var(--border) !important;
+    opacity: 0.4;
+    height: 20px;
+    width: 1px !important;
+}
+
+/* === Zoom controls === */
+#zoom-controls label {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+#zoom-slider {
+    accent-color: var(--border) !important;
+}
+
+#zoom-val {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    font-size: 11px !important;
+}
+
+/* === Tooltip === */
+.has-tip:hover::after {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border: 1px solid var(--shadow-color, #2D2052) !important;
+    border-radius: 0 !important;
+    font-size: 11px !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 30%, transparent);
+}
+
+/* === Page tabs (Oficial sheet pages) === */
+#page-tabs {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.pg-tab {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border-top: 2px solid var(--border) !important;
+    border-left: 2px solid var(--border) !important;
+    border-right: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    font-size: 12px !important;
+}
+
+.pg-tab.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700 !important;
+}
+
+.pg-tab:hover:not(.active) {
+    background: var(--hover-bg, #CCE7F7) !important;
+    filter: none !important;
+}
+
+/* === Sheet area === */
+#sheet-area {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    border-left: 2px solid var(--border) !important;
+    border-right: 2px solid var(--border) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+/* === Mis fichas — cards === */
+#mis-fichas-panel {
+    background: var(--win-body-bg) !important;
+}
+
+.ficha-card {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.ficha-card:hover {
+    background: var(--active-rose, #FCE7F5) !important;
+    filter: none !important;
+}
+
+.fc-tipo {
+    color: var(--text-muted) !important;
+    font-weight: 700 !important;
+}
+
+.fc-nombre {
+    color: var(--text) !important;
+    font-size: 18px !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+}
+
+.fc-info,
+.fc-fecha {
+    color: var(--text) !important;
+}
+
+.fc-btns button,
+.fc-del {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 12px !important;
+    border-radius: 0 !important;
+}
+
+.fc-btns button:hover,
+.fc-del:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    filter: none !important;
+}
+
+/* === Bottom bar === */
+#bottom-bar {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+}
+
+#bottom-bar .info {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+#autosave-dot.saved {
+    background: var(--border) !important;
+}
+#autosave-dot.saving {
+    background: var(--active-rose, #FFB3D9) !important;                /* rose para "guardando" */
+}
+
+/* === Dice panel === */
+.dice-btn {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    border-radius: 0 !important;
+    /* Mismo sans-serif que los precios — números pequeños legibles */
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+}
+
+.dice-btn:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    filter: none !important;
+}
+
+.dice-btn:active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-color: var(--border) !important;
+}
+
+#dice-stage {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+.dice-val {
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    text-shadow: 1px 1px 0 var(--shadow-color, #2D2052), -1px -1px 0 var(--shadow-color, #2D2052), 1px -1px 0 var(--shadow-color, #2D2052), -1px 1px 0 var(--shadow-color, #2D2052) !important;
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+}
+
+#dice-hint {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+#dice-result {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+#dice-result .dice-crit {
+    color: var(--border) !important;
+    font-weight: 700;
+}
+
+#dice-result .dice-fail {
+    color: var(--error-text, #C73C6E) !important;
+    font-weight: 700;
+}
+
+/* Modal "Añadir modificador" del panel de dados */
+#dice-mod-box {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--border) 30%, transparent) !important;
+}
+
+.dice-mod-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+}
+
+#dice-mod-input {
+    border: 2px solid var(--border) !important;
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+}
+
+#dice-mod-btn {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+#dice-mod-btn:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    filter: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   WRAPPED — slides, panels, progress bar, summary card kawaii
+   ════════════════════════════════════════════════════════════════════
+   Wrapped es un slideshow de stats musicales con muchas slides con
+   transiciones, panels Win98-style, progress bar arriba, y una card
+   final con resumen.
+
+   Mucho usa var(--titlebar-start/end) → con mis vars kawaii ambos
+   están en var(--win-body-bg, #F0E8F3) lighter, el gradient queda casi sólido. Mejor
+   sustituirlo por bg lila sólido directo. */
+
+/* === Fondo del wrapped — kawaii pattern de escamas como el desktop === */
+body:has(#wrapped-progress) {
+    background-image: url('wallpaper.svg') !important;
+    background-repeat: repeat !important;
+    background-size: auto !important;
+    background-color: var(--rose-50, #FAEDF1) !important;
+    background-position: 0 0 !important;
+}
+
+/* === Override de los bg gradient de cada slide para que se vean
+   como windows kawaii flat. Las slides usan style="background:gradient"
+   inline — overrideamos con !important. */
+.slide {
+    background: transparent !important;                  /* deja ver el wallpaper kawaii */
+}
+
+/* === Progress bar segments (arriba) — flat kawaii === */
+.progress-segment {
+    background: var(--win-body-bg) !important;
+    box-shadow: inset 0 0 0 1px var(--border) !important;  /* border 1px lila plano */
+}
+
+.progress-segment.done {
+    background: var(--accent) !important;
+}
+
+.progress-segment.active::after {
+    background: var(--accent) !important;
+}
+
+/* === Slide panel — convertir a window kawaii flat === */
+.slide-panel {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--border) 25%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+/* === Slide panel titlebar — lila sólido === */
+.slide-panel-titlebar,
+.wc-titlebar {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid var(--shadow-color, #2D2052) !important;
+}
+
+/* === Slide panel body === */
+.slide-panel-body {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+}
+
+/* === Iconos del titlebar — flat sin bezel === */
+.slide-panel-icon,
+.wc-titlebar-icon {
+    background: var(--win-body-bg) !important;
+    color: var(--border) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === Controles del titlebar (cierre look-alike) — flat kawaii === */
+.slide-panel-ctrl,
+.wc-titlebar-ctrl {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* === Summary card — convertir a window kawaii flat === */
+.wrapped-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--border) 30%, transparent) !important;  /* drop shadow lila */
+    border-radius: 0 !important;
+}
+
+/* === Hero frame de la summary card — flat con border lila === */
+.wc-hero-frame {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* === Pinstripe decorativo — pattern kawaii rose + lila === */
+.wc-hero-stripe {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--accent) 0px,
+        var(--accent) 4px,
+        var(--border) 4px,
+        var(--border) 8px
+    ) !important;
+}
+
+/* === Now-playing widget (esquina) === */
+#now-playing {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--border) 30%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.np-title {
+    color: var(--text) !important;
+    font-weight: 700;
+}
+
+.np-artist {
+    color: var(--text-muted) !important;
+}
+
+.np-icon {
+    color: var(--accent) !important;
+}
+
+/* === BG blobs y bg icons — ocultar (las slides ya tienen wallpaper kawaii detrás) === */
+.bg-blob,
+.bg-icons {
+    display: none !important;
+}
+
+/* === Hero / slide titles — texto kawaii sobre wallpaper claro === */
+.hero-title {
+    color: var(--text) !important;
+    text-shadow:
+         2px  2px 0 var(--accent-text, #FFFFFF),
+        -2px  2px 0 var(--accent-text, #FFFFFF),
+         2px -2px 0 var(--accent-text, #FFFFFF),
+        -2px -2px 0 var(--accent-text, #FFFFFF) !important;
+}
+
+.hero-sub {
+    color: var(--text-muted) !important;
+    text-shadow:
+         1px  1px 0 var(--accent-text, #FFFFFF),
+        -1px  1px 0 var(--accent-text, #FFFFFF),
+         1px -1px 0 var(--accent-text, #FFFFFF),
+        -1px -1px 0 var(--accent-text, #FFFFFF) !important;
+}
+
+.slide-title {
+    color: var(--text) !important;
+}
+
+.slide-subtitle {
+    color: var(--text-muted) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   APP DE TEMAS — sidebar, library, personalize kawaii flat
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Fondo de Temas distinto al desktop === */
+body:has(#temas-app) {
+    background-image: none !important;
+    background-color: var(--win-body-bg) !important;
+    background-repeat: initial !important;
+    background-size: initial !important;
+}
+
+/* === Sidebar izquierdo === */
+#temas-sidebar {
+    background: var(--win-body-bg) !important;
+    border-right: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    width: 220px !important;
+}
+
+.temas-side-head {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 6px 10px !important;
+    letter-spacing: 0 !important;
+}
+
+/* === Lista de temas en sidebar === */
+.temas-item {
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 15%, transparent) !important;
+    font-size: 13px !important;
+    color: var(--text) !important;
+    padding: 7px 8px !important;
+}
+
+.temas-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.temas-item.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700;
+}
+
+.temas-item-badge {
+    color: var(--border) !important;
+    font-size: 11px !important;
+}
+
+.temas-item:hover .temas-item-badge {
+    color: var(--shadow-color, #2D2052) !important;
+}
+
+.temas-item.active .temas-item-badge {
+    color: var(--rose-100, #FFE4F0) !important;                       /* rose claro para destacar sobre lila */
+}
+
+/* === Sidebar footer === */
+#temas-sidebar-footer {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    padding: 8px !important;
+}
+
+/* === Main area === */
+#temas-main {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+}
+
+/* === Wallpaper area (preview) === */
+#temas-wallpaper-area {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    padding: 8px !important;
+}
+
+#temas-wallpaper-preview {
+    background-color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+}
+
+/* === Tabs superiores === */
+#temas-tabs {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 6px 6px 0 !important;
+}
+
+.temas-tab-btn {
+    font-size: 12px !important;
+    min-height: 28px !important;
+    padding: 4px 8px !important;
+}
+
+.temas-tab-btn.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700;
+}
+
+/* === Library grid + cards === */
+#temas-library {
+    background: var(--win-body-bg) !important;
+}
+
+.lib-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.lib-name {
+    color: var(--text) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 4px !important;
+}
+
+.lib-author {
+    border-top: 1px solid color-mix(in srgb, var(--border) 20%, transparent) !important;
+    font-size: 12px !important;
+}
+
+.lib-author:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+    color: var(--text) !important;
+}
+
+.lib-author-img,
+.lib-author-ph {
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+}
+
+.lib-author-name {
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+
+#temas-library-empty {
+    color: var(--text-faint) !important;
+    font-size: 13px !important;
+}
+
+/* === Personalize view (Temas/Haros/Mascotas) === */
+#temas-personalize {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+}
+
+.pers-section-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 5px 8px !important;
+    letter-spacing: 0.5px !important;
+}
+
+.pers-grid {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    padding: 8px !important;
+}
+
+.pers-item {
+    background: var(--win-body-bg) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+
+.pers-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+.pers-item.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+}
+
+.pers-item:active {
+    box-shadow: inset 1px 1px 0 var(--border) !important;
+}
+
+.pers-item-badge {
+    background: color-mix(in srgb, var(--border) 85%, transparent) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-radius: 0 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PROGRESS BARS — .progress-indicator kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   98.css usa bezel inset hundido + bar navy blue. En kawaii:
+     · contenedor: bg lighter + border 2px lila (sunken hint via inset)
+     · bar: accent rosa kawaii (en lugar del navy)
+     · segmented: mismo gradient pero con accent rosa
+
+   Se usa en:
+     · spotify-progress-fill / tidal-progress-fill (reproductor —
+       importar canciones desde Spotify/Tidal)
+     · cualquier otra app que use .progress-indicator (Wrapped no usa
+       esta clase, tiene su propia .progress-segment) */
+
+.progress-indicator {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 2px !important;                       /* un poco más fino que los 4px Win98 */
+}
+
+.progress-indicator > .progress-indicator-bar {
+    background: var(--accent) !important;          /* rosa accent kawaii */
+}
+
+/* Variante segmented (segmentos discretos en vez de barra continua) */
+.progress-indicator.segmented > .progress-indicator-bar {
+    background-color: transparent !important;
+    background-image: linear-gradient(
+        90deg,
+        var(--accent) 16px,
+        transparent 0 2px
+    ) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MODALES DE DnD — import / confirm kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   #modal-confirm y #modal-import son overlays con cajas (#confirm-box,
+   #modal-box, #import-box) que usan bezel 4 sides Win98. Las aplanamos. */
+
+/* === Overlay backdrop (oscuro semi-transparente) === */
+#modal-confirm,
+#modal-import {
+    background: color-mix(in srgb, var(--shadow-color) 50%, transparent) !important;  /* tinte lila en vez de negro */
+}
+
+/* === Cajas de los modales === */
+#import-box,
+#modal-box,
+#confirm-box {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+/* === Title bar del modal === */
+.modal-titlebar {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 6px 10px !important;
+    border-bottom: 2px solid var(--shadow-color, #2D2052) !important;
+}
+
+/* === Botón close del title bar === */
+.modal-titlebar button {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    width: 20px !important;
+    height: 18px !important;
+    border-radius: 0 !important;
+}
+
+.modal-titlebar button:hover {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* === Body del modal === */
+#modal-body {
+    padding: 14px 18px !important;
+}
+
+#modal-body label {
+    color: var(--text) !important;
+    font-size: 12px !important;
+}
+
+#modal-body input {
+    border: 2px solid var(--border) !important;
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    padding: 4px 6px !important;
+    font-size: 13px !important;
+}
+
+/* === Confirm body === */
+#confirm-body {
+    color: var(--text) !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    padding: 16px 20px !important;
+}
+
+#confirm-ok {
+    color: var(--border) !important;               /* lila kawaii en vez de link blue */
+    font-weight: 700 !important;
+}
+
+/* === Botones === */
+.modal-btns,
+#confirm-btns {
+    padding: 8px 18px 14px !important;
+    gap: 8px !important;
+}
+
+/* === Import box específico === */
+#import-body {
+    padding: 16px 20px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MÓVIL — mobile-theme.css overrides kawaii
+   ════════════════════════════════════════════════════════════════════
+   mobile.php usa estilo "feature phone Nokia" con bezels Win98. Lo
+   aplanamos a kawaii flat manteniendo la estructura.
+
+   Cubre:
+     · .mh-window (wrapper principal)
+     · .mh-userbar (header con avatar/reloj)
+     · .mh-panel (lista hundida)
+     · .mh-row (items)
+     · .mh-statusbar (footer)
+     · .mh-empty / .mh-btn-full */
+
+/* === Fondo del móvil === */
+body.mh-body {
+    background-image: url('wallpaper.svg') !important;
+    background-repeat: repeat !important;
+    background-size: auto !important;
+    background-color: var(--rose-50, #FAEDF1) !important;
+    background-position: 0 0 !important;
+}
+
+/* === Userbar (header con avatar + reloj) === */
+.mh-userbar {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+/* Avatar circular flat (era bezel outset 4 capas) */
+.mh-userbar-avatar {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    color: var(--text) !important;
+}
+
+.mh-userbar-name {
+    color: var(--text) !important;
+    font-weight: 700;
+}
+
+.mh-userbar-greeting,
+.mh-userbar-date {
+    color: var(--text-muted) !important;
+}
+
+.mh-userbar-clock {
+    color: var(--text) !important;
+    font-weight: 700;
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+}
+
+/* === Panel hundido — flat con border lila === */
+.mh-panel {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+}
+
+.mh-panel-title {
+    color: var(--text-muted) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent) !important;
+    font-size: 12px !important;
+    letter-spacing: 0.5px !important;
+    text-transform: uppercase;
+}
+
+/* === Filas de items === */
+.mh-row {
+    color: var(--text) !important;
+    border: 1px solid transparent !important;
+    text-decoration: none !important;
+}
+
+.mh-row + .mh-row {
+    border-top: 1px dotted color-mix(in srgb, var(--border) 30%, transparent) !important;
+}
+
+.mh-row:active,
+.mh-row.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border: 1px solid var(--border) !important;
+}
+
+.mh-row-name {
+    color: inherit !important;
+    font-size: 14px !important;
+}
+
+.mh-row-meta {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.mh-row:active .mh-row-meta,
+.mh-row.active .mh-row-meta {
+    color: color-mix(in srgb, var(--accent-text) 85%, transparent) !important;
+}
+
+.mh-row-chev {
+    color: var(--text-faint) !important;
+}
+
+.mh-row:active .mh-row-chev,
+.mh-row.active .mh-row-chev {
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === Status bar (footer con accesos rápidos) === */
+.mh-statusbar a,
+.mh-statusbar button {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    font-size: 13px !important;
+    padding: 6px 8px !important;
+    border-radius: 0 !important;
+}
+
+.mh-statusbar a:active,
+.mh-statusbar button:active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.mh-statusbar a.danger,
+.mh-statusbar button.danger {
+    color: var(--error-text, #C73C6E) !important;                       /* coral kawaii en vez de error rojo */
+}
+
+.mh-statusbar a.danger:active,
+.mh-statusbar button.danger:active {
+    background: var(--error-text, #C73C6E) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === Empty state === */
+.mh-empty {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+.mh-empty-icon {
+    opacity: 0.5;
+}
+
+/* === Botón full-width === */
+.mh-btn-full {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    font-size: 14px !important;
+}
+
+.mh-btn-full:active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MENÚ PRINCIPAL MÓVIL — settings panel, change password, modales
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Backdrops semi-transparentes con tinte lila === */
+#mh-settings-backdrop,
+#mh-cp-backdrop {
+    background: color-mix(in srgb, var(--shadow-color) 55%, transparent) !important;
+}
+
+/* === Settings panel — caja kawaii flat === */
+#mh-settings-panel {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+#mh-settings-panel .window-body {
+    background: var(--win-body-bg) !important;
+}
+
+/* Botones de ajustes — bezel inset → flat kawaii */
+#mh-settings-panel .mh-set-btn {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    font-size: 14px !important;
+    min-height: 52px !important;
+    padding: 10px 14px !important;
+    text-decoration: none !important;
+}
+
+#mh-settings-panel .mh-set-btn:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+    box-shadow: none !important;
+    padding: 10px 14px !important;
+}
+
+#mh-settings-panel .mh-set-btn.danger {
+    color: var(--error-text, #C73C6E) !important;
+}
+
+#mh-settings-panel .mh-set-btn.danger:active {
+    background: var(--active-rose, #FCE7F0) !important;
+}
+
+#mh-settings-panel .mh-set-text small {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    margin-top: 3px !important;
+}
+
+#mh-settings-panel .mh-set-emoji {
+    font-size: 18px;
+    line-height: 1;
+}
+
+/* === Modal cambiar contraseña === */
+#mh-cp-window {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+#mh-cp-window .window-body {
+    background: var(--win-body-bg) !important;
+}
+
+#mh-cp-window label {
+    font-size: 13px !important;
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+#mh-cp-window input[type="password"] {
+    font-size: 14px !important;
+    min-height: 32px !important;
+    /* el styling base de input ya está kawaii arriba */
+}
+
+#mh-cp-status {
+    font-size: 12px !important;
+    color: var(--text-muted) !important;
+}
+
+#mh-cp-actions {
+    gap: 8px !important;
+    margin-top: 10px !important;
+}
+
+/* === Widget flotante del player mini (.mu-widget) === */
+.mu-widget {
+    /* La caja del vinilo: no necesita styling kawaii porque ya tiene su
+       diseño propio (disco negro circular). Solo nos aseguramos de que
+       el container no aplique nuestros bordes lila ni shadows. */
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CALENDARIO MÓVIL — .cm-* kawaii flat
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Card "Tiempo juntos" === */
+.cm-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    padding: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+.cm-card-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 5px 10px !important;
+    margin: -12px -12px 10px !important;
+}
+
+.cm-counter-big {
+    color: var(--accent) !important;
+    font-size: 36px !important;
+}
+
+.cm-counter-sub {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.cm-counter-from {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+/* === Mes nav === */
+.cm-month-label {
+    color: var(--text) !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+}
+
+/* === Días de la semana === */
+.cm-dow-cell {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    font-weight: 700;
+}
+
+/* === Grid de celdas === */
+.cm-grid {
+    background: var(--border) !important;        /* lila como "rejilla" entre celdas */
+    padding: 1px !important;
+    gap: 1px !important;
+}
+
+.cm-cell {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    font-size: 13px !important;
+    border: 1px solid transparent !important;
+}
+
+.cm-cell-other {
+    color: var(--text-faint) !important;
+    opacity: 0.5;
+}
+
+.cm-cell-today {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700;
+}
+
+.cm-cell-foto {
+    text-shadow:
+         1px  1px 0 var(--shadow-color, #2D2052),
+        -1px  1px 0 var(--shadow-color, #2D2052),
+         1px -1px 0 var(--shadow-color, #2D2052),
+        -1px -1px 0 var(--shadow-color, #2D2052) !important;
+}
+
+/* Dots de eventos */
+.cm-cell-dot .d-mom {
+    background: var(--accent) !important;
+}
+
+.cm-cell-dot .d-rec {
+    background: var(--border) !important;       /* lila para recordatorio */
+}
+
+/* === Acciones rápidas === */
+.cm-actions .button {
+    font-size: 13px !important;
+    min-height: 40px !important;
+}
+
+/* === Lista de recordatorios — title === */
+.cm-list-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 6px 10px !important;
+}
+
+/* === Item recordatorio === */
+.cm-rec-item {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    font-size: 13px !important;
+    padding: 10px !important;
+}
+
+.cm-rec-item-info strong {
+    color: var(--text) !important;
+    font-size: 14px !important;
+}
+
+.cm-rec-item-info .when {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+.cm-rec-item-btns .button {
+    font-size: 13px !important;
+    min-height: 32px !important;
+}
+
+/* === Bottom sheet === */
+.cm-sheet-overlay {
+    background: color-mix(in srgb, var(--shadow-color) 55%, transparent) !important;
+}
+
+.cm-sheet {
+    background: var(--win-body-bg) !important;
+    border-top: 2px solid var(--border) !important;
+    box-shadow: 0 -8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+}
+
+.cm-sheet-bar {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 8px 12px !important;
+}
+
+.cm-sheet-close {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+.cm-sheet-close:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MELONARCHIVE MÓVIL — .ma-* kawaii flat
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Subbar (back + breadcrumb) === */
+.ma-subbar {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 8px 10px !important;
+}
+
+.ma-back-btn {
+    font-size: 13px !important;
+    min-height: 32px !important;
+    min-width: 70px !important;
+}
+
+.ma-breadcrumb {
+    color: var(--text) !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+}
+
+/* === Panel principal de cards === */
+.ma-panel {
+    background: var(--win-body-bg) !important;
+    box-shadow: none !important;
+    padding: 10px !important;
+}
+
+/* === Card de playlist/video === */
+.ma-card {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    padding: 8px !important;
+    margin-bottom: 8px !important;
+    border-radius: 0 !important;
+}
+
+.ma-card:active {
+    background: var(--active-rose, #FCE7F5) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+}
+
+.ma-card-thumb {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.ma-card-thumb-ph {
+    color: var(--text-muted) !important;
+}
+
+.ma-card-title {
+    color: var(--text) !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+}
+
+.ma-card:active .ma-card-title {
+    color: var(--text) !important;                  /* mantener kawaii en :active */
+}
+
+.ma-card-meta {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.ma-card:active .ma-card-meta {
+    color: var(--text) !important;
+}
+
+/* === Status (Cargando…) === */
+.ma-status {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* === Vista del reproductor (video viewer) === */
+.ma-video-view {
+    background: var(--win-body-bg) !important;
+}
+
+.ma-video-body {
+    background: var(--win-body-bg) !important;
+}
+
+.ma-video-back-bar {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 14px !important;
+}
+
+.ma-video-back-bar:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+    box-shadow: none !important;
+}
+
+.ma-video-info {
+    background: var(--win-body-bg) !important;
+}
+
+/* === Mini ventanas dentro del player === */
+.ma-sub-window .title-bar-text {
+    font-size: 13px !important;
+}
+
+.ma-video-title {
+    color: var(--text) !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+}
+
+.ma-video-meta {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MÚSICA MÓVIL — .mu-* kawaii flat
+   ════════════════════════════════════════════════════════════════════
+   App grande con muchos componentes:
+     · Lista de playlists con expansión
+     · Tracks individuales dentro de playlist
+     · Mini player sticky abajo
+     · Vista fullscreen con vinilo girando
+
+   Cubrimos los elementos más visibles. El vinilo y efectos LCD/glow
+   se mantienen porque son estilizados (no chocan con el flat). */
+
+/* === Playlist row (header de cada playlist) === */
+.mu-pl-head {
+    background: transparent !important;
+    color: var(--text) !important;
+    padding: 12px 14px !important;
+}
+
+.mu-pl-head:active,
+.mu-pl-head.long-pressing {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.mu-pl-name {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+}
+
+.mu-pl-meta {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.mu-pl-head:active .mu-pl-meta,
+.mu-pl-head:active .mu-pl-arrow,
+.mu-pl-head:active .mu-pl-play {
+    color: color-mix(in srgb, var(--accent-text) 85%, transparent) !important;
+}
+
+.mu-pl-arrow {
+    color: var(--text-muted) !important;
+}
+
+/* === Avatares de colaboradores — bezel outset → border 1px lila === */
+.mu-pl-collab-av {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.mu-pl-collab-more {
+    background: var(--win-body-bg) !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+/* === Botón play de cada playlist === */
+.mu-pl-play {
+    color: var(--text) !important;
+}
+
+.mu-pl-play:disabled {
+    color: var(--text-faint) !important;
+}
+
+/* === Lista de tracks (expandida) === */
+.mu-tracks {
+    background: color-mix(in srgb, var(--border) 5%, transparent) !important;   /* lila muy sutil para indicar nested */
+}
+
+.mu-track {
+    border-top: 1px dotted color-mix(in srgb, var(--border) 25%, transparent) !important;
+    color: var(--text) !important;
+    padding: 10px 14px !important;
+}
+
+.mu-track:active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.mu-track.playing {
+    background: var(--accent) !important;             /* rosa kawaii para el track actual */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.mu-track-num {
+    color: var(--text-muted) !important;
+}
+
+.mu-track:active .mu-track-num,
+.mu-track.playing .mu-track-num,
+.mu-track:active .mu-track-artist,
+.mu-track.playing .mu-track-artist,
+.mu-track:active .mu-track-dur,
+.mu-track.playing .mu-track-dur {
+    color: color-mix(in srgb, var(--accent-text) 90%, transparent) !important;
+}
+
+.mu-track-title {
+    color: inherit !important;
+    font-size: 14px !important;
+    font-weight: 600;
+}
+
+.mu-track-artist {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.mu-track-dur {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+/* === Thumb de cada track === */
+.mu-track-thumb {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.mu-track-thumb-ph {
+    color: var(--text-muted) !important;
+}
+
+/* === Avatar "añadido por" en track === */
+.mu-track-addedby-av {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* === Mini reproductor sticky abajo === */
+.mu-player {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border-top: 2px solid var(--border) !important;
+    box-shadow: 0 -4px 12px color-mix(in srgb, var(--border) 30%, transparent) !important;
+}
+
+.mu-player-thumb {
+    background: var(--accent) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border) !important;
+}
+
+.mu-player-title {
+    color: var(--text) !important;
+    /* Mantenemos VT323 monospace (es retro/CRT stylized — encaja kawaii) */
+}
+
+.mu-player-artist {
+    color: var(--text-muted) !important;
+}
+
+/* === Botones del mini player ===
+   .mu-btn hereda del .button generic flat kawaii (no necesita override).
+   Solo refinamos .mu-btn.primary (play/pause) con bg accent rosa. */
+.mu-btn.primary {
+    background: var(--accent) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-color: var(--accent-deep) !important;
+}
+
+.mu-btn.primary:active {
+    background: var(--accent-deep) !important;
+}
+
+/* === Vista fullscreen (.mu-full) ===
+   El bg lo dicta JS según el cover (blur del thumbnail). Solo damos
+   un tint leve al window para que se vea por encima del cover. */
+.mu-full-window {
+    background: color-mix(in srgb, var(--accent-text) 5%, transparent) !important;
+}
+
+/* El .mu-full-display (LCD), .mu-vinyl (disco animado) y
+   .mu-vinyl-label (etiqueta central) se mantienen con su styling
+   original — son assets estilizados que encajan con el kawaii. */
+
+/* ════════════════════════════════════════════════════════════════════
+   TEMAS MÓVIL — .tm-* kawaii flat
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Tabs ribbon === */
+.tm-tabs {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding: 8px 6px 6px !important;
+}
+
+.tm-tab {
+    font-size: 13px !important;
+    min-height: 36px !important;
+    padding: 6px 14px !important;
+}
+
+.tm-tab.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-weight: 700;
+}
+
+/* === Section title (header de cada bloque) === */
+.tm-section-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 6px 10px !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* === Section body (caja con contenido) === */
+.tm-section-body {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+    padding: 10px !important;
+}
+
+/* === Actions buttons === */
+.tm-actions .button {
+    font-size: 13px !important;
+    min-height: 36px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   GALERÍA MÓVIL — .gm-* kawaii flat (5 selectores, breve)
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === Items / cards de galería === */
+.gm-item,
+.gm-card {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.gm-item:active,
+.gm-card:active {
+    background: var(--active-rose, #FCE7F5) !important;
+}
+
+/* === Tags / chips en galería === */
+.gm-chip,
+.gm-tag {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-radius: 0 !important;
+    font-size: 11px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PERFIL MÓVIL — .pf-* kawaii flat
+   ════════════════════════════════════════════════════════════════════ */
+
+/* === About: bio + socials === */
+.pf-about-bio {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.pf-about-bio.is-empty {
+    color: var(--text-muted) !important;
+}
+
+.pf-about-meta {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.pf-about-social {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+.pf-about-social:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* === Sub tabs === */
+.pf-subtabs {
+    background: var(--win-body-bg) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent) !important;
+}
+
+.pf-subtab {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+.pf-subtab.active {
+    color: var(--border) !important;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.pf-subtab:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* === Destacados (top 3 review picks) === */
+.pf-destacados-title {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 5px 10px !important;
+}
+
+.pf-dest-slot {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--border) 10%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+.pf-dest-slot.empty {
+    border-style: dashed !important;
+    opacity: 0.6;
+}
+
+.pf-dest-slot.has-review:active {
+    background: var(--active-rose, #FCE7F5) !important;
+}
+
+.pf-dest-cover {
+    border: 1px solid var(--border) !important;
+}
+
+.pf-dest-cover-ph {
+    color: var(--text-muted) !important;
+}
+
+.pf-dest-title {
+    color: var(--text) !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+.pf-dest-artist {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.pf-dest-stars-num {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+/* === Tabs principales === */
+.pf-tabs {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.pf-tab {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+.pf-tab.active {
+    color: var(--border) !important;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.pf-tab-count {
+    background: color-mix(in srgb, var(--border) 15%, transparent);
+    color: var(--text);
+    border-radius: 0 !important;
+    padding: 1px 6px;
+    font-size: 11px !important;
+}
+
+.pf-tab.active .pf-tab-count {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+/* === List + items === */
+.pf-list {
+    background: var(--win-body-bg) !important;
+}
+
+.pf-item {
+    border-top: 1px dotted color-mix(in srgb, var(--border) 25%, transparent) !important;
+    color: var(--text) !important;
+}
+
+.pf-item.has-review:active {
+    background: var(--active-rose, #FCE7F5) !important;
+}
+
+.pf-item-poster {
+    border: 1px solid var(--border) !important;
+}
+
+.pf-item-poster.placeholder {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    color: var(--text-muted) !important;
+}
+
+.pf-item-title {
+    color: var(--text) !important;
+    font-size: 14px !important;
+    font-weight: 600;
+}
+
+.pf-item-sub {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.pf-item.has-review:active .pf-item-sub,
+.pf-item.has-review:active .pf-stars-num {
+    color: var(--text) !important;
+}
+
+.pf-stars-num {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+.pf-item.pf-add-item {
+    color: var(--border) !important;
+    font-weight: 600;
+}
+
+/* === Modal (review, ctx menu, etc.) === */
+.pf-modal-backdrop {
+    background: color-mix(in srgb, var(--shadow-color) 55%, transparent) !important;
+}
+
+.pf-modal {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+}
+
+.pf-modal .pf-review-title {
+    color: var(--text) !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+}
+
+.pf-modal .pf-review-comment {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.pf-modal .pf-review-comment-empty {
+    color: var(--text-muted) !important;
+    font-style: normal;
+}
+
+/* === Context menu (pf-ctx) === */
+.pf-ctx-item {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    font-size: 13px !important;
+}
+
+.pf-ctx-item:active {
+    background: var(--hover-bg, #CCE7F7) !important;
+}
+
+/* === Review edit === */
+.pf-rev-edit-star.empty {
+    color: var(--text-faint) !important;
+}
+
+.pf-rev-edit-num {
+    color: var(--text-muted) !important;
+}
+
+.pf-rev-edit-label {
+    color: var(--text) !important;
+    font-size: 12px !important;
+    font-weight: 600;
+}
+
+.pf-modal .modal-actions .button.danger {
+    background: var(--error-text, #C73C6E) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border-color: var(--accent-darker, #A0285A) !important;
+}
+
+/* === Collaborators (sección) === */
+.pf-collab-section-title {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.pf-collab-av {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+.pf-collab-av-ph {
+    color: var(--text-muted) !important;
+}
+
+.pf-collab-label {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.pf-collab-status {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+/* === Melon reviews móvil (.pf-melon-*) ===
+   Los items reusan .pf-item / .pf-item-* (ya cubiertos arriba). Solo
+   añadimos overrides para los elementos Melon-exclusivos: status,
+   list container, badge "Must" y count entre paréntesis. */
+.pf-melon-status {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.pf-melon-list {
+    background: var(--win-body-bg) !important;
+}
+
+/* Números (rating, count, paginación, modal de reseñas, fecha relativa)
+   → fuente sans-serif clara porque Pixelify Sans hace los dígitos
+   confusos en tamaños pequeños. */
+.pf-stars-num,
+.pf-melon-count,
+.pf-melon-pager-info,
+.pf-melon-review-num,
+.pf-melon-review-time {
+    font-family: 'Arial', 'Helvetica', sans-serif !important;
+    letter-spacing: 0 !important;
+}
+
+.pf-melon-count {
+    color: var(--text-muted) !important;
+}
+
+/* Badge "Melon must" — kawaii flat:
+   pill rounded + rosa accent sólido + border lila fino + Pixelify Sans.
+   Sin gradients, sin inset shadow, sin glow — coherente con el resto
+   de la UI kawaii (flat design). */
+.pf-melon-must-tag {
+    background: var(--accent) !important;            /* rosa kawaii sólido */
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+    border: 1px solid var(--border) !important;      /* border 1px lila */
+    border-radius: 999px !important;                 /* pill shape */
+    padding: 2px 10px 1px !important;
+    font-family: inherit !important;                 /* Pixelify Sans del kawaii UI */
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;                 /* cancela uppercase del Win98 */
+    text-shadow: none !important;
+    box-shadow: none !important;
+}
+
+.pf-melon-pager {
+    background: var(--win-body-bg) !important;
+    border-top: 1px solid color-mix(in srgb, var(--border) 20%, transparent) !important;
+}
+
+.pf-melon-pager-info {
+    color: var(--text) !important;
+    font-size: 12px !important;
+}
+
+/* Modal de detalles Melon */
+.pf-melon-modal {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent) !important;
+}
+
+.pf-melon-review-row {
+    border-bottom: 1px dotted color-mix(in srgb, var(--border) 30%, transparent) !important;
+}
+
+.pf-melon-review-av {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+}
+
+.pf-melon-review-hdr {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.pf-melon-review-comment {
+    color: var(--text) !important;
+    font-size: 13px !important;
+}
+
+.pf-melon-review-time {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TIENDA MÓVIL — .ti-* kawaii flat (clases específicas mobile)
+   ════════════════════════════════════════════════════════════════════
+   Las clases .tienda-card / .donar-* ya están cubiertas en el bloque
+   de desktop Tienda. Aquí cubrimos solo las .ti-* específicas mobile. */
+
+.ti-header {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.ti-wallet {
+    background: var(--win-body-bg) !important;
+}
+
+.ti-wallet-label {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.ti-wallet-amount {
+    color: var(--text) !important;
+    font-weight: 700;
+}
+
+.ti-wallet-unit {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+.ti-discord {
+    background: var(--win-body-bg) !important;
+    border-top: 1px solid color-mix(in srgb, var(--border) 20%, transparent) !important;
+}
+
+.ti-discord-label {
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+}
+
+.ti-tabs {
+    background: var(--win-body-bg) !important;
+    border-bottom: 2px solid var(--border) !important;
+}
+
+.ti-tabs .tienda-tab.active {
+    background: var(--border) !important;
+    color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
+}
+
+.ti-pane {
+    background: var(--win-body-bg) !important;
+}
+
+.tienda-empty {
+    color: var(--text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   COMPANION MÓVIL — iframe wrapper kawaii
+   ════════════════════════════════════════════════════════════════════
+   companion-mobile es un wrapper de iframe externo (la app companion
+   live en otro sitio). Solo styling del loading y del frame container. */
+
+#companion-frame-wrap {
+    background: var(--win-body-bg) !important;
+}
+
+#companion-frame {
+    background: var(--inset-bg, var(--accent-text, #FFFFFF)) !important;
+}
+
+#companion-loading {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+}
+
+#companion-loading-spinner {
+    border-color: var(--border) transparent var(--border) transparent !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TASKBAR — clásico Win98 en colores kawaii
+   ════════════════════════════════════════════════════════════════════
+   Filosofía: respetar la estructura visual de Win98 (todo cuadrado,
+   start integrado en la barra, app tabs con bezel 3D raised, clock
+   inset/sunken) pero usando la paleta lila/lavanda kawaii en lugar
+   del gris.
+
+   Helpers de bezel (variables locales abajo en cada rule, no
+   accesibles fuera por el selector):
+     · Raised (popped out): highlight blanco arriba-izq + sombra lila
+       abajo-der + segundo nivel para más profundidad.
+     · Sunken (inset): sombra lila arriba-izq + highlight blanco
+       abajo-der → look hundido. */
+
+#taskbar {
+    background: var(--win-bg) !important;       /* lavanda sólida */
+    border-top: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    height: 28px;
+    padding: 2px 4px;
+    gap: 2px;
+}
+
+/* START button — INTEGRADO en la taskbar, sin borde ni shadow propio.
+   Solo el texto/logo. En hover, sutil bg highlight. */
+#start-btn {
+    background: transparent !important;
+    color: var(--text) !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    border-image: none !important;
+    text-shadow: none !important;
+    height: 22px;
+    padding: 0 8px 0 4px;
+    font-weight: bold !important;
+    gap: 5px;
+}
+#start-btn:hover {
+    background-color: color-mix(in srgb, var(--accent-text) 40%, transparent) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+#start-btn:active {
+    background-color: color-mix(in srgb, var(--border) 15%, transparent) !important;
+    /* Bezel inset sutil para feedback de pulsado */
+    box-shadow:
+        inset 1px 1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF) !important;
+}
+
+/* Separador — línea fina lila */
+.taskbar-sep {
+    width: 1px !important;
+    height: 20px;
+    background: var(--border) !important;
+    opacity: 0.4;
+    box-shadow: none !important;
+    margin: 0 2px;
+}
+
+#taskbar-tasks {
+    height: 22px;
+    gap: 2px;
+}
+
+/* APP TABS — convención Win98 (invertida respecto a XFCE):
+     · ACTIVE (abierto + foco): bezel SUNKEN — la pestaña está
+       "pulsada/engaged" porque la app tiene el foco.
+     · MINIMIZED (sin abrir): bezel RAISED — la pestaña está
+       "lista para pulsar" porque la app está oculta.
+
+   El JS añade .taskbar-task-minimized cuando se minimiza la ventana.
+   Sin esa clase → app activa/foco. */
+
+/* === ACTIVE (default — abierto y con foco) === bezel SUNKEN
+   Top-left = MORADO (sombra) — Bottom-right = BLANCO (highlight)
+   Da sensación de "pulsado/hundido".
+
+   CRÍTICO: usamos `.button.taskbar-task-btn` (specificity 0,0,2,0)
+   en vez de `.taskbar-task-btn` (0,0,1,0) para superar a la regla
+   genérica `button:not(.title-bar-controls button)` (specificity
+   0,0,1,2) que aplicaba border:2px + box-shadow:none. Sin esta
+   subida, el border morado cuadrado de la generic ganaba y el
+   bezel se quedaba en `none`. */
+.button.taskbar-task-btn {
+    background: var(--win-bg) !important;        /* mismo bg que el taskbar */
+    color: var(--text) !important;
+    border: none !important;
+    box-shadow:
+        inset  2px  2px 0 var(--border),         /* MORADO top + left */
+        inset -2px -2px 0 var(--accent-text, #FFFFFF) !important;    /* BLANCO bottom + right */
+    border-radius: 0 !important;
+    border-image: none !important;
+    text-shadow: none !important;
+    height: 22px !important;
+    padding: 0 6px;
+}
+
+.button.taskbar-task-btn:hover {
+    background-color: var(--active-rose, #FCE7F5) !important;
+}
+
+.button.taskbar-task-btn:active {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+}
+
+/* === MINIMIZED (sin abrir) === bezel RAISED */
+.button.taskbar-task-btn.taskbar-task-minimized {
+    background-color: var(--win-bg) !important;  /* mismo bg que el taskbar */
+    box-shadow:
+        inset  2px  2px 0 var(--accent-text, #FFFFFF),               /* BLANCO top + left */
+        inset -2px -2px 0 var(--border) !important; /* MORADO bottom + right */
+    opacity: 1;
+}
+.button.taskbar-task-btn.taskbar-task-minimized:hover {
+    background-color: var(--active-rose, #FCE7F5) !important;
+}
+
+/* Botón ♪▶ del tray del reproductor — mismo bezel raised que app tabs */
+#tray-player-btn {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    border: none !important;
+    box-shadow:
+        inset -1px -1px 0 var(--border),
+        inset  1px  1px 0 var(--accent-text, #FFFFFF),
+        inset -2px -2px 0 var(--disabled-text, #7A6BA8),
+        inset  2px  2px 0 var(--active-rose, #FCE7F5) !important;
+    border-radius: 0 !important;
+    border-image: none !important;
+    text-shadow: none !important;
+    height: 22px !important;
+    padding: 0 5px !important;
+}
+#tray-player-btn:hover {
+    background-color: var(--active-rose, #FCE7F5) !important;
+}
+#tray-player-btn:active {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+    box-shadow:
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF),
+        inset  2px  2px 0 var(--disabled-text, #7A6BA8),
+        inset -2px -2px 0 var(--active-rose, #FCE7F5) !important;
+}
+
+/* SYSTEM TRAY (reloj) — bezel SUNKEN (inset, hundido).
+   Lo opuesto al raised: shadow arriba-izq, highlight abajo-der. */
+#system-tray {
+    background: var(--win-bg) !important;        /* lavanda más oscura que apps */
+    color: var(--text) !important;
+    border: none !important;
+    box-shadow:
+        inset  1px  1px 0 var(--border),         /* sombra lila top-left */
+        inset -1px -1px 0 var(--accent-text, #FFFFFF) !important;     /* highlight blanco bottom-right */
+    border-radius: 0 !important;
+    height: 22px;
+    padding: 0 8px;
+}
+
+#tray-clock {
+    color: var(--text);
+    font-family: inherit;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FIX: music-player mini debe quedar pegado AL taskbar, no flotando
+   ════════════════════════════════════════════════════════════════════
+   reproductor.css pone #music-player en bottom:20px. Con un taskbar
+   de 28px (+ border-top 2px), el reproductor se solapa parcialmente.
+   bottom:30px = 28 taskbar height + 2 border-top → el bottom del
+   player pega EXACTAMENTE con el top del taskbar.
+
+   CRÍTICO: SIN !important. Cuando el usuario arrastra el widget,
+   desktop-base.php llama a fixPos() que pone style.bottom = 'auto'
+   como INLINE. Si pusiéramos !important aquí, ganaría sobre el
+   inline → bottom queda fijo + top cambia → ventana se ESTIRA. Sin
+   !important, mi rule wins cascade vs reproductor.css (carga
+   después) pero el inline del drag wins sobre nosotros. */
+#music-player {
+    bottom: 30px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SCROLLBARS — kawaii con bezel raised/sunken (mismo idioma que tabs)
+   ════════════════════════════════════════════════════════════════════
+   Override de los pixel-art scrollbars de 98.css. Estructura:
+     · track: lavanda hundido (sunken) — el "carril"
+     · thumb: lighter raised — la "barra" que se mueve
+     · buttons (arrows): raised con flechas lila SVG
+     · corner: lavanda sólido cuando coinciden vertical + horizontal
+
+   Usamos !important porque 98.css carga ANTES pero algunos browsers
+   le dan al user-agent shadow DOM mayor especificidad implícita en
+   ciertos contextos. Mejor garantizarlo. */
+
+::-webkit-scrollbar {
+    width: 14px !important;
+    height: 14px !important;
+    background: var(--win-bg) !important;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--win-bg) !important;
+    background-image: none !important;
+    box-shadow:
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF) !important;
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--win-bg) !important;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--win-body-bg) !important;
+    box-shadow:
+        inset -1px -1px 0 var(--border),
+        inset  1px  1px 0 var(--accent-text, #FFFFFF),
+        inset -2px -2px 0 var(--disabled-text, #7A6BA8),
+        inset  2px  2px 0 var(--active-rose, #FCE7F5) !important;
+    border-radius: 0 !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--active-rose, #FCE7F5) !important;
+}
+
+::-webkit-scrollbar-thumb:active {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+    box-shadow:                                  /* sunken al arrastrar */
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF),
+        inset  2px  2px 0 var(--disabled-text, #7A6BA8),
+        inset -2px -2px 0 var(--active-rose, #FCE7F5) !important;
+}
+
+/* Botones (flechas arriba/abajo/izq/der) — raised con flecha lila SVG */
+::-webkit-scrollbar-button {
+    background-color: var(--win-body-bg) !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    background-image: none !important;
+    box-shadow:
+        inset -1px -1px 0 var(--border),
+        inset  1px  1px 0 var(--accent-text, #FFFFFF),
+        inset -2px -2px 0 var(--disabled-text, #7A6BA8),
+        inset  2px  2px 0 var(--active-rose, #FCE7F5) !important;
+    width: 14px !important;
+    height: 14px !important;
+    display: block !important;
+}
+
+::-webkit-scrollbar-button:hover {
+    background-color: var(--active-rose, #FCE7F5) !important;
+}
+
+::-webkit-scrollbar-button:active {
+    background-color: var(--inactive-bg, #E8DEEB) !important;
+    box-shadow:
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF),
+        inset  2px  2px 0 var(--disabled-text, #7A6BA8),
+        inset -2px -2px 0 var(--active-rose, #FCE7F5) !important;
+}
+
+/* Flecha arriba (vertical:start) — triángulo apuntando arriba */
+::-webkit-scrollbar-button:vertical:start:decrement {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M4 0L8 5H0z'/%3E%3C/svg%3E") !important;
+}
+/* Flecha abajo (vertical:end) */
+::-webkit-scrollbar-button:vertical:end:increment {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M0 0h8L4 5z'/%3E%3C/svg%3E") !important;
+}
+/* Flecha izquierda (horizontal:start) */
+::-webkit-scrollbar-button:horizontal:start:decrement {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M0 4L5 0v8z'/%3E%3C/svg%3E") !important;
+}
+/* Flecha derecha (horizontal:end) */
+::-webkit-scrollbar-button:horizontal:end:increment {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%2349388B' d='M0 0v8l5-4z'/%3E%3C/svg%3E") !important;
+}
+/* Ocultar los botones duplicados que 98.css habilita */
+::-webkit-scrollbar-button:vertical:end:decrement,
+::-webkit-scrollbar-button:vertical:start:increment,
+::-webkit-scrollbar-button:horizontal:end:decrement,
+::-webkit-scrollbar-button:horizontal:start:increment {
+    display: none !important;
+}
+
+/* Firefox — soporta `scrollbar-color` (thumb track) y `scrollbar-width` */
+* {
+    scrollbar-color: var(--win-body-bg) var(--win-bg);
+    scrollbar-width: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SLIDERS (input[type="range"]) — kawaii con thumb bezel raised
+   ════════════════════════════════════════════════════════════════════
+   Override del slider pixel-art de 98.css. Track delgado lila, thumb
+   pequeña pill raised. NO usamos !important — apps específicas como
+   el music-player (#player-volume con su SVG custom, #player-progress
+   con su gradient) tienen sus propios estilos que deben prevalecer. */
+
+input[type="range"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* === Track === */
+input[type="range"]::-webkit-slider-runnable-track {
+    background: var(--win-bg);
+    border: none;
+    box-shadow:
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF);
+    height: 4px;
+    width: 100%;
+}
+
+input[type="range"]::-moz-range-track {
+    background: var(--win-bg);
+    border: none;
+    box-shadow:
+        inset  1px  1px 0 var(--border),
+        inset -1px -1px 0 var(--accent-text, #FFFFFF);
+    height: 4px;
+    width: 100%;
+}
+
+/* === Thumb (la pastilla) === */
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    background: var(--win-body-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--border),
+        inset  1px  1px 0 var(--accent-text, #FFFFFF),
+        inset -2px -2px 0 var(--disabled-text, #7A6BA8),
+        inset  2px  2px 0 var(--active-rose, #FCE7F5);
+    height: 14px;
+    width: 10px;
+    border-radius: 0;
+    transform: translateY(-5px);   /* centrar respecto al track de 4px */
+    cursor: grab;
+}
+
+input[type="range"]::-moz-range-thumb {
+    background: var(--win-body-bg);
+    border: none;
+    box-shadow:
+        inset -1px -1px 0 var(--border),
+        inset  1px  1px 0 var(--accent-text, #FFFFFF),
+        inset -2px -2px 0 var(--disabled-text, #7A6BA8),
+        inset  2px  2px 0 var(--active-rose, #FCE7F5);
+    height: 14px;
+    width: 10px;
+    border-radius: 0;
+    cursor: grab;
+}
+
+/* Thumb mientras se arrastra */
+input[type="range"]:active::-webkit-slider-thumb {
+    background: var(--active-rose, #FCE7F5);
+    cursor: grabbing;
+}
+input[type="range"]:active::-moz-range-thumb {
+    background: var(--active-rose, #FCE7F5);
+    cursor: grabbing;
+}
+
+/* Slider deshabilitado */
+input[type="range"]:disabled::-webkit-slider-thumb {
+    background: var(--inactive-bg, #E8DEEB);
+    cursor: not-allowed;
+}
+input[type="range"]:disabled::-moz-range-thumb {
+    background: var(--inactive-bg, #E8DEEB);
+    cursor: not-allowed;
+}
+input[type="range"]:disabled::-webkit-slider-runnable-track {
+    background: var(--inactive-bg, #E8DEEB);
+}
+input[type="range"]:disabled::-moz-range-track {
+    background: var(--inactive-bg, #E8DEEB);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   LINKS (a) — kawaii color + underline limpio
+   ════════════════════════════════════════════════════════════════════
+   98.css los pone en azul Win98 #00f con outline punteado azul al
+   focus. Lo cambiamos por la paleta lila/morada + underline más sutil.
+
+   Aplicamos a CUALQUIER <a> en general. Excluimos `.button` (anchors
+   estilizados como botón) y `.title-bar-text a` (rara vez relevante).
+
+   Mantenemos `text-decoration: underline` para que sigan siendo
+   reconocibles como link, pero con color kawaii y estilo solid. */
+a:not(.button):not(.start-app-item) {
+    color: var(--link-text, var(--accent-deep, #CC4499)) !important;     /* rosa accent del kawaii */
+    text-decoration: underline !important;
+    text-decoration-color: var(--link-text, var(--accent-deep, #CC4499)) !important;
+    text-decoration-thickness: 1px !important;
+    text-underline-offset: 2px !important;
+    cursor: pointer;
+    text-shadow: none !important;
+}
+
+/* Hover — más oscuro + underline más grueso */
+a:not(.button):not(.start-app-item):hover {
+    color: var(--accent-darker, #A02E7D) !important;                        /* rosa más oscuro */
+    text-decoration-color: var(--accent-darker, #A02E7D) !important;
+    text-decoration-thickness: 2px !important;
+}
+
+/* Visited — un tono más muted (opcional, suave indicador) */
+a:not(.button):not(.start-app-item):visited {
+    color: var(--accent-medium, #8B4A8B) !important;                        /* lila-rosa apagado */
+    text-decoration-color: var(--accent-medium, #8B4A8B) !important;
+}
+a:not(.button):not(.start-app-item):visited:hover {
+    color: var(--link-hover, #6B3A6B) !important;
+    text-decoration-color: var(--link-hover, #6B3A6B) !important;
+}
+
+/* Active (mientras hace click) — feedback inmediato */
+a:not(.button):not(.start-app-item):active {
+    color: var(--link-hover, #6B3A6B) !important;
+    text-decoration-color: var(--link-hover, #6B3A6B) !important;
+}
+
+/* Focus visible — outline lila sutil en vez del azul punteado de 98.css */
+a:not(.button):not(.start-app-item):focus-visible {
+    outline: 2px dotted var(--border) !important;
+    outline-offset: 2px !important;
+}
+a:not(.button):not(.start-app-item):focus:not(:focus-visible) {
+    outline: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   START MENU — kawaii flat (aplana el bezel Win98)
+   ════════════════════════════════════════════════════════════════════
+   Estructura:
+     #start-menu
+       #start-menu-inner (flex row)
+         #start-sidebar       — banda vertical "MelonOS 98"
+         #start-menu-items    — lista de items
+           .menu-item         — cada link
+           .menu-sep          — separador */
+
+#start-menu {
+    background: var(--win-bg) !important;        /* lavanda como windows */
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--border) 20%, transparent) !important;  /* drop shadow sutil */
+    border-radius: 0 !important;
+    width: 200px !important;                      /* un poco más ancho */
+    bottom: 30px !important;                      /* match nueva altura del taskbar */
+    left: 4px !important;
+}
+
+/* Sidebar vertical — gradiente del title-bar style + texto destacado
+   con override de la frase a "Overdose" en kawaii.
+   Antes: usábamos `font-size:0` sobre el texto inline "MelonOS 98" +
+   ::before con "Overdose" encima. Cuando el menú crecía vertical
+   (muchos items), algunos motores no aplicaban el font-size:0 al text
+   node y "MelonOS 98" aparecía en pequeño junto al texto nuevo.
+   Ahora: matamos el texto original a fondo (transparente + clip +
+   indent) y montamos el ::before como capa ABSOLUTA centrada sobre
+   todo el sidebar. Así no importa cuán alto sea el menú: el contenido
+   visible es solo "Overdose". */
+#start-sidebar {
+    position: relative !important;
+    overflow: hidden !important;
+    background: linear-gradient(to top, var(--border), var(--disabled-text, #7A6BA8)) !important;
+    /* Matar el texto inline original. */
+    color: transparent !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    text-indent: -9999px !important;
+    text-shadow: none !important;
+    width: 28px !important;
+    padding: 8px 4px !important;
+}
+
+#start-sidebar::before {
+    content: "Overdose";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    /* Anclar el texto al FONDO visual del sidebar — con el
+       `transform: rotate(180deg)` del padre + `writing-mode: vertical-rl`
+       en este flex, el main axis va top→bottom en coordenadas
+       pre-rotación, así que `justify-content: flex-start` cae en el
+       extremo que tras la rotación queda abajo. Si el menú crece (más
+       items), el texto se queda anclado abajo en lugar de subir. */
+    justify-content: flex-start;
+    padding-block-start: 12px !important;
+    /* Hereda writing-mode:vertical-rl + transform:rotate(180deg) del
+       parent — pero al ser un pseudo absoluto rota junto al sidebar
+       mostrando el texto vertical correcto. */
+    text-indent: 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 700 !important;
+    font-style: normal !important;
+    letter-spacing: 1.5px !important;
+    color: var(--accent-text, #FFFFFF) !important;
+    text-shadow: 1px 1px 0 var(--shadow-color, #2D2052) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   START ICON — kawaii cat face en lugar de las 4 cuadrículas Win98
+   ════════════════════════════════════════════════════════════════════
+   El #start-btn tiene un .win-logo con 4 spans coloreados (rojo,
+   verde, azul, amarillo) emulando el logo de Win98. En kawaii los
+   ocultamos y mostramos start-icon.svg en su lugar.
+
+   Cuando se cambia a MelonOS 98 esta CSS no se carga → vuelven las
+   4 cuadrículas. Para añadir icono a otra interfaz futura: crear
+   start-icon.svg en su carpeta y replicar estas reglas. */
+#start-btn .win-logo > span {
+    display: none !important;
+}
+
+#start-btn .win-logo {
+    background-image: url('start-icon.svg') !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    /* Match el tamaño que ya tiene (16x16) pero asegurar */
+    width: 16px !important;
+    height: 16px !important;
+    image-rendering: pixelated;
+}
+
+#start-menu-items {
+    padding: 4px 0 !important;
+}
+
+/* Menu items — texto kawaii, hover azul claro como buttons */
+.menu-item {
+    background: transparent !important;
+    color: var(--text) !important;
+    font-size: 14px !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', Arial, sans-serif !important;
+    text-decoration: none !important;
+    padding: 6px 12px !important;
+    text-shadow: none !important;
+    cursor: pointer !important;
+    border-radius: 0 !important;
+}
+
+.menu-item:hover {
+    background: var(--hover-bg, #CCE7F7) !important;              /* azul claro como buttons */
+    color: var(--text) !important;
+    text-decoration: none !important;
+}
+
+.menu-item:active {
+    background: var(--button-blue, #7DB8DC) !important;              /* azul medio (pressed) */
+}
+
+/* Separador — línea fina lila plana, sin la sombra blanca del 98.css */
+.menu-sep {
+    height: 1px !important;
+    background: var(--border) !important;
+    box-shadow: none !important;
+    opacity: 0.5;
+    margin: 4px 6px !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TEXTBOXES DE LAS HOJAS DEL DnD — NO TOCAR
+   ════════════════════════════════════════════════════════════════════
+   El usuario explícitamente pidió que las textboxes del INTERIOR de
+   las hojas del DnD queden EXACTAMENTE IGUAL que en MelonOS 98.
+
+   En MelonOS 98:
+     · dnd.php inline CSS define el look (bg semi-transparente,
+       border sutil, padding mínimo, etc.)
+     · JS aplica `el.style.fontFamily` per-field según el PDF
+       annotation, fallback a SHEETS[sheet].defaultFont (Helvetica
+       para oficial, Allison para melon)
+     · JS aplica también `el.style.fontSize`, `fontWeight`, etc.
+
+   El problema en kawaii era que mi regla global de fuente tenía:
+     `input, textarea, select { font-family: Pixelify Sans !important }`
+   Y mi !important ganaba sobre el JS inline (sin !important) →
+   forzaba Pixelify Sans en todos los campos del PDF.
+
+   Solución: la regla global ahora EXCLUYE descendientes de
+   .pdf-form-layer usando `:not(.pdf-form-layer *)`. Ver línea 24.
+
+   Con esto, los inputs/textareas/selects dentro del PDF form layer
+   reciben los estilos NATIVOS de dnd.php + JS — exactamente igual
+   que en MelonOS 98. */
+
+/* NOTA: Los overrides para la pantalla del password del login viven en
+   un archivo SEPARADO: assets/interfaces/kawaii/login.css. Ese archivo
+   contiene SOLO reglas scoped a #userPreview y se carga dinámicamente
+   desde index.php (via JS applyUserInterfaceLogin) sin tocar nada más
+   del shell ni del selector de usuarios. */
+
+/* ════════════════════════════════════════════════════════════════════
+   MODAL "AYUDA" DE LA TIENDA — estilo Needy Streamer Overload
+   ────────────────────────────────────────────────────────────────────
+   Las clases .th-help-* viven dentro del iframe de tienda.php; éste
+   carga assets/interfaces/kawaii/style.css cuando la interfaz activa
+   es kawaii, así que estos overrides aplican solo a usuarias de
+   MelonOS Overdose. Sustituyen el look bezel 3D de la versión win98
+   por flat rosa con borde dark-purple y acentos #FF66B2.
+   ════════════════════════════════════════════════════════════════════ */
+.th-help-body {
+    background: var(--win-body-bg, #F0E8F3) !important;
+    color: var(--text, #472CC7) !important;
+    font-family: "ms_sans_serif", sans-serif;
+}
+.th-help-intro {
+    background: #FFE3F1 !important;
+    border: 2px solid var(--border, #49388B) !important;
+    box-shadow: 3px 3px 0 0 var(--accent, #FF66B2) !important;
+    border-radius: 0 !important;
+    padding: 10px 12px !important;
+}
+.th-help-item {
+    background: #FFF !important;
+    border: 2px solid var(--border, #49388B) !important;
+    box-shadow: 3px 3px 0 0 var(--accent, #FF66B2) !important;
+    border-radius: 0 !important;
+    padding: 12px !important;
+    position: relative;
+}
+.th-help-item::before {
+    /* Estrellita rosa en la esquina — guiño NSO. */
+    content: "✦";
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    color: var(--accent, #FF66B2);
+    background: var(--win-body-bg, #F0E8F3);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.th-help-icon {
+    background: var(--accent, #FF66B2);
+    color: var(--accent-text, #fff);
+    border: 2px solid var(--border, #49388B);
+    border-radius: 50%;
+    width: 38px !important;
+    height: 38px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px !important;
+}
+.th-help-item strong {
+    color: var(--text, #472CC7) !important;
+    font-family: "Pixelify Sans", "ms_sans_serif", sans-serif;
+    letter-spacing: 0.5px;
+}
+.th-help-amt {
+    background: var(--accent, #FF66B2) !important;
+    color: var(--accent-text, #fff) !important;
+    border: 1.5px solid var(--border, #49388B);
+    border-radius: 999px !important;
+    padding: 2px 9px !important;
+    font-family: "Pixelify Sans", "ms_sans_serif", sans-serif;
+    letter-spacing: 0.5px;
+}
+.th-help-sub {
+    color: var(--text-muted, #6B5BA8) !important;
+}
+.th-help-foot {
+    border-top: 1px dashed var(--accent, #FF66B2) !important;
+    color: var(--text-muted, #6B5BA8) !important;
+    font-style: italic;
+}
+.th-help-foot strong { color: var(--accent-deep, #CC4499) !important; }
+

@@ -1,0 +1,104 @@
+/* =========================================================
+   PALETA / TOKENS
+   ---------------------------------------------------------
+   Sistema de tokens semánticos. Los valores por defecto
+   reproducen el aspecto Win98 clásico. themes.css redefine
+   estas variables para body.capi / body.angie / body.user1 /
+   body.user2, y la app de Temas genera bloques equivalentes
+   para los temas personalizados del usuario.
+
+   Reglas de uso:
+   - Todo el CSS de las apps debe usar var(--token, fallback)
+     en lugar de literales hex para colores que cambien con
+     el tema.
+   - Si un valor NO cambia entre temas (constantes como
+     errores, estrellas), usar las variables --c-*.
+========================================================= */
+
+:root {
+    /* ──────── Superficies ──────── */
+    --win-bg:              #c0c0c0;   /* Fondo de ventanas / paneles */
+    --win-body-bg:         #c0c0c0;   /* Fondo de window-body (puede diferir en capi) */
+    --surface-deep:        #c0c0c0;   /* Fondo del taskbar / system-tray / paneles oscuros */
+    --inset-bg:            #808080;   /* Fondo de superficies hundidas (placeholders, slot body) */
+
+    /* ──────── Inputs ──────── */
+    --input-bg:            #ffffff;
+    --input-text:          #000000;
+
+    /* ──────── Botones ──────── */
+    --btn-bg:              #c0c0c0;
+    --btn-text:            #000000;
+    --start-btn-bg:        #c0c0c0;   /* botón Inicio del taskbar (puede divergir) */
+    --start-btn-text:      #000000;
+
+    /* ──────── Texto ──────── */
+    --text:                #000000;   /* texto principal */
+    --text-muted:          #666666;   /* texto secundario */
+    --text-faint:          #808080;   /* texto terciario / metadata */
+    --text-inset:          #808080;   /* texto sobre fondo hundido */
+
+    /* ──────── Acento / barra de título ──────── */
+    --titlebar-start:      #000080;
+    --titlebar-end:        #1084d0;
+    --titlebar-text:       #ffffff;
+    --titlebar-icon-color:       #000000;   /* color del dibujo del icono close/minimize/maximize */
+    --titlebar-icon-bg:          #c0c0c0;   /* fondo del botón del icono */
+    --titlebar-icon-bezel-light: #ffffff;   /* borde 3D claro (top-left) del icono */
+    --titlebar-icon-bezel-dark:  #0a0a0a;   /* borde 3D oscuro (bottom-right) del icono */
+    --accent:              #000080;
+    --accent-text:         #ffffff;
+    --accent-deep:         #00004a;
+
+    /* ──────── Bordes / divisores ──────── */
+    --border:              #808080;
+
+    /* ──────── Bezels Win98 (4 capas) ──────── */
+    --bezel-light-1:       #ffffff;   /* inset  1px  1px */
+    --bezel-light-2:       #dfdfdf;   /* inset  2px  2px */
+    --bezel-dark-1:        #0a0a0a;   /* inset -1px -1px */
+    --bezel-dark-2:        #808080;   /* inset -2px -2px */
+
+    /* ──────── Escritorio ──────── */
+    --desktop-bg:          #008080;   /* fondo teal Win98 (cuando no hay wallpaper) */
+
+    /* ──────── Estados / feedback ──────── */
+    --link-text:           #0000ff;   /* hipervínculos */
+    --error-text:          #c00000;   /* texto de error */
+    --warning-bg:          #fffbe6;   /* fondo de aviso */
+    --warning-text:        #444444;   /* texto de aviso */
+
+    /* ──────── Selección / badges ──────── */
+    --badge-bg:            #d72638;   /* fondo de badges (notificaciones, chat) */
+    --badge-text:          #ffffff;   /* texto sobre badge */
+
+    /* ──────── Decorativos ──────── */
+    --star-color:          #ffd700;   /* color de las estrellas (rating) */
+
+    /* ──────── Overlay sobre imagen ──────── */
+    /* Texto sobre wallpaper / foto del usuario. Por defecto blanco con
+       sombra negra para legibilidad sobre cualquier imagen — los temas
+       pueden cambiarlos si lo prefieren. */
+    --overlay-text:        #ffffff;
+    --overlay-text-shadow: #000000;
+
+    /* ──────── Compat (alias retro-compatibles) ──────── */
+    --w98-bg:              #c0c0c0;
+    --w98-bg-light:        #dfdfdf;
+    --w98-bg-dark:         #808080;
+    --w98-shadow-out:      #0a0a0a;
+    --w98-shadow-in:       #ffffff;
+    --t-bg:                var(--win-bg);
+    --t-bg-alt:            var(--win-body-bg);
+    --t-text:              var(--text);
+    --t-text-muted:        var(--text-muted);
+    --t-accent:            var(--accent);
+    --t-accent-text:       var(--accent-text);
+    --t-border:            var(--border);
+
+    /* ──────── Constantes (alias retro-compat — ahora variables editables) ──────── */
+    --c-error:             var(--error-text);
+    --c-warning-bg:        var(--warning-bg);
+    --c-warning-text:      var(--warning-text);
+    --c-star:              var(--star-color);
+}

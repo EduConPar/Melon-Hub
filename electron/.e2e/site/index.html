@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Melon Hub (prueba)</title>
+<link rel="stylesheet" href="assets/css/98.css"><link rel="stylesheet" id="theme" href="theme.css"></head>
+<body><h1>Ventana principal falsa</h1><script>
+const st = { hasTrack: true, videoId: 'abc', title: 'Kill Or Be Killed', artist: 'Muse', cover: new URL('cover.jpg', location.href).href,
+             playlist: 'Playlist para bombardear peru', playlistId: 7, trackIndex: 0, playing: true, position: 30, duration: 300, shuffle: false, ltRole: null, volume: 40 };
+localStorage.setItem('iconPack:win98', 'Oscuro');
+window.__fontScaleDelta = 2; window.getFontScaleDelta = () => window.__fontScaleDelta;
+setInterval(() => { if (st.playing) st.position += 0.5; melonDesktop.setNowPlaying(st); }, 500);
+melonDesktop.onPlayerCommand((a, v) => {
+  console.log('ORDEN ' + a + (v !== undefined ? ' ' + JSON.stringify(v) : ''));
+  if (a === 'pause') st.playing = false;
+  if (a === 'toggle') st.playing = !st.playing;
+  if (a === 'seekto') st.position = v;
+  if (a === 'shuffle') st.shuffle = !st.shuffle;
+  if (a === 'volume') st.volume = v;
+});
+</script></body></html>

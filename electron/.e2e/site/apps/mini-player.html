@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<!--
+    REPRODUCTOR FLOTANTE de la app de escritorio (electron/mini-player.js).
+    Reproductor vertical en una ventana Win98: carátula, título y artista,
+    progreso y la fila letra · anterior · play/pausa · siguiente · aleatorio.
+    Dos paneles que ocupan su sitio: playlists (≡+) y letra (🎤). El clic
+    derecho tiene las mismas opciones que el del reproductor del escritorio.
+
+    No reproduce nada: la música sigue en la ventana principal, escondida.
+    Esta solo enseña lo que suena (window.melonDesktop.mini.onState) y le
+    manda los botones (mini.command → apps/reproductor.php). Las playlists
+    y la letra las pide a la API como el reproductor del escritorio.
+    El tema y la interfaz (Win98 / Melon Kawaii) los copia de la ventana
+    principal al abrirse (mini.onLook): todo el CSS de aquí usa sus tokens.
+-->
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Melon Hub</title>
+    <base href="../">
+    <link rel="stylesheet" href="assets/css/98.css">
+    <link rel="stylesheet" href="assets/css/tokens.css">
+    <script src="assets/js/icon-pack.js"></script>
+    <!-- Va siempre la última: el CSS del escritorio que se copia de la
+         ventana principal se inserta delante. -->
+    <style id="mini-overrides">
+        html, body { margin: 0; padding: 0; background: none !important; overflow: hidden; }
+        #mp { position: static; margin: 0; width: 300px; }
+        #mp .title-bar { -webkit-app-region: drag; user-select: none; }
+        #mp .title-bar button { -webkit-app-region: no-drag; }
+        #mp .title-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        #mp-body { padding: 8px; }
+        /* Solo los del cuerpo: los de la barra de título no tienen otro
+           tamaño que el mínimo de 98.css. */
+        #mp-body button { min-width: 0; min-height: 0; }
+
+        /* Las tres vistas ocupan el mismo sitio: el reproductor marca el
+           tamaño y los paneles lo cubren por encima. */
+        .mp-views { position: relative; }
+        .mp-view { display: flex; flex-direction: column; }
+        .mp-view:not(.active) { visibility: hidden; }
+        .mp-panel { position: absolute; inset: 0; }
+
+        /* ── Reproductor ── */
+        .mp-cover {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: var(--inset-bg);
+            box-shadow:
+                -1px -1px 0 var(--bezel-dark-1),  1px  1px 0 var(--bezel-light-1),
+                -2px -2px 0 var(--bezel-dark-2),  2px  2px 0 var(--bezel-light-2);
+            overflow: hidden;
+        }
+        .mp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .mp-info { position: relative; margin: 12px 0 8px; padding: 0 30px; text-align: center; }
+        .mp-title-box { overflow: hidden; white-space: nowrap; }
+        #mp-song { display: inline-block; font-weight: bold; color: var(--text); margin: 0; }
+        #mp-artist { margin: 3px 0 0; font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        #mp-lists-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 24px; height: 22px; padding: 0; font-size: 11px; }
+
+        #mp-progress {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 14px;
+            margin: 0;
+            padding: 0;
+            display: block;
+            background: linear-gradient(to right, var(--accent) var(--p, 0%), var(--input-bg) var(--p, 0%));
+            box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1),
+                        inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2);
+            outline: none;
+        }
+        #mp-progress::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 11px;
+            height: 20px;
+            background: var(--btn-bg);
+            box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2);
+        }
+        .mp-time { display: flex; justify-content: space-between; margin: 4px 0 10px; font-size: 10px; color: var(--text); }
+
+        .mp-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .mp-controls .button { width: 34px; height: 26px; padding: 0; font-size: 10px; }
+        .mp-controls #mp-play { width: 48px; height: 38px; }
+        /* 98.css pinta el texto de los botones con color transparente y
+           sombra; los iconos van con el color de texto del tema. */
+        .mp-controls svg { display: block; margin: auto; fill: var(--btn-text); shape-rendering: crispEdges; }
+        .mp-controls svg.mp-stroke { fill: none; stroke: var(--btn-text); shape-rendering: auto; }
+        /* Volumen: la barra deslizante Win98 de 98.css (o la de la interfaz). */
+        .mp-volume { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+        #mp-vol-icon { width: 26px; flex-shrink: 0; font-size: 11px; color: var(--text); white-space: nowrap; }
+        #mp-volume { flex: 1; min-width: 0; margin: 0; }
+
+        /* ── Paneles (playlists y letra) ── */
+        .mp-panel-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .mp-panel-head .button { padding: 0 8px; height: 22px; }
+        .mp-panel-title { flex: 1; font-weight: bold; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .mp-box {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            background: var(--input-bg);
+            color: var(--input-text);
+            box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1),
+                        inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2);
+            padding: 3px;
+        }
+        .mp-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: default; }
+        .mp-row:hover, .mp-row.current { background: var(--accent); color: var(--accent-text); }
+        .mp-row-main { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .mp-row-sub { opacity: 0.7; font-size: 10px; }
+        .mp-row .button { width: 20px; height: 18px; padding: 0; font-size: 11px; flex-shrink: 0; }
+        .mp-msg { padding: 8px; text-align: center; color: var(--text-muted); }
+        .mp-lyric { padding: 3px 6px; text-align: center; color: var(--text-muted); }
+        .mp-lyric.active { color: var(--accent); font-weight: bold; }
+        .mp-lyrics-plain { padding: 4px 6px; text-align: center; white-space: pre-line; }
+
+        /* ── Menú del clic derecho ── */
+        #mp-menu {
+            position: fixed;
+            display: none;
+            z-index: 10;
+            min-width: 170px;
+            padding: 2px;
+            background: var(--win-bg);
+            box-shadow: inset -1px -1px var(--bezel-dark-2), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-1), inset 2px 2px var(--bezel-light-2);
+        }
+        .mp-menu-item { padding: 4px 16px 4px 8px; white-space: nowrap; color: var(--text); }
+        .mp-menu-item:hover { background: var(--accent); color: var(--accent-text); }
+        .mp-menu-item.disabled { opacity: 0.5; pointer-events: none; }
+    </style>
+</head>
+<body>
+<div class="window" id="mp">
+    <div class="title-bar">
+        <div class="title-bar-text"><img src="assets/img/appIcons/musicaIcon.png" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;" alt=""><span id="mp-window-title">Reproductor</span></div>
+        <div class="title-bar-controls">
+            <button aria-label="Minimize" id="mp-min" title="Minimizar"></button>
+            <button aria-label="Maximize" id="mp-open" title="Abrir Melon Hub"></button>
+            <button aria-label="Close" id="mp-close" title="Cerrar el reproductor"></button>
+        </div>
+    </div>
+    <div class="window-body" id="mp-body">
+        <div class="mp-views">
+            <!-- Reproductor -->
+            <div class="mp-view active" id="mp-player">
+                <div class="mp-cover"><img id="mp-cover" src="" alt=""></div>
+                <div class="mp-info">
+                    <div class="mp-title-box"><p id="mp-song">Sin título</p></div>
+                    <p id="mp-artist">—</p>
+                    <button class="button" id="mp-lists-btn" title="Playlists">≡</button>
+                </div>
+                <input type="range" id="mp-progress" min="0" max="100" value="0" step="0.1">
+                <div class="mp-time"><span id="mp-current">0:00</span><span id="mp-duration">0:00</span></div>
+                <div class="mp-controls">
+                    <button class="button" id="mp-lyrics-btn" title="Letra"><svg class="mp-stroke" viewBox="0 0 24 24" width="13" height="13" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
+                    <button class="button" id="mp-prev" title="Anterior"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="2" y="3" width="2" height="10"/><polygon points="13,3 13,13 5,8"/></svg></button>
+                    <button class="button" id="mp-play" title="Reproducir / pausar"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><polygon points="4,2 4,14 13,8"/></svg></button>
+                    <button class="button" id="mp-next" title="Siguiente"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><polygon points="3,3 3,13 11,8"/><rect x="12" y="3" width="2" height="10"/></svg></button>
+                    <button class="button" id="mp-shuffle" title="Reproducción aleatoria">⇄</button>
+                </div>
+                <div class="mp-volume">
+                    <span id="mp-vol-icon">◄))</span>
+                    <input type="range" id="mp-volume" min="0" max="100" step="1" value="100" title="Volumen">
+                </div>
+            </div>
+            <!-- Playlists: lista de playlists → canciones de una -->
+            <div class="mp-view mp-panel" id="mp-lists">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lists-back">◄ Volver</button>
+                    <span class="mp-panel-title" id="mp-lists-title">Playlists</span>
+                </div>
+                <div class="mp-box" id="mp-lists-box"></div>
+            </div>
+            <!-- Letra -->
+            <div class="mp-view mp-panel" id="mp-lyrics">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lyrics-back">◄ Volver</button>
+                    <span class="mp-panel-title">Letra</span>
+                </div>
+                <div class="mp-box" id="mp-lyrics-box"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="mp-menu"></div>
+<script>
+(function() {
+    var md = window.melonDesktop;
+    if (!md || !md.mini) return;   /* solo tiene sentido dentro de la app */
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function fmt(s) {
+        s = Math.max(0, Math.floor(s || 0));
+        return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }
+    var cmd = md.mini.command;
+    var state = {};
+    var ICON_PLAY  = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><polygon points="4,2 4,14 13,8"/></svg>';
+    var ICON_PAUSE = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3" y="2" width="4" height="12"/><rect x="9" y="2" width="4" height="12"/></svg>';
+
+    /* ── Vistas ── */
+    var view = 'player';
+    function show(name) {
+        view = name;
+        ['player', 'lists', 'lyrics'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
+        $('mp-lyrics-btn').classList.toggle('btn-active', name === 'lyrics');
+        if (name === 'lists') openPlaylists();
+        if (name === 'lyrics') loadLyrics();
+    }
+
+    /* ── La ventana se ajusta a la ventana Win98 dibujada ── */
+    function fit() {
+        requestAnimationFrame(function() {
+            var r = $('mp').getBoundingClientRect();
+            md.mini.fit(Math.ceil(r.width), Math.ceil(r.height));
+        });
+    }
+
+    /* Mismo desplazamiento del título largo que el reproductor del
+       escritorio (marqueeScroll de apps/reproductor.php). */
+    function marqueeScroll(el, parent, speed, pauseMs) {
+        el.style.transform = 'translateX(0)';
+        var pos = 0, last = null, fromRight = false, raf = null, timer = null;
+        var W = el.offsetWidth, C = parent.clientWidth;
+        if (W <= C) return function() {};
+        function tick(ts) {
+            if (!last) last = ts;
+            var dt = Math.min(ts - last, 50);
+            last = ts;
+            pos -= speed * dt / 1000;
+            if (pos < -W) { pos = C + (pos + W); fromRight = true; }
+            if (fromRight && pos <= 0) {
+                pos = 0; fromRight = false;
+                el.style.transform = 'translateX(0)';
+                last = null;
+                timer = setTimeout(function() { raf = requestAnimationFrame(tick); }, pauseMs);
+                return;
+            }
+            el.style.transform = 'translateX(' + pos + 'px)';
+            raf = requestAnimationFrame(tick);
+        }
+        timer = setTimeout(function() { raf = requestAnimationFrame(tick); }, pauseMs);
+        return function() { clearTimeout(timer); if (raf) cancelAnimationFrame(raf); el.style.transform = ''; };
+    }
+
+    /* Carátula grande: las miniaturas de YouTube del reproductor son de
+       320×180; se pide la de 1280×720 y, si el vídeo no la tiene, la otra. */
+    function bigCover(src) {
+        return String(src || '').replace(/\/(mq|hq|sd)default\.jpg/, '/maxresdefault.jpg');
+    }
+    $('mp-cover').addEventListener('error', function() {
+        if (this.dataset.fallback && this.src !== this.dataset.fallback) this.src = this.dataset.fallback;
+    });
+
+    /* ── Estado que manda el reproductor ── */
+    var duration = 0, seeking = false, lastTitle = null, lastCover = '', lastVideo = '', stopMarquee = null;
+    function render(s) {
+        if (!s) return;
+        state = s;
+        $('mp-window-title').textContent = s.playlist || 'Reproductor';
+        var title = s.hasTrack ? (s.title || 'Sin título') : 'Sin título';
+        if (title !== lastTitle) {
+            lastTitle = title;
+            $('mp-song').textContent = title;
+            if (stopMarquee) { stopMarquee(); stopMarquee = null; }
+            setTimeout(function() { stopMarquee = marqueeScroll($('mp-song'), $('mp-song').parentElement, 50, 1000); }, 50);
+        }
+        $('mp-artist').textContent = s.artist || '—';
+        if (s.cover && s.cover !== lastCover) {
+            lastCover = s.cover;
+            $('mp-cover').dataset.fallback = s.cover;
+            $('mp-cover').src = bigCover(s.cover);
+        }
+        $('mp-play').innerHTML = s.playing ? ICON_PAUSE : ICON_PLAY;
+        $('mp-shuffle').classList.toggle('btn-active', !!s.shuffle);
+        duration = s.duration || 0;
+        if (!seeking) setProgress(duration > 0 ? (s.position / duration) * 100 : 0);
+        $('mp-current').textContent = fmt(s.position);
+        $('mp-duration').textContent = fmt(duration);
+        if (!draggingVolume && typeof s.volume === 'number') setVolumeUI(s.volume);
+        if (s.videoId !== lastVideo) {
+            lastVideo = s.videoId;
+            lyrics = null;
+            if (view === 'lyrics') loadLyrics();
+            if (view === 'lists' && openPl) renderSongs();
+        }
+        if (view === 'lyrics') highlightLyric();
+    }
+    function setProgress(p) {
+        $('mp-progress').value = p;
+        $('mp-progress').style.setProperty('--p', p + '%');
+    }
+    /* Mismo icono de altavoz que el reproductor del escritorio. */
+    var draggingVolume = false;
+    function setVolumeUI(v) {
+        $('mp-volume').value = v;
+        $('mp-vol-icon').textContent = v === 0 ? '◄✕' : v < 50 ? '◄)' : '◄))';
+    }
+
+    /* ── Botones ── */
+    $('mp-prev').addEventListener('click', function() { cmd('previoustrack'); });
+    $('mp-play').addEventListener('click', function() { cmd('toggle'); });
+    $('mp-next').addEventListener('click', function() { cmd('nexttrack'); });
+    $('mp-shuffle').addEventListener('click', function() { cmd('shuffle'); });
+    $('mp-lyrics-btn').addEventListener('click', function() { show(view === 'lyrics' ? 'player' : 'lyrics'); });
+    $('mp-lists-btn').addEventListener('click', function() { show('lists'); });
+    $('mp-lyrics-back').addEventListener('click', function() { show('player'); });
+    $('mp-lists-back').addEventListener('click', function() {
+        if (openPl) { openPl = null; renderPlaylists(); } else show('player');
+    });
+    $('mp-volume').addEventListener('pointerdown', function() { draggingVolume = true; });
+    $('mp-volume').addEventListener('pointerup', function() { draggingVolume = false; });
+    $('mp-volume').addEventListener('input', function() {
+        var v = parseInt(this.value, 10);
+        setVolumeUI(v);
+        cmd('volume', v);
+    });
+    $('mp-progress').addEventListener('input', function() { seeking = true; setProgress(this.value); });
+    $('mp-progress').addEventListener('change', function() {
+        if (duration > 0) cmd('seekto', (this.value / 100) * duration);
+        seeking = false;
+    });
+    $('mp-min').addEventListener('click', function() { md.mini.minimize(); });
+    $('mp-open').addEventListener('click', function() { md.mini.openMain(); });
+    $('mp-close').addEventListener('click', function() { md.mini.close(); });
+
+    /* ── Playlists: las mismas que el reproductor (get-playlists). La fila
+       abre sus canciones; su "+" añade la canción que suena. Elegir una
+       canción la pone a sonar con el resto de la playlist en cola. ── */
+    var playlists = [], openPl = null;
+    function openPlaylists() {
+        openPl = null;
+        $('mp-lists-title').textContent = 'Playlists';
+        $('mp-lists-box').innerHTML = '<div class="mp-msg">Cargando…</div>';
+        fetch('assets/music/api.php?action=get-playlists', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { playlists = Array.isArray(d) ? d : []; renderPlaylists(); })
+            .catch(function() { $('mp-lists-box').innerHTML = '<div class="mp-msg">No se pudieron cargar las playlists.</div>'; });
+    }
+    function renderPlaylists() {
+        $('mp-lists-title').textContent = 'Playlists';
+        var box = $('mp-lists-box');
+        if (!playlists.length) { box.innerHTML = '<div class="mp-msg">No tienes playlists.</div>'; return; }
+        box.innerHTML = '';
+        playlists.forEach(function(pl) {
+            var row = document.createElement('div');
+            row.className = 'mp-row' + (String(pl.id) === String(state.playlistId) ? ' current' : '');
+            row.innerHTML = '<span class="mp-row-main">' + esc(pl.name) + ' <span class="mp-row-sub">· ' + (pl.tracks || []).length + '</span></span>';
+            var add = document.createElement('button');
+            add.className = 'button';
+            add.textContent = '+';
+            add.title = state.hasTrack ? 'Añadir «' + state.title + '» a esta playlist' : 'No suena nada';
+            add.disabled = !state.hasTrack;
+            add.addEventListener('click', function(e) {
+                e.stopPropagation();
+                cmd('add-to-playlist', pl.id);
+                add.textContent = '✓';
+                setTimeout(openPlaylists, 1200);
+            });
+            row.appendChild(add);
+            row.addEventListener('click', function() { openPl = pl; renderSongs(); });
+            box.appendChild(row);
+        });
+    }
+    function renderSongs() {
+        var pl = openPl;
+        $('mp-lists-title').textContent = pl.name;
+        var box = $('mp-lists-box');
+        var tracks = pl.tracks || [];
+        if (!tracks.length) { box.innerHTML = '<div class="mp-msg">Esta playlist está vacía.</div>'; return; }
+        box.innerHTML = '';
+        var samePl = String(pl.id) === String(state.playlistId);
+        tracks.forEach(function(t, i) {
+            var row = document.createElement('div');
+            row.className = 'mp-row' + (samePl && i === state.trackIndex ? ' current' : '');
+            row.innerHTML = '<span class="mp-row-sub">' + (i + 1) + '</span><span class="mp-row-main">' + esc(t.title) +
+                (t.artist ? ' <span class="mp-row-sub">· ' + esc(t.artist) + '</span>' : '') + '</span>';
+            row.addEventListener('click', function() {
+                cmd('play-playlist', { playlistId: pl.id, index: i });
+                show('player');
+            });
+            box.appendChild(row);
+        });
+    }
+
+    /* ── Letra: la misma API que el reproductor (get-lyrics). Si viene
+       sincronizada (LRC), se resalta la línea que suena. ── */
+    var lyrics = null;   /* { lines: [{t, text}] } | { plain } | { msg } */
+    function parseLRC(lrc) {
+        var out = [];
+        String(lrc || '').split('\n').forEach(function(line) {
+            var re = /\[(\d+):(\d+(?:\.\d+)?)\]/g, m, times = [];
+            while ((m = re.exec(line))) times.push(parseInt(m[1], 10) * 60 + parseFloat(m[2]));
+            var text = line.replace(/\[[^\]]*\]/g, '').trim();
+            times.forEach(function(t) { out.push({ t: t, text: text }); });
+        });
+        return out.sort(function(a, b) { return a.t - b.t; });
+    }
+    function loadLyrics() {
+        var box = $('mp-lyrics-box');
+        if (!state.hasTrack) { lyrics = { msg: 'No suena nada.' }; renderLyrics(); return; }
+        if (lyrics && lyrics.video === state.videoId) return;
+        var video = state.videoId;
+        lyrics = { video: video, msg: 'Buscando letra…' };
+        renderLyrics();
+        var qs = new URLSearchParams({ title: state.title || '', artist: state.artist || '', duration: String(Math.floor(state.duration || 0)) });
+        fetch('assets/music/api.php?action=get-lyrics&' + qs.toString(), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (state.videoId !== video) return;   /* cambió la canción mientras tanto */
+                var lines = d && d.synced ? parseLRC(d.synced) : [];
+                if (lines.length) lyrics = { video: video, lines: lines };
+                else if (d && d.plain) lyrics = { video: video, plain: d.plain };
+                else lyrics = { video: video, msg: '🥲 No se encontró letra para esta canción.' };
+                renderLyrics();
+            })
+            .catch(function() { if (state.videoId === video) { lyrics = { video: video, msg: 'Error de red al buscar la letra.' }; renderLyrics(); } });
+        box.scrollTop = 0;
+    }
+    var activeLyric = -1;
+    function renderLyrics() {
+        var box = $('mp-lyrics-box');
+        activeLyric = -1;
+        if (lyrics.lines) {
+            box.innerHTML = lyrics.lines.map(function(l, i) { return '<div class="mp-lyric" data-i="' + i + '">' + (esc(l.text) || '♪') + '</div>'; }).join('');
+            highlightLyric();
+        } else if (lyrics.plain) {
+            box.innerHTML = '<div class="mp-lyrics-plain">' + esc(lyrics.plain) + '</div>';
+        } else {
+            box.innerHTML = '<div class="mp-msg">' + esc(lyrics.msg) + '</div>';
+        }
+    }
+    function highlightLyric() {
+        if (!lyrics || !lyrics.lines) return;
+        var pos = state.position || 0, idx = -1;
+        for (var i = 0; i < lyrics.lines.length && lyrics.lines[i].t <= pos + 0.3; i++) idx = i;
+        if (idx === activeLyric) return;
+        var box = $('mp-lyrics-box');
+        var prev = box.querySelector('.mp-lyric.active');
+        if (prev) prev.classList.remove('active');
+        activeLyric = idx;
+        var el = box.querySelector('.mp-lyric[data-i="' + idx + '"]');
+        if (el) {
+            el.classList.add('active');
+            box.scrollTop = el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
+        }
+    }
+
+    /* ── Clic derecho: las mismas opciones que el reproductor del
+       escritorio (showTrackCtxMenu de apps/reproductor.php). ── */
+    var menu = $('mp-menu');
+    function menuItem(html, onClick, disabled) {
+        var it = document.createElement('div');
+        it.className = 'mp-menu-item' + (disabled ? ' disabled' : '');
+        it.innerHTML = html;
+        it.addEventListener('click', function() { hideMenu(); onClick(); });
+        menu.appendChild(it);
+    }
+    function hideMenu() { menu.style.display = 'none'; }
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        menu.innerHTML = '';
+        var noTrack = !state.hasTrack;
+        menuItem('➕ Añadir', function() { show('lists'); }, noTrack);
+        menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
+                 function() { cmd('fix'); }, noTrack);
+        menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
+        var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
+               : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
+               : '🎧 Escuchar juntos…';
+        menuItem(lt, function() { cmd('listen-together'); });
+        if (state.ltRole) menuItem('✕ Salir de la sesión', function() { cmd('leave-session'); });
+        menu.style.display = 'block';
+        var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 2);
+        var y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 2);
+        menu.style.left = Math.max(2, x) + 'px';
+        menu.style.top = Math.max(2, y) + 'px';
+    });
+    document.addEventListener('click', function(e) { if (!menu.contains(e.target)) hideMenu(); });
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        if (menu.style.display === 'block') hideMenu();
+        else if (view !== 'player') show('player');
+    });
+
+    /* ── Aspecto del usuario, copiado de la ventana principal: CSS del
+       tema y la interfaz (delante de los overrides de esta página),
+       clases y tamaño de letra del tema. Los iconos ya salen con su pack:
+       icon-pack.js lee la misma cookie y localStorage que el escritorio.
+       La ventana no se enseña (fit) hasta tener todo aplicado. ── */
+    var lookApplied = false, shown = false;
+    function applyLook(look) {
+        if (!look || lookApplied) return;
+        lookApplied = true;
+        var overrides = $('mini-overrides');
+        var pending = (look.css || []).length;
+        /* Las fuentes de la interfaz (la pixel de Kawaii viene de Google
+           Fonts) llegan después del CSS: se mide cuando ya están. */
+        function ready() { document.fonts.ready.then(function() { shown = true; fit(); }); }
+        function done() {
+            if (--pending > 0) return;
+            if (look.fontScaleDelta) {
+                window.__fontScaleDelta = look.fontScaleDelta;
+                var s = document.createElement('script');
+                s.src = 'assets/js/font-scale.js';
+                s.onload = s.onerror = ready;
+                document.head.appendChild(s);
+            } else {
+                ready();
+            }
+        }
+        (look.css || []).forEach(function(href) {
+            var l = document.createElement('link');
+            l.rel = 'stylesheet';
+            l.href = href;
+            l.setAttribute('data-look', '');
+            l.onload = l.onerror = done;
+            overrides.parentNode.insertBefore(l, overrides);
+        });
+        document.documentElement.className = look.htmlClass || '';
+        document.body.className = look.bodyClass || '';
+        if (!pending) { pending = 1; done(); }
+    }
+    /* Si la ventana principal no contestara, se enseña con el aspecto base. */
+    setTimeout(function() { if (!lookApplied) { shown = true; fit(); } }, 2500);
+    /* Lo que cambie el tamaño después de enseñarse (una fuente que llega
+       tarde, las pasadas del escalado de letra…) reajusta la ventana. */
+    new ResizeObserver(function() { if (shown) fit(); }).observe($('mp'));
+
+    md.mini.onLook(applyLook);
+    md.mini.onState(render);
+})();
+</script>
+</body>
+</html>

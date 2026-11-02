@@ -1,0 +1,162 @@
+/* ──────────────────────────────────────────────────────────────────────
+   KAWAII — login.css
+   ──────────────────────────────────────────────────────────────────────
+   Estilo del password screen del login para usuarios con melonkawaii.
+   Inspirado en la estética kawaii del escritorio (paleta pastel
+   lila/rosa, font pixel, bordes 2px lila, accents rosa).
+
+   Solo afecta #userPreview + #loginWindow. El resto del body queda
+   intocado (selector de usuarios sigue Win98).
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Fuente kawaii — Pixelify Sans para look pixel coherente con la
+   interfaz kawaii del escritorio. */
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap');
+
+/* Defaults kawaii — paleta lila/rosa que aplica si el user no tiene
+   tema activo para kawaii. Si tiene tema, body.<theme> gana (0,1,1) > :root (0,1,0). */
+:root {
+    --win-bg:           #E0D4E7;
+    --win-body-bg:      #F0E8F3;
+    --border:           #49388B;
+    --text:             #472CC7;
+    --text-muted:       #6B5BA8;
+    --text-faint:       #9B7DAF;
+    --input-bg:         #FFFFFF;
+    --input-text:       #472CC7;
+    --inset-bg:         #FFFFFF;
+    --accent:           #FF66B2;
+    --accent-text:      #FFFFFF;
+    --accent-deep:      #CC4499;
+    --titlebar-text:    #FFFFFF;
+    --hover-bg:         #CCE7F7;
+    --active-rose:      #FCE7F5;
+}
+
+/* ════ Window box (ambas ventanas) ════
+   Bordes 2px lila + sombra suave tintada lila. Sin border-radius
+   (la interfaz kawaii del escritorio también es flat rect). */
+body #userPreview .window,
+body #loginWindow {
+    background: var(--win-body-bg) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow:
+        0 4px 12px color-mix(in srgb, var(--border) 25%, transparent),
+        0 8px 24px color-mix(in srgb, var(--border) 15%, transparent) !important;
+    border-radius: 0 !important;
+}
+
+/* ════ Title-bar ════
+   Lila sólido + texto blanco bold + Pixelify Sans. */
+body #userPreview .window > .title-bar,
+body #loginWindow > .title-bar {
+    background: var(--border) !important;
+    color: var(--titlebar-text) !important;
+    border: none !important;
+    border-bottom: 2px solid var(--accent) !important;   /* línea rosa de acento */
+    text-shadow: none !important;
+    padding: 4px 8px !important;
+    min-height: 22px !important;
+}
+body #userPreview .window > .title-bar .title-bar-text,
+body #loginWindow > .title-bar .title-bar-text {
+    color: var(--titlebar-text) !important;
+    font-family: 'Pixelify Sans', 'Pixelated MS Sans Serif', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    letter-spacing: 0 !important;
+}
+
+/* ════ Window body — bg lighter + padding compacto ════
+   Reducido para que #loginWindow no sobrepase la altura de #userPreview
+   (140-160px). El padding ajustado mantiene legibilidad sin desbordar. */
+body #userPreview .window > .window-body,
+body #loginWindow > .window-body {
+    background: var(--win-body-bg) !important;
+    color: var(--text) !important;
+    padding: 6px 10px 8px !important;
+    font-family: 'Pixelify Sans', sans-serif !important;
+    margin: 0 !important;
+}
+/* Compactamos espacios verticales internos del form */
+body #loginWindow .field-row-stacked,
+body #loginWindow .field-row-stacked * + *,
+body #loginWindow .login-actions {
+    margin-top: 4px !important;
+}
+body #loginWindow .login-text {
+    margin: 0 0 4px !important;
+}
+
+/* Avatar del user — marco pixel kawaii */
+body #userPreview img,
+body #userPreview .login-avatar-placeholder {
+    border: 2px solid var(--border) !important;
+    background: var(--inset-bg) !important;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--border) 30%, transparent) !important;
+    object-fit: cover !important;
+}
+
+/* ════ Inputs (password) — flat kawaii con focus rosa ════ */
+body #loginWindow input[type="password"],
+body #loginWindow input[type="text"] {
+    background: var(--input-bg) !important;
+    color: var(--input-text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 2px 6px !important;
+    font-family: 'Pixelify Sans', sans-serif !important;
+    font-size: 13px !important;
+    letter-spacing: 0.5px !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+body #loginWindow input[type="password"]:focus,
+body #loginWindow input[type="text"]:focus {
+    outline: none !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent) !important;
+}
+
+/* ════ Botones del formulario ════
+   Rosa kawaii flat con border lila. Hover: accent-deep. */
+body #loginWindow .login-actions .button,
+body #loginWindow .login-actions input[type="submit"],
+body #loginWindow .login-actions input[type="button"] {
+    background: var(--accent) !important;
+    color: var(--accent-text) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 2px 10px !important;
+    min-height: 22px !important;
+    font-family: 'Pixelify Sans', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.3px !important;
+    transition: background 0.15s ease !important;
+}
+body #loginWindow .login-actions .button:hover,
+body #loginWindow .login-actions input[type="submit"]:hover,
+body #loginWindow .login-actions input[type="button"]:hover {
+    background: var(--accent-deep) !important;
+}
+
+/* ════ Label, párrafos del formulario ════ */
+body #loginWindow label,
+body #loginWindow .login-text,
+body #loginWindow p {
+    color: var(--text) !important;
+    font-family: 'Pixelify Sans', sans-serif !important;
+    font-size: 13px !important;
+    letter-spacing: 0 !important;
+}
+body #loginWindow label {
+    font-weight: 600 !important;
+}
+/* El nombre del user destacado en el "Accediendo como X" */
+body #loginWindow strong#selectedLabel {
+    color: var(--accent-deep) !important;
+    font-family: 'Pixelify Sans', sans-serif !important;
+    font-weight: 700 !important;
+}

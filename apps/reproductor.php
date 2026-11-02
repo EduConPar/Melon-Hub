@@ -1271,15 +1271,22 @@ function syncSystemMedia(isPlaying) {
     if (md && typeof md.setNowPlaying === 'function') {
         var cover = document.getElementById('player-cover');
         var plName = document.getElementById('player-pl-name');
+        var vol = document.getElementById('player-volume');
         md.setNowPlaying({
-            hasTrack: !!(tr && tr.videoId),
-            title:    tr ? (tr.title  || '') : '',
-            artist:   tr ? (tr.artist || '') : '',
-            cover:    cover ? cover.src : '',
-            playlist: plName ? plName.textContent : '',
-            playing:  !!(tr && isPlaying),
-            position: pos,
-            duration: dur
+            hasTrack:   !!(tr && tr.videoId),
+            videoId:    tr ? (tr.videoId || '') : '',
+            title:      tr ? (tr.title  || '') : '',
+            artist:     tr ? (tr.artist || '') : '',
+            cover:      cover ? cover.src : '',
+            playlist:   plName ? plName.textContent : '',
+            playlistId: currentPlaylistId,
+            trackIndex: currentTrack,
+            playing:    !!(tr && isPlaying),
+            position:   pos,
+            duration:   dur,
+            shuffle:    autoplayRandom,
+            ltRole:     LT_ROLE,
+            volume:     vol ? parseInt(vol.value, 10) : 100
         });
     }
 }
@@ -1306,8 +1313,17 @@ function syncSystemMedia(isPlaying) {
     if (md && typeof md.onPlayerCommand === 'function') {
         md.onPlayerCommand(function(action, value) {
             if (action === 'toggle') click('btn-play');
+            else if (action === 'shuffle') click('btn-shuffle');
+            else if (action === 'volume') {
+                /* Mueve la barra del reproductor: su 'input' aplica el
+                   volumen (con el general de la barra de tareas) y lo guarda. */
+                var vol = document.getElementById('player-volume');
+                if (vol) { vol.value = value; vol.dispatchEvent(new Event('input')); }
+            }
             else if (action === 'seekto') actions.seekto({ seekTime: value });
             else if (actions[action]) actions[action]();
+            /* Playlists y opciones del clic derecho (editor de playlists). */
+            else if (typeof window.melonTrackAction === 'function') window.melonTrackAction(action, value);
         });
     }
 })();
@@ -3709,22 +3725,29 @@ var addTrackCallback = null;
 
     /* Reproduce una playlist entera + la registra en recientes. */
     function playPlaylist(pl) {
-        if (!pl || !pl.tracks || !pl.tracks.length) return;
-        currentPlaylistId = pl.id;
-        currentPlaylistHasCollabs = !!(pl.sharedFrom || (pl.collaborators && pl.collaborators.length > 0));
-        MelonPlayerState.setPlaylist(pl.id, 0);
-        playlist.length = 0;
-        pl.tracks.forEach(function(t) { playlist.push(t); });
-        currentTrack = 0;
-        updateTrackUI(0);
-        updatePlayerTitle(pl.name);
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-            ytPlayer.loadVideoById(playlist[0].videoId);
-        }
-        melonRecordRecent('playlist', String(pl.id), pl.name, pl.image || '', '');
+        playPlaylistFrom(pl, 0);
         /* Antes se cerraba la ventana al reproducir; ahora se mantiene
            abierta (reproducir desde el botón ▶ de la tarjeta NO entra ni
            cierra la ventana). */
+    }
+
+    /* Reproduce la playlist empezando por la canción trackIndex (el resto
+       queda en cola). La usan playPlaylist y el reproductor flotante. */
+    function playPlaylistFrom(pl, trackIndex) {
+        if (!pl || !pl.tracks || !pl.tracks.length) return;
+        var i = Math.max(0, Math.min(trackIndex | 0, pl.tracks.length - 1));
+        currentPlaylistId = pl.id;
+        currentPlaylistHasCollabs = !!(pl.sharedFrom || (pl.collaborators && pl.collaborators.length > 0));
+        MelonPlayerState.setPlaylist(pl.id, i);
+        playlist.length = 0;
+        pl.tracks.forEach(function(t) { playlist.push(t); });
+        currentTrack = i;
+        updateTrackUI(i);
+        updatePlayerTitle(pl.name);
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+            ytPlayer.loadVideoById(playlist[i].videoId);
+        }
+        melonRecordRecent('playlist', String(pl.id), pl.name, pl.image || '', '');
     }
 
     function deletePlaylist(pl, idx) {
@@ -4239,21 +4262,27 @@ var addTrackCallback = null;
                 item.textContent = pl.name;
                 item.addEventListener('click', function() {
                     addToPicker.style.display = 'none';
-                    var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
-                    if (!already) pl.tracks.push(Object.assign({}, track));
-                    fetch('assets/music/api.php?action=save-playlist-item', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
-                    }).then(function(r) { return r.json(); }).then(function(data) {
-                        if (data.error) alert(data.error);
-                    }).catch(function() {});
+                    addTrackToPlaylist(pl, track);
                 });
                 pickerList.appendChild(item);
             });
         }
         /* No reposicionamos aquí — el caller (showAddToPicker o el
            callback del fetch) ya dejó el picker visible y anclado. */
+    }
+
+    /* Añade la canción al final de la playlist (si no estaba) y la guarda.
+       La usan el selector "Añadir" y el reproductor flotante. */
+    function addTrackToPlaylist(pl, track) {
+        var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
+        if (!already) pl.tracks.push(Object.assign({}, track));
+        fetch('assets/music/api.php?action=save-playlist-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.error) alert(data.error);
+        }).catch(function() {});
     }
 
     function showTrackCtxMenu(e, track) {
@@ -4544,6 +4573,42 @@ var addTrackCallback = null;
     /* Exposición global → permite triggear el mismo menú desde el
        mini-player (no solo desde los rows de la lista). */
     window.openTrackCtxMenu = showTrackCtxMenu;
+
+    /* Reproductor flotante de la app de escritorio (apps/mini-player.html):
+       su panel de playlists y las opciones de su clic derecho llegan aquí
+       y hacen lo mismo que este reproductor. Las playlists se recargan del
+       servidor antes de tocarlas: guardar una playlist manda la lista
+       entera, y una copia vieja borraría lo añadido desde otro sitio. */
+    window.melonTrackAction = function(action, value) {
+        var track = nowPlayingTrack();
+        function withFreshPlaylist(id, fn) {
+            loadPlaylists(function() {
+                var pl = allPlaylists.find(function(p) { return String(p.id) === String(id); });
+                if (pl) fn(pl);
+            });
+        }
+        switch (action) {
+            case 'play-playlist':      /* value: { playlistId, index } */
+                withFreshPlaylist(value.playlistId, function(pl) { playPlaylistFrom(pl, value.index); });
+                break;
+            case 'add-to-playlist':    /* value: id de la playlist */
+                if (track && track.videoId) withFreshPlaylist(value, function(pl) { addTrackToPlaylist(pl, track); });
+                break;
+            case 'fix':
+                if (track && track.videoId) reportWrongAlbum(track);
+                break;
+            case 'add-profile':
+                if (typeof window.__closeFullscreenPlayer === 'function') window.__closeFullscreenPlayer();
+                if (track && typeof window.profileAddTrackAndReview === 'function') window.profileAddTrackAndReview(track);
+                break;
+            case 'listen-together':
+                if (typeof ltOpenModal === 'function') ltOpenModal();
+                break;
+            case 'leave-session':
+                if (typeof window.ltLeave === 'function') window.ltLeave();
+                break;
+        }
+    };
 
     function startEdit(row, infoDiv, btnsDiv, i) {
         var track = editList[i];

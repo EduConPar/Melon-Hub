@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('melonDesktop', {
         openMain() {
             ipcRenderer.send('melon:mini-open-main');
         },
+        minimize() {
+            ipcRenderer.send('melon:mini-minimize');
+        },
         close() {
             ipcRenderer.send('melon:mini-close');
         },

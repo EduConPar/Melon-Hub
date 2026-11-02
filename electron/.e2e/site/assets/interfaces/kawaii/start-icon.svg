@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MelonKawaii start icon — kawaii cat face pixel art
+  16x16 viewBox para que matche el tamaño del .win-logo default
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Ears (cat-like triangles, lila kawaii) -->
+  <path d="M2,1 L2,5 L5,4 Z" fill="#FF8FB0"/>
+  <path d="M14,1 L14,5 L11,4 Z" fill="#FF8FB0"/>
+
+  <!-- Inner ear pink -->
+  <path d="M3,2 L3,4 L4.5,3.5 Z" fill="#FF5588"/>
+  <path d="M13,2 L13,4 L11.5,3.5 Z" fill="#FF5588"/>
+
+  <!-- Face (rounded square) -->
+  <rect x="2" y="4" width="12" height="11" rx="4" fill="#FFE4F0"/>
+
+  <!-- Face outline (lila) -->
+  <rect x="2" y="4" width="12" height="11" rx="4" fill="none" stroke="#49388B" stroke-width="0.5"/>
+
+  <!-- Eyes (sleepy ; ; kawaii style) -->
+  <rect x="5" y="8" width="1.5" height="2" fill="#2D2052"/>
+  <rect x="9.5" y="8" width="1.5" height="2" fill="#2D2052"/>
+
+  <!-- Cheek blush -->
+  <rect x="3.5" y="10.5" width="2" height="1" fill="#FFB3D9" opacity="0.7"/>
+  <rect x="10.5" y="10.5" width="2" height="1" fill="#FFB3D9" opacity="0.7"/>
+
+  <!-- Mouth (w shape, kawaii) -->
+  <path d="M7,11.5 L8,12.5 L9,11.5" stroke="#49388B" stroke-width="0.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

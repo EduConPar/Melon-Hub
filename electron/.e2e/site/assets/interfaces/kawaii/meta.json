@@ -1,0 +1,20 @@
+{
+  "name": "kawaii",
+  "label": "MelonOS Overdose",
+  "description": "Estilo kawaii Y2K — paleta rosa pastel con title-bars y bordes púrpura oscuro, patrón de cuadrícula en el escritorio y acentos rosa neón. Inspirado en aesthetic cyber-cute.",
+  "author": "Melon Hub",
+  "isDefault": false,
+  "tokens": {
+    "winBg":         { "label": "Fondo de ventana",       "default": "#FFE4F0" },
+    "winBodyBg":     { "label": "Fondo del cuerpo",       "default": "#FFFFFF" },
+    "titlebarStart": { "label": "Titlebar (sólido)",      "default": "#2D2B66" },
+    "titlebarEnd":   { "label": "Titlebar fin",           "default": "#2D2B66" },
+    "titlebarText":  { "label": "Texto del titlebar",     "default": "#FFFFFF" },
+    "accent":        { "label": "Acento rosa neón",       "default": "#FF66B2" },
+    "accentText":    { "label": "Texto sobre acento",     "default": "#FFFFFF" },
+    "accentDeep":    { "label": "Acento profundo",        "default": "#CC4499" },
+    "border":        { "label": "Borde púrpura oscuro",   "default": "#2D2B66" },
+    "text":          { "label": "Texto principal",        "default": "#2D2B66" },
+    "desktopBg":     { "label": "Fondo del escritorio",   "default": "#FFC2D8" }
+  }
+}

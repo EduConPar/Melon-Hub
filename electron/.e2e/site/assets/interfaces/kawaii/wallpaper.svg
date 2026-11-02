@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MelonKawaii wallpaper — patrón kawaii rosa/lavanda con "scales"
+  (escamas / fish scale) tessellated. Inspirado en la imagen de
+  referencia del usuario.
+
+  Colores:
+    · #FAEDF1 — base (rosa muy claro casi blanco)
+    · #C5D5EC — outline lavanda-azul (escamas)
+    · #E4D3E8 — variante rosa-lila (escamas alternas para sutil profundidad)
+
+  El tile es de 60x60 con dos filas de escamas offset para que tessellate
+  sin seams visibles al repetir.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">
+  <!-- Background base -->
+  <rect width="60" height="60" fill="#FAEDF1"/>
+
+  <!-- Fila 1: escamas centradas en y=0 -->
+  <path d="M-10,15 Q-5,5 0,15 Q5,25 10,15 Q15,5 20,15 Q25,25 30,15 Q35,5 40,15 Q45,25 50,15 Q55,5 60,15 Q65,25 70,15"
+        fill="none" stroke="#C5D5EC" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Fila 2: offset, centradas en y=30 -->
+  <path d="M-20,30 Q-15,20 -10,30 Q-5,40 0,30 Q5,20 10,30 Q15,40 20,30 Q25,20 30,30 Q35,40 40,30 Q45,20 50,30 Q55,40 60,30 Q65,20 70,30"
+        fill="none" stroke="#E4D3E8" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Fila 3: vuelve a alinear con fila 1 — para que tessellate al repetir -->
+  <path d="M-10,45 Q-5,35 0,45 Q5,55 10,45 Q15,35 20,45 Q25,55 30,45 Q35,35 40,45 Q45,55 50,45 Q55,35 60,45 Q65,55 70,45"
+        fill="none" stroke="#C5D5EC" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
