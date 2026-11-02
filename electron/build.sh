@@ -101,8 +101,12 @@ if [[ "$MODE" == "--publish" || "$MODE" == "--publish-only" ]]; then
     git -C "$tmp" commit -q -m "Melon Hub $VERSION"
     git -C "$tmp" push -q -f "https://github.com/$PAGES_REPO.git" gh-pages
     rm -rf "$tmp"
+    # GitHub suele activar Pages él solo al recibir la rama gh-pages (y
+    # entonces el POST responde "ya está activado"): nada de eso debe parar
+    # la publicación antes de subir la release.
     gh api "repos/$PAGES_REPO/pages" >/dev/null 2>&1 \
-        || gh api -X POST "repos/$PAGES_REPO/pages" -f "source[branch]=gh-pages" -f "source[path]=/" >/dev/null
+        || gh api -X POST "repos/$PAGES_REPO/pages" -f "source[branch]=gh-pages" -f "source[path]=/" >/dev/null 2>&1 \
+        || echo "Aviso: no se pudo activar GitHub Pages; revísalo en https://github.com/$PAGES_REPO/settings/pages" >&2
 
     # Va después del repositorio Flatpak: latest-linux.yml es lo que hace
     # saltar el aviso de actualización, y para entonces todo debe estar subido.
