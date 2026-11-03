@@ -41,6 +41,13 @@ require_once __DIR__ . '/assets/mobile-token.php';
 
 $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
 
+/* En Android, el paso 2 descarga el APK de la app en lugar de instalar
+   la PWA (si este entorno tiene APK; ver assets/mobile-downloads.php).
+   iPhone y el resto siguen con la PWA. */
+require_once __DIR__ . '/assets/mobile-downloads.php';
+$ua     = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+$apkUrl = (stripos($ua, 'Android') !== false && strpos($ua, 'MelonHubApp') === false) ? androidApkUrl() : '';
+
 /* NO saltamos server-side a mobile.php aunque is_pwa esté en sesión.
    En Android las cookies son compartidas entre PWA y navegador, así
    que is_pwa=true puede aparecer también en el navegador normal y
@@ -550,6 +557,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="mh-sub">Cuenta activa: <?= htmlspecialchars($loginUsers[$_SESSION['user']]['label']) ?></div>
                 </div>
 
+                <?php if ($apkUrl !== ''): ?>
+                <!-- Android: en lugar de la PWA, la app (APK). -->
+                <div class="login-actions" style="margin-top:4px;">
+                    <button class="button default mh-cta-full" type="button"
+                            onclick="location.href = <?= htmlspecialchars(json_encode($apkUrl)) ?>;">
+                        ⬇ Descargar la app
+                    </button>
+                </div>
+                <?php else: ?>
                 <!-- Aviso amarillo HTTP (solo se ve si JS detecta HTTP) -->
                 <div class="mh-http-warn" id="http-warn" hidden>
                     ⚠️ <strong>Estás en HTTP.</strong> Para que el icono se
@@ -589,6 +605,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- Se rellena por JS según el navegador detectado -->
                     </ol>
                 </fieldset>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -709,7 +726,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 })();
 <?php endif; ?>
 
-<?php if ($step === 2): ?>
+<?php if ($step === 2 && $apkUrl === ''): ?>
 /* ── Service Worker ────────────────────────────────────────────── */
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js', { scope: '<?= $projectBaseUrl ?>' })
