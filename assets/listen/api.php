@@ -28,7 +28,7 @@
                           host o guest) o null.
      request-join  POST   {host} → "Escuchar conmigo" (botón de la presencia
                           de Discord de la app de escritorio): pide unirse a
-                          lo que escucha un amigo (seguimiento mutuo).
+                          lo que escucha otro usuario (amigo o no).
      join-requests GET    peticiones pendientes para mí como anfitrión: mi
                           app las atiende sola (abre la sesión e invita, y
                           la app de quien lo pidió acepta sola).
@@ -328,11 +328,21 @@ if ($action === 'invite') {
         echo json_encode(['ok' => false, 'error' => 'Usuario inválido']);
         exit;
     }
-    /* Defense in depth: rechazar si no es seguimiento mutuo. */
+    /* Defense in depth: rechazar si no es seguimiento mutuo. Excepción:
+       quien entró por el enlace de "Escuchar conmigo" (request-join de
+       los últimos 5 min): la app del anfitrión le invita sola aunque no
+       sean amigos. */
     require_once dirname(__DIR__) . '/social-helpers.php';
     if (!isMutualFollow($pdo, (int)$userId, (int)$toId)) {
-        echo json_encode(['ok' => false, 'error' => 'Solo puedes invitar a usuarios con seguimiento mutuo']);
-        exit;
+        $st = $pdo->prepare("SELECT 1 FROM listening_join_requests
+                              WHERE host_user_id = ? AND from_user_id = ?
+                                AND status IN ('pending', 'done')
+                                AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE) LIMIT 1");
+        $st->execute([$userId, $toId]);
+        if (!$st->fetchColumn()) {
+            echo json_encode(['ok' => false, 'error' => 'Solo puedes invitar a usuarios con seguimiento mutuo']);
+            exit;
+        }
     }
     /* Asegura que tengamos sesión host abierta. */
     $host = getActiveSessionAsHost($pdo, $userId);
@@ -471,11 +481,8 @@ if ($action === 'request-join') {
         echo json_encode(['ok' => false, 'error' => 'Usuario inválido']);
         exit;
     }
-    require_once dirname(__DIR__) . '/social-helpers.php';
-    if (!isMutualFollow($pdo, (int)$userId, (int)$hostId)) {
-        echo json_encode(['ok' => false, 'error' => 'Solo pueden unirse sus amigos (seguimiento mutuo)']);
-        exit;
-    }
+    /* Con el enlace de "Escuchar conmigo" se une cualquiera con cuenta,
+       sea o no amigo del anfitrión (antes solo seguimiento mutuo). */
     $pdo->prepare("UPDATE listening_join_requests SET status = 'expired'
                     WHERE host_user_id = ? AND from_user_id = ? AND status = 'pending'")
         ->execute([$hostId, $userId]);

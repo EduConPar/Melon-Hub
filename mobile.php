@@ -1965,7 +1965,7 @@ if ('serviceWorker' in navigator) {
     window.mOpenLink = mOpenLink;
 
     /* "Escuchar conmigo": como melonJoinListen del escritorio. Pide unirse
-       (solo amigos mutuos) y acepta sola la invitación del anfitrión. */
+       (aunque no seáis amigos) y acepta sola la invitación del anfitrión. */
     function mJoinListen(host) {
         var ltF = window.ltFetchFromNotif, join = window.ltJoinAsGuestFromNotif;
         if (!host || host === <?= json_encode($userKey) ?> || !ltF || !join) return;

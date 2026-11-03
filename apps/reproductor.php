@@ -739,6 +739,9 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
         </div>
 
         <div class="field-row" style="justify-content:flex-end;gap:4px;">
+            <!-- Enlace "Escuchar conmigo" (enlace.php?escuchar=…): quien lo
+                 abra se une aunque no seáis amigos. -->
+            <button class="button" id="lt-link-btn" type="button">🔗 Copiar enlace</button>
             <button class="button" id="lt-end-btn" style="display:none;">Cerrar sesión</button>
         </div>
     </div>
@@ -2252,15 +2255,14 @@ window.ltLeave     = ltLeave;
    - Quien lo pulsa llega por enlace.php?escuchar=<user_key del anfitrión>
      (intenta abrir su app; si no, sigue en la web aunque haya que iniciar
      sesión antes) y melonOpenLink (desktop-base.php) llama a
-     melonJoinListen: se pide unirse (request-join, solo amigos con
-     seguimiento mutuo) y, cuando llega la invitación del anfitrión, se
+     melonJoinListen: se pide unirse (request-join; con el enlace vale
+     aunque no seáis amigos) y, cuando llega la invitación del anfitrión, se
      acepta sola. ?escuchar= en la URL del escritorio sigue valiendo.
    - La app del anfitrión atiende esas peticiones cada 5 s: abre la sesión
      si no la tiene e invita a quien lo pidió (ltInviteUser). */
 window.melonJoinListen = function(host) {
     if (!host || host === currentUserKey) return;
     ltFetch('request-join', { body: { host: host } }).then(function(r) {
-        /* A quien no es amigo solo se le abre Melon Hub. */
         if (!r || !r.ok) return;
         const name = r.host_label || 'tu amigo';
         if (window.notifSystem) notifSystem.show({ id: 'lt-joining-' + host, type: 'info', title: '🎧 Escuchar juntos', message: 'Uniéndote a lo que escucha ' + name + '…' });
@@ -2268,7 +2270,7 @@ window.melonJoinListen = function(host) {
         const t = setInterval(async function() {
             if (Date.now() > until) {
                 clearInterval(t);
-                if (window.notifSystem) notifSystem.show({ id: 'lt-joining-fail-' + host, type: 'info', title: '🎧 Escuchar juntos', message: name + ' no ha respondido: tiene que tener abierta la app de escritorio.' });
+                if (window.notifSystem) notifSystem.show({ id: 'lt-joining-fail-' + host, type: 'info', title: '🎧 Escuchar juntos', message: name + ' no ha respondido: tiene que tener Melon Hub abierto.' });
                 return;
             }
             const inv = await ltFetch('invites');
@@ -2293,8 +2295,21 @@ window.melonJoinListen = function(host) {
     } catch (_) {}
     window.melonJoinListen(m[1]);
 })();
-if (window.melonDesktop) {
+/* Copiar el enlace desde la ventana de "Escuchar juntos". */
+(function () {
+    const b = document.getElementById('lt-link-btn');
+    if (!b) return;
+    b.addEventListener('click', function () {
+        if (typeof window.melonCopyLink !== 'function') return;
+        window.__ltLinkShared = true;
+        window.melonCopyLink('escuchar', currentUserKey);
+    });
+})();
+/* Peticiones de unirse por el enlace: la app de escritorio siempre; la web
+   en el navegador si estás de anfitrión o has copiado el enlace. */
+{
     setInterval(async function() {
+        if (!window.melonDesktop && LT_ROLE !== 'host' && !window.__ltLinkShared) return;
         if (LT_ROLE === 'guest') return;   /* escuchando a otro: no se puede hostear */
         const r = await ltFetch('join-requests');
         if (!r || !r.ok || !r.requests || !r.requests.length) return;
@@ -2303,7 +2318,7 @@ if (window.melonDesktop) {
             const inv = await ltInviteUser(req.from_user_key);
             if (inv && inv.ok && window.notifSystem) {
                 notifSystem.show({ id: 'lt-joinreq-' + req.id, type: 'info', title: '🎧 ' + req.from_label + ' se une',
-                    message: req.from_label + ' va a escuchar contigo desde tu presencia de Discord.' });
+                    message: req.from_label + ' va a escuchar contigo con tu enlace.' });
             }
         }
     }, 5000);

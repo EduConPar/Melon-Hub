@@ -176,8 +176,8 @@ function update(s) {
                 ? { start: Math.round(start), end: Math.round(start + s.duration * 1000) }
                 : { start: Math.round(start) },
             assets: cover ? { large_image: cover, large_text: text(s.playlist || s.title, 'Melon Hub') } : undefined,
-            /* "Escuchar conmigo": quien lo pulsa se une a lo que suena si
-               sois amigos en Melon Hub (index.php?escuchar → reproductor.php).
+            /* "Escuchar conmigo": quien lo pulsa se une a lo que suena,
+               amigo o no (index.php?escuchar → enlace.php → reproductor.php).
                No sale escuchando como invitado de otro. */
             buttons: (s.userKey && s.ltRole !== 'guest'
                 ? [{ label: 'Escuchar conmigo', url: appSite + 'index.php?escuchar=' + encodeURIComponent(s.userKey) }]
