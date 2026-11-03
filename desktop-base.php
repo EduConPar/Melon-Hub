@@ -40,6 +40,10 @@ header('Content-Type: text/html; charset=UTF-8');
 
 session_start();
 require_once __DIR__ . '/assets/config.php';
+/* Si la sesión del servidor caducó, se rehace con el token recordado. */
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/assets/remember-login.php';
+restoreRememberedLogin($pdo);
 
 $desktopUserKey = null;
 foreach ($loginUsers as $key => $user) {

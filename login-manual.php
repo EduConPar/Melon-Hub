@@ -40,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($matchedKey !== null && password_verify($password, $loginUsers[$matchedKey]['password'])) {
             $_SESSION['user'] = $matchedKey;
+            require_once __DIR__ . '/db.php';
+            require_once __DIR__ . '/assets/remember-login.php';
+            rememberLogin($pdo, $matchedKey);
             /* Self-heal del stub si fue borrado: lo regeneramos antes del
                redirect para que el usuario aterrice en su escritorio en
                vez de en un 404. */

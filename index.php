@@ -25,6 +25,19 @@ if (isMobileDevice()) {
     exit;
 }
 
+/* Con la sesión abierta (o recordada, ver assets/remember-login.php) se
+   entra directo al escritorio, sin introducción ni selector de usuario:
+   así la app de escritorio abre ya dentro. Para volver al selector hay
+   que cerrar sesión (logout.php). */
+require_once __DIR__ . '/assets/remember-login.php';
+$rememberedUser = restoreRememberedLogin($pdo);
+if ($rememberedUser !== null && isset($loginUsers[$rememberedUser]) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $rememberedLabel = $loginUsers[$rememberedUser]['label'];
+    ensureDesktopStub($rememberedLabel);
+    header('Location: desktops/' . strtolower($rememberedLabel) . '-desktop.php');
+    exit;
+}
+
 /* Base URL del proyecto, derivada del script actual. Asegura que las
    rutas a CSS de temas funcionen sea cual sea la URL de acceso
    (localhost/scrapbookOnline/, localhost/, virtual host, etc.). */
@@ -160,6 +173,7 @@ if ($selectedUser && isset($users[$selectedUser])) {
     if (isset($_POST['password'])) {
         if (password_verify($_POST['password'], $users[$selectedUser]['password'])) {
             $_SESSION['user'] = $selectedUser;
+            rememberLogin($pdo, $selectedUser);
             /* Móviles → menú feature-phone. PC/tablet → escritorio Win98.
                ensureDesktopStub() regenera el stub si fue borrado en algún
                momento — el usuario aterriza en su escritorio en vez de 404. */

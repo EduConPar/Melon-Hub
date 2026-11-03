@@ -28,6 +28,13 @@ if (!function_exists('requireAuth')) {
         global $loginUsers;
         if (session_status() === PHP_SESSION_NONE) session_start();
         $userKey = $_SESSION['user'] ?? null;
+        /* Sesión del servidor caducada con el escritorio abierto: se
+           rehace con el token recordado (remember-login.php). */
+        if (!$userKey && !empty($_COOKIE['melon_remember'])) {
+            require_once dirname(__DIR__) . '/db.php';
+            require_once __DIR__ . '/remember-login.php';
+            $userKey = restoreRememberedLogin(isset($pdo) ? $pdo : ($GLOBALS['pdo'] ?? null));
+        }
         if (!$userKey || !isset($loginUsers[$userKey])) {
             jsonError('No autenticado', 401);
         }
