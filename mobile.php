@@ -2113,6 +2113,11 @@ window.MuShell = (function(){
         if (v2) v2.classList.toggle('paused', !playing);
         if (v3) v3.classList.toggle('paused', !playing);
         setMediaPlaybackState(playing ? 'playing' : 'paused');
+        /* App Android: solo cuenta play (1) y pausa/parada (2, 5). Entre
+           canciones (0, -1, 3) no se avisa: si se soltara, la música se
+           cortaría al pasar de canción con la app en segundo plano. */
+        if (e.data === 1) nativeMusicPlaying(true, QUEUE[CUR_IDX]);
+        else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false);
         if (e.data === 0) next();
         broadcast({ type: 'mushell:state', state: e.data, idx: CUR_IDX });
         publishNowPlaying(playing, true);
@@ -2153,6 +2158,22 @@ window.MuShell = (function(){
                 }),
                 keepalive: true
             });
+        } catch (_) {}
+    }
+
+    /* ── App Android (mobile-app/, MelonMusicPlugin) ──
+       Mientras suena, la app mantiene la música al salir de ella o
+       apagar la pantalla. La web puede ir por delante de la app
+       instalada: sin el plugin, la promesa falla y no pasa nada. */
+    function nativeMusicPlaying(playing, tr) {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        try {
+            cap.nativePromise('MelonMusic', 'setPlaying', {
+                playing: !!playing,
+                title:   (tr && tr.title)  || '',
+                artist:  (tr && tr.artist) || ''
+            }).catch(function(){});
         } catch (_) {}
     }
 
