@@ -156,8 +156,10 @@ function update(s) {
         };
         /* La imagen es la miniatura de YouTube de la canción: las carátulas
            de iTunes/Deezer del reproductor no llegaban a verse en Discord
-           (salía el icono de la aplicación) y la de YouTube sí. */
-        if (s.videoId) next.assets = { large_image: 'https://i.ytimg.com/vi/' + s.videoId + '/hqdefault.jpg', large_text: next.assets ? next.assets.large_text : text(s.title, 'Melon Hub') };
+           (salía el icono de la aplicación) y la de YouTube sí. Discord la
+           recorta a cuadrado por el centro: mqdefault es 16:9 sin bordes
+           (hqdefault es 4:3 con franjas negras arriba y abajo). */
+        if (s.videoId) next.assets = { large_image: 'https://i.ytimg.com/vi/' + s.videoId + '/mqdefault.jpg', large_text: next.assets ? next.assets.large_text : text(s.title, 'Melon Hub') };
         Object.defineProperty(next, '_video', { value: s.videoId, enumerable: false });
     }
     wanted = next;
