@@ -154,6 +154,10 @@ function update(s) {
                 : undefined,
             buttons: [{ label: 'Abrir Melon Hub', url: SITE_URL }],
         };
+        /* La imagen es la miniatura de YouTube de la canción: las carátulas
+           de iTunes/Deezer del reproductor no llegaban a verse en Discord
+           (salía el icono de la aplicación) y la de YouTube sí. */
+        if (s.videoId) next.assets = { large_image: 'https://i.ytimg.com/vi/' + s.videoId + '/hqdefault.jpg', large_text: next.assets ? next.assets.large_text : text(s.title, 'Melon Hub') };
         Object.defineProperty(next, '_video', { value: s.videoId, enumerable: false });
     }
     wanted = next;
