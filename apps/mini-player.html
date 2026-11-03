@@ -1177,7 +1177,7 @@
         dlInfo = {
             videoId: song.videoId, title: song.title || '', artist: song.artist || '',
             album: playing ? state.album || '' : '',
-            cover: (playing && state.cover) || 'https://i.ytimg.com/vi/' + song.videoId + '/hqdefault.jpg',
+            cover: (playing && state.cover) || 'https://i.ytimg.com/vi/' + song.videoId + '/mqdefault.jpg',   /* sin franjas negras */
         };
         $('mp-dl-cover').src = dlInfo.cover;
         $('mp-dl-title').textContent = dlInfo.title;

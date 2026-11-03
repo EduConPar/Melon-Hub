@@ -904,14 +904,16 @@ function openDownloadDialog(track) {
     var md = window.melonDesktop;
     if (!track || !track.videoId || !md || !md.download) return;
     /* Carátula y álbum: los del reproductor si es la que suena; si es otra
-       fila (playlist, búsqueda), la miniatura de YouTube. */
+       fila (playlist, búsqueda), la miniatura de YouTube en mqdefault (16:9
+       sin franjas: la vista previa la recorta a cuadrado; hqdefault trae
+       bandas negras arriba y abajo). */
     var cur = nowPlayingTrack();
     var playing = cur && cur.videoId === track.videoId;
     var cover = document.getElementById('player-cover');
     var info = {
         videoId: track.videoId, title: track.title || '', artist: track.artist || '',
         album: playing && _currentAlbum ? (_currentAlbum.albumName || '') : '',
-        cover: playing && cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/hqdefault.jpg',
+        cover: playing && cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/mqdefault.jpg',
     };
     var bd = document.createElement('div');
     bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
@@ -1015,6 +1017,58 @@ function melonDownloadListen(id, cb) {
     if (cb) _dlListeners[id] = cb; else delete _dlListeners[id];
 }
 window.openDownloadDialog = openDownloadDialog;
+
+/* "Descargar…" fuera de la app: explica que solo funciona en la app de
+   escritorio y ofrece su instalable (el mismo que el aviso del haro,
+   assets/desktop/download.php). Una app vieja, sin descargas, pide
+   actualizarla. */
+var DL_APP_SYSTEMS = <?php echo json_encode(function_exists('desktopDownloadSystems') ? desktopDownloadSystems() : []); ?>;
+function openGetAppDialog() {
+    var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '') + ' ' + navigator.userAgent;
+    var os = /Win/i.test(platform) ? 'windows'
+           : (/Linux/i.test(platform) && !/Android|CrOS/i.test(platform)) ? 'linux' : '';
+    var canGet = !window.melonDesktop && os && DL_APP_SYSTEMS.indexOf(os) !== -1;
+    var text = window.melonDesktop
+        ? 'Tu app de escritorio es de una versión sin descargas. Actualízala desde el aviso del haro (o vuelve a abrirla) y podrás descargar canciones.'
+        : canGet
+            ? 'La descarga de canciones solo funciona en la app de escritorio de Melon Hub: desde el navegador no se puede bajar el audio de YouTube. ¿Quieres descargar la app para ' + (os === 'windows' ? 'Windows' : 'Linux') + '?'
+            : 'La descarga de canciones solo funciona en la app de escritorio de Melon Hub, que está disponible para Windows y Linux.';
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:320px;max-width:94vw;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar canción</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+                '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:32px;height:32px;object-fit:contain;image-rendering:pixelated;flex:0 0 32px;">' +
+                '<p data-dl="text" style="margin:0;line-height:1.45;"></p>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">' +
+                '<button class="button" data-act="close">' + (canGet ? 'Ahora no' : 'Cerrar') + '</button>' +
+                (canGet ? '<button class="button" data-act="get">Descargar la app</button>' : '') +
+            '</div>' +
+        '</div>';
+    win.querySelector('[data-dl="text"]').textContent = text;
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    function close() { document.removeEventListener('keydown', onKey, true); bd.remove(); }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelectorAll('[data-act="close"]').forEach(function(b) { b.addEventListener('click', close); });
+    var get = win.querySelector('[data-act="get"]');
+    if (get) get.addEventListener('click', function() {
+        /* Iframe oculto, como el haro: la descarga empieza sin salir del escritorio. */
+        var f = document.createElement('iframe');
+        f.style.display = 'none';
+        f.src = 'assets/desktop/download.php?os=' + os;
+        document.body.appendChild(f);
+        setTimeout(function() { f.remove(); }, 60000);
+        close();
+    });
+}
 
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
@@ -4553,16 +4607,18 @@ var addTrackCallback = null;
         });
         ctxMenu.appendChild(addProfile);
 
-        /* Descargar: solo en la app de escritorio (la web no puede bajar el
-           audio de YouTube). Vale para la que suena y para las filas de las
-           playlists y la búsqueda; sin videoId no hay qué descargar. */
-        if (track && track.videoId && window.melonDesktop && window.melonDesktop.download) {
+        /* Descargar: vale para la que suena y para las filas de las
+           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
+           descarga la app de escritorio; en el navegador, que no puede bajar
+           el audio de YouTube, ofrece la app (openGetAppDialog). */
+        if (track && track.videoId) {
             var dl = document.createElement('div');
             dl.className = 'pl-menu-item';
             dl.textContent = '⬇ Descargar…';
             dl.addEventListener('click', function() {
                 ctxMenu.style.display = 'none';
-                openDownloadDialog(track);
+                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
+                else openGetAppDialog();
             });
             ctxMenu.appendChild(dl);
         }

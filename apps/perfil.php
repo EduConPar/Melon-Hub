@@ -1596,6 +1596,33 @@ var PROFILE_USERS = <?php
         return el;
     }
 
+    /* Los elementos recién añadidos llevan un id provisional ("item_…") hasta
+       que save-lists les da el suyo, y las invitaciones necesitan el
+       definitivo: con el provisional la API respondía "Datos inválidos". Se
+       espera un poco al guardado que ya va en camino y, si no llega, se
+       guarda la categoría aquí. cb(id) recibe 0 si no se pudo. */
+    function withSavedItemId(cat, item, cb) {
+        var real = function(v) { return /^\d+$/.test(String(v)); };
+        function find() {
+            if (real(item.id)) return Number(item.id);
+            var same = (lists[cat] || []).filter(function(x) { return x.title === item.title && real(x.id); });
+            return same.length ? Number(same[same.length - 1].id) : 0;
+        }
+        var tries = 0;
+        (function wait() {
+            var id = find();
+            if (id) { cb(id); return; }
+            if (++tries <= 10) { setTimeout(wait, 300); return; }
+            fetch('assets/profile/api.php?action=save-lists', {
+                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat, items: lists[cat] })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d && Array.isArray(d.items)) lists[cat] = d.items;
+                cb(find());
+            }).catch(function() { cb(0); });
+        })();
+    }
+
     function showCollabDialog(cat, item) {
         var dlg      = document.getElementById('profile-invite-dialog');
         var msg      = document.getElementById('profile-invite-msg');
@@ -1681,9 +1708,11 @@ var PROFILE_USERS = <?php
                             btn.addEventListener('click', function() {
                                 btn.disabled = true; btn.textContent = '…';
                                 statusEl.textContent = 'Enviando…';
+                                withSavedItemId(cat, item, function(itemId) {
+                                if (!itemId) { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = 'No se pudo guardar el elemento. Inténtalo otra vez.'; return; }
                                 fetch('assets/profile/api.php?action=send-item-invite', {
                                     method: 'POST', headers: {'Content-Type':'application/json'},
-                                    body: JSON.stringify({ toUser: key, category: cat, itemId: item.id })
+                                    body: JSON.stringify({ toUser: key, category: cat, itemId: itemId })
                                 }).then(function(r) { return r.json(); }).then(function(d) {
                                     if (d.ok) {
                                         var sent = document.createElement('span');
@@ -1696,6 +1725,7 @@ var PROFILE_USERS = <?php
                                         statusEl.textContent = d.error || 'Error al enviar.';
                                     }
                                 }).catch(function() { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = ''; });
+                                });
                             });
                         };
                     })(uKey)));

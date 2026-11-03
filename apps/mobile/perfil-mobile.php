@@ -3086,6 +3086,33 @@ function openCollabDialog(item, origIdx, cat) {
     }
 
     /* Soy el dueño → render colabs actuales + invitables. */
+    /* Los elementos recién añadidos llevan un id provisional ("item_…") hasta
+       que save-lists les da el suyo, y las invitaciones necesitan el
+       definitivo: con el provisional la API respondía "Datos inválidos". Se
+       espera un poco al guardado que ya va en camino y, si no llega, se
+       guarda la categoría aquí. cb(id) recibe 0 si no se pudo. */
+    function withSavedItemId(cat, item, cb) {
+        var real = function(v) { return /^\d+$/.test(String(v)); };
+        function find() {
+            if (real(item.id)) return Number(item.id);
+            var same = (STATE.lists[cat] || []).filter(function(x) { return x.title === item.title && real(x.id); });
+            return same.length ? Number(same[same.length - 1].id) : 0;
+        }
+        var tries = 0;
+        (function wait() {
+            var id = find();
+            if (id) { cb(id); return; }
+            if (++tries <= 10) { setTimeout(wait, 300); return; }
+            fetch(API + '?action=save-lists', {
+                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat, items: STATE.lists[cat] })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d && Array.isArray(d.items)) STATE.lists[cat] = d.items;
+                cb(find());
+            }).catch(function() { cb(0); });
+        })();
+    }
+
     function render() {
         listEl.innerHTML = '';
         var list = STATE.lists && STATE.lists[cat];
@@ -3142,11 +3169,13 @@ function openCollabDialog(item, origIdx, cat) {
                 listEl.appendChild(avRow(uKey, uInfo, 'Invitar', function(btn){
                     btn.disabled = true; btn.textContent = '…';
                     statusEl.textContent = 'Enviando…';
+                    withSavedItemId(cat, item, function(itemId) {
+                    if (!itemId) { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = 'No se pudo guardar el elemento. Inténtalo otra vez.'; return; }
                     fetch(API + '?action=send-item-invite', {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ toUser: uKey, category: cat, itemId: item.id })
+                        body: JSON.stringify({ toUser: uKey, category: cat, itemId: itemId })
                     })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -3161,6 +3190,7 @@ function openCollabDialog(item, origIdx, cat) {
                     .catch(function(){
                         statusEl.textContent = 'Error.';
                         btn.disabled = false; btn.textContent = 'Invitar';
+                    });
                     });
                 }));
             });
