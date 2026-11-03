@@ -100,6 +100,7 @@ if [[ "$MODE" == "--publish" || "$MODE" == "--publish-only" ]]; then
     git -C "$tmp" add -A
     git -C "$tmp" commit -q -m "Melon Hub $VERSION"
     git -C "$tmp" push -q -f "https://github.com/$PAGES_REPO.git" gh-pages
+    pages_commit=$(git -C "$tmp" rev-parse HEAD)
     rm -rf "$tmp"
     # GitHub suele activar Pages él solo al recibir la rama gh-pages (y
     # entonces el POST responde "ya está activado"): nada de eso debe parar
@@ -107,6 +108,18 @@ if [[ "$MODE" == "--publish" || "$MODE" == "--publish-only" ]]; then
     gh api "repos/$PAGES_REPO/pages" >/dev/null 2>&1 \
         || gh api -X POST "repos/$PAGES_REPO/pages" -f "source[branch]=gh-pages" -f "source[path]=/" >/dev/null 2>&1 \
         || echo "Aviso: no se pudo activar GitHub Pages; revísalo en https://github.com/$PAGES_REPO/settings/pages" >&2
+    # Las apps abiertas miran cada pocos minutos si hay versión nueva: el
+    # aviso no puede salir antes de que Pages sirva el repositorio, o
+    # "Actualizar" no encontraría nada. Se espera a que publique este commit.
+    echo "── Esperando a que GitHub Pages publique el repositorio…"
+    pages_ok=
+    for _ in $(seq 72); do
+        st=$(gh api "repos/$PAGES_REPO/pages/builds/latest" --jq '.commit + " " + .status' 2>/dev/null || true)
+        if [[ "$st" == "$pages_commit built" ]]; then pages_ok=1; break; fi
+        if [[ "$st" == "$pages_commit errored" ]]; then echo "GitHub Pages no ha podido publicar el repositorio." >&2; exit 1; fi
+        sleep 5
+    done
+    [[ -n "$pages_ok" ]] || echo "Aviso: GitHub Pages aún no ha terminado (6 min); se sigue igualmente." >&2
 
     # Va después del repositorio Flatpak: latest-linux.yml es lo que hace
     # saltar el aviso de actualización, y para entonces todo debe estar subido.
@@ -117,6 +130,9 @@ if [[ "$MODE" == "--publish" || "$MODE" == "--publish-only" ]]; then
             --notes "Instalables de la app de escritorio que apuntan a la web de dev (melonhubdev.melonhub.es). Se sustituyen en cada build."
     fi
     gh release upload "$RELEASE_TAG" --clobber \
-        dist/MelonHub-Setup.exe dist/MelonHub-Setup.exe.blockmap dist/latest.yml \
-        dist/MelonHub.AppImage dist/latest-linux.yml dist/MelonHub.flatpak
+        dist/MelonHub-Setup.exe dist/MelonHub-Setup.exe.blockmap \
+        dist/MelonHub.AppImage dist/MelonHub.flatpak
+    # Los latest*.yml, los últimos y aparte: son los que hacen saltar el
+    # aviso, y para entonces los instalables ya tienen que estar subidos.
+    gh release upload "$RELEASE_TAG" --clobber dist/latest.yml dist/latest-linux.yml
 fi

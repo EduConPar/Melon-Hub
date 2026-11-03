@@ -2,8 +2,9 @@
    ACTUALIZACIONES DE LA APP DE ESCRITORIO
    ──────────────────────────────────────────────────────────────────────
    Solo afecta a la parte nativa (esta carpeta): la web se carga del
-   servidor y siempre está al día. Al arrancar (y cada 6 h) se mira si hay
-   versión nueva; si la hay, se avisa a la web (preload.js →
+   servidor y siempre está al día. Al arrancar y cada 5 minutos se mira si
+   hay versión nueva (así el aviso sale poco después de publicarla, sin
+   reabrir la app); si la hay, se avisa a la web (preload.js →
    window.melonDesktop.onUpdate) y el haro ofrece "Actualizar". Al pulsar:
      - Windows / AppImage: electron-updater descarga la versión nueva de
        la release de GitHub (latest.yml / latest-linux.yml, los genera
@@ -16,7 +17,7 @@ const { app, ipcMain, net } = require('electron');
 const flatpak = require('./flatpak-update');
 
 const FEED = require('./package.json').melonhub.updateFeed;
-const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+const CHECK_EVERY_MS = 5 * 60 * 1000;
 
 let win = null;
 let updater = null;              /* electron-updater (Windows / AppImage) */
