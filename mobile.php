@@ -270,6 +270,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
               || window.navigator.standalone === true
               || /MelonHubApp/.test(navigator.userAgent);
         if (sa) document.documentElement.classList.add('is-standalone');
+        /* `is-native-app`: solo la app de Android (ahí la música sigue
+           sonando fuera de la app y sobra la pantalla de bloqueo). */
+        if (/MelonHubApp/.test(navigator.userAgent)) document.documentElement.classList.add('is-native-app');
     })();
     /* --mh-vh: viewport height en px sincronizado con window.innerHeight.
        Sobrevive al bfcache (al volver de otra app, refrescamos en
@@ -1159,6 +1162,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             contain: strict;
         }
         .mu-lock.visible { display: block; }
+        /* App de Android: sin pantalla de bloqueo ni su botón (la música
+           sigue con la pantalla apagada, ver mobile-app/). */
+        html.is-native-app .mu-lock,
+        html.is-native-app #mu-full-lock { display: none !important; }
         .mu-lock-stage,
         .mu-lock-vinyl-wrap,
         .mu-lock-title,
@@ -2911,6 +2918,9 @@ window.MuShell = (function(){
     /* ── Lock screen ── */
     function openLock() {
         if (CUR_IDX < 0) return;
+        /* En la app de Android no hay pantalla de bloqueo: así tampoco se
+           abre sola al volver del segundo plano (attachAutoLock). */
+        if (document.documentElement.classList.contains('is-native-app')) return;
         var lock = document.getElementById('mu-lock');
         var hint = document.getElementById('mu-lock-hint');
         if (hint) { hint.style.transform = ''; hint.style.opacity = ''; }
@@ -3280,7 +3290,11 @@ window.MuShell = (function(){
         document.body.appendChild(bd);
         var body = bd.querySelector('.window-body');
         if (typeof opts.body === 'string') body.innerHTML = opts.body;
-        function close(){ if (bd.parentNode) bd.parentNode.removeChild(bd); }
+        function close(){
+            if (!bd.parentNode) return;
+            bd.parentNode.removeChild(bd);
+            if (typeof opts.onClose === 'function') opts.onClose();
+        }
         bd.querySelector('.title-bar-controls button').addEventListener('click', close);
         bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
         return { body: body, close: close, root: bd };
@@ -3311,6 +3325,78 @@ window.MuShell = (function(){
             m.close(); if (typeof onOk === 'function') onOk();
         });
     }
+
+    /* ── Actualizar la app de Android (MelonUpdaterPlugin) ──
+       Como el escritorio (electron/updater.js): mira cada 5 min si hay
+       versión nueva y avisa con una ventana. "Más tarde" (o cerrarla)
+       calla esa versión hasta que se vuelva a abrir la app. La app
+       baja el APK y abre el instalador de Android, que la actualiza
+       encima sin perder nada. Sin el plugin (navegador, PWA o app
+       vieja) nativePromise no existe o falla y no se avisa. */
+    (function setupAppUpdater(){
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        var KEY = 'melonApkLater';
+        var open = false;
+        function laterFor() {
+            try { return +sessionStorage.getItem(KEY) || 0; } catch (_) { return 0; }
+        }
+        function check() {
+            if (open) return;
+            cap.nativePromise('MelonUpdater', 'check').then(function(r){
+                if (open || !r || !r.available || r.versionCode <= laterFor()) return;
+                showUpdate(r);
+            }).catch(function(){});
+        }
+        function showUpdate(r) {
+            open = true;
+            var installing = false;
+            var m = shellOpenModal({
+                title: 'Actualización',
+                body:
+                    '<div class="shell-modal-msg">Hay una versión nueva de Melon Hub' +
+                        (r.versionName ? ' (' + esc(r.versionName) + ')' : '') + '.</div>' +
+                    '<div class="shell-modal-actions">' +
+                        '<button class="button" data-act="later" type="button">Más tarde</button>' +
+                        '<button class="button default" data-act="update" type="button">Actualizar</button>' +
+                    '</div>',
+                onClose: function(){
+                    open = false;
+                    window.removeEventListener('melonUpdateProgress', onProgress);
+                    if (!installing) { try { sessionStorage.setItem(KEY, String(r.versionCode)); } catch (_) {} }
+                }
+            });
+            var msg = m.body.querySelector('.shell-modal-msg');
+            var btnLater = m.body.querySelector('[data-act="later"]');
+            var btnUpdate = m.body.querySelector('[data-act="update"]');
+            function onProgress(e) {
+                msg.textContent = e.percent >= 0 ? 'Descargando… ' + e.percent + '%' : 'Descargando…';
+            }
+            btnLater.addEventListener('click', m.close);
+            btnUpdate.addEventListener('click', function(){
+                btnLater.disabled = btnUpdate.disabled = true;
+                msg.textContent = 'Descargando…';
+                window.addEventListener('melonUpdateProgress', onProgress);
+                cap.nativePromise('MelonUpdater', 'install').then(function(res){
+                    if (res && res.status === 'installing') {
+                        /* Sigue el instalador de Android. */
+                        installing = true;
+                        m.close();
+                        return;
+                    }
+                    msg.textContent = 'Para actualizar, permite que Melon Hub instale aplicaciones y vuelve a intentarlo.';
+                    btnLater.disabled = btnUpdate.disabled = false;
+                    btnUpdate.textContent = 'Reintentar';
+                }).catch(function(){
+                    msg.textContent = 'No se pudo descargar la actualización. Comprueba la conexión y vuelve a intentarlo.';
+                    btnLater.disabled = btnUpdate.disabled = false;
+                    btnUpdate.textContent = 'Reintentar';
+                });
+            });
+        }
+        check();
+        setInterval(check, 5 * 60 * 1000);
+    })();
 
     /* Menú vinilo: 2 acciones (perfil + playlist). */
     /* Icono musicaIcon.png para la opción "Corregir" (lo reescribe

@@ -9,5 +9,10 @@
   },
   "android": {
     "appendUserAgent": "MelonHubApp"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
   }
 }

@@ -1,14 +1,108 @@
 package es.melonhub.MelonHub;
 
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.Window;
+import android.webkit.WebView;
+import androidx.core.graphics.ColorUtils;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
+
+    /* Último color de barras de la página (null hasta que cargue). */
+    private Integer barsColor = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         /* Los plugins propios se registran antes de crear el puente. */
         registerPlugin(MelonMusicPlugin.class);
+        registerPlugin(MelonUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
+        fitInsideSystemBars();
+    }
+
+    /* La web va DENTRO de la barra de notificaciones y la de navegación,
+       no debajo. Desde Android 15 las apps se pintan de borde a borde y,
+       como las páginas llevan viewport-fit=cover, Capacitor las dejaba
+       debajo de las barras. Aquí la ventana deja hueco para las barras
+       (y el teclado) y la web recibe safe-area 0. Por eso en
+       capacitor.config.json va SystemBars.insetsHandling = "disable":
+       así no hay dos sitios tocando lo mismo. */
+    private void fitInsideSystemBars() {
+        Window window = getWindow();
+        /* Igual en todas las versiones: borde a borde con barras
+           transparentes; lo que se ve detrás es el fondo de la ventana. */
+        WindowCompat.setDecorFitsSystemWindows(window, false);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.TRANSPARENT);
+        }
+
+        View decor = window.getDecorView();
+        ViewCompat.setOnApplyWindowInsetsListener(decor, (v, insets) -> {
+            int types = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+            Insets bars = insets.getInsets(types);
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            /* Insets a 0 en vez de CONSUMED: con CONSUMED el WebView no
+               recalcula env(safe-area-inset-*) (lo mismo hace Capacitor). */
+            return new WindowInsetsCompat.Builder(insets).setInsets(types, Insets.NONE).build();
+        });
+
+        /* Color de las barras = <meta name="theme-color"> de la página (el
+           fondo del tema del usuario), como hace Chrome con la PWA. */
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageLoaded(WebView webView) {
+                webView.evaluateJavascript(
+                    "(function(){var m=document.querySelector('meta[name=\"theme-color\"]');return m?m.content:'';})()",
+                    MainActivity.this::applyBarsColor
+                );
+            }
+        });
+    }
+
+    /* El plugin SystemBars de Capacitor repinta el fondo de la ventana
+       al cambiar la configuración (girar, modo oscuro): lo devolvemos. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (barsColor != null) getWindow().getDecorView().post(() -> setBarsColor(barsColor));
+    }
+
+    private void applyBarsColor(String jsResult) {
+        Integer color = parseColor(jsResult);
+        if (color == null) return;
+        barsColor = color;
+        setBarsColor(color);
+    }
+
+    private void setBarsColor(int color) {
+        Window window = getWindow();
+        window.getDecorView().setBackgroundColor(color);
+        /* Iconos oscuros sobre fondo claro y al revés. */
+        boolean light = ColorUtils.calculateLuminance(color) > 0.5;
+        WindowCompat.getInsetsController(window, window.getDecorView()).setAppearanceLightStatusBars(light);
+        WindowCompat.getInsetsController(window, window.getDecorView()).setAppearanceLightNavigationBars(light);
+    }
+
+    /* evaluateJavascript devuelve el texto en JSON ("\"#123456\""). La web
+       solo pone #RRGGBB o #RGB (ver $themeBgColor en mobile.php). */
+    private static Integer parseColor(String jsResult) {
+        if (jsResult == null) return null;
+        String hex = jsResult.replace("\"", "").trim();
+        if (hex.matches("#[0-9a-fA-F]{3}")) {
+            hex = "#" + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2) + hex.charAt(3) + hex.charAt(3);
+        }
+        if (!hex.matches("#[0-9a-fA-F]{6}")) return null;
+        return Color.parseColor(hex);
     }
 }
