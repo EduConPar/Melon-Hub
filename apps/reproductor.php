@@ -2504,28 +2504,35 @@ function _playAlbumFrom(origIdx) {
     }
     if (actualStart < 0) actualStart = 0;
 
+    _loadAlbumQueue(albumId, meta, playable, actualStart);
+    /* Cerrar el viewer al pulsar play — el usuario ya tiene el track
+       sonando en el reproductor pequeño. */
+    closeAlbumViewer();
+}
+
+/* Pone las canciones `playable` (todas con videoId) del álbum como cola
+   y arranca en `start`. Lo usan el viewer y el reproductor flotante de
+   la app de escritorio (melonTrackAction 'play-album'). */
+function _loadAlbumQueue(albumId, meta, playable, start) {
     const virtualId = 'spotify-album:' + albumId;
     currentPlaylistId = virtualId;
     currentPlaylistHasCollabs = false;
     playlist.length = 0;
     playable.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist }));
-    currentTrack = actualStart;
+    currentTrack = start;
     /* Sin emoji: el título de la ventana del reproductor identifica
        el álbum por el nombre solo. */
     updatePlayerTitle(meta.name || 'Álbum');
-    updateTrackUI(actualStart);
+    updateTrackUI(start);
     if (typeof MelonPlayerState !== 'undefined') {
-        try { MelonPlayerState.setPlaylist(virtualId, actualStart); } catch (_) {}
+        try { MelonPlayerState.setPlaylist(virtualId, start); } catch (_) {}
     }
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-        ytPlayer.loadVideoById(playlist[actualStart].videoId);
+        ytPlayer.loadVideoById(playlist[start].videoId);
     }
     /* Loguear como álbum escuchado para wrapped. Una sola llamada por
        sesión de play (dedupe 60s en backend). */
-    _logAlbumPlay();
-    /* Cerrar el viewer al pulsar play — el usuario ya tiene el track
-       sonando en el reproductor pequeño. */
-    closeAlbumViewer();
+    _logAlbumPlay({ albumId, meta });
 }
 
 /* Click en el TÍTULO de la canción → abre la ventana del álbum
@@ -2921,11 +2928,13 @@ function _addAlbumToProfile() {
 
 /* Loguea una reproducción de álbum en wrapped — para que el resumen
    anual cuente "álbumes escuchados". Dedupe de 60s vive en backend.
-   Lo llamamos desde _playAlbumFrom (cuando el usuario realmente da
-   play, sea botón "Reproducir álbum" o click directo en una canción). */
-function _logAlbumPlay() {
-    if (!_albumViewerCurrent) return;
-    const { albumId, meta } = _albumViewerCurrent;
+   Lo llamamos desde _loadAlbumQueue (cuando el usuario realmente da
+   play, sea botón "Reproducir álbum" o click directo en una canción).
+   `album` = { albumId, meta }; sin él, el álbum abierto en el viewer. */
+function _logAlbumPlay(album) {
+    album = album || _albumViewerCurrent;
+    if (!album) return;
+    const { albumId, meta } = album;
     const body = JSON.stringify({
         albumTitle:     meta.name,
         artist:         meta.artist || '',
@@ -4590,6 +4599,19 @@ var addTrackCallback = null;
         switch (action) {
             case 'play-playlist':      /* value: { playlistId, index } */
                 withFreshPlaylist(value.playlistId, function(pl) { playPlaylistFrom(pl, value.index); });
+                break;
+            /* Búsqueda del flotante (canciones, álbumes y artistas), como
+               la del menú de playlists. */
+            case 'play-song':          /* value: { videoId, title, artist, duration } */
+                melonPlaySong(value);
+                break;
+            case 'play-artist-track':  /* value: { title, artist } — "Populares" del artista */
+                playArtistTrackByName(value.title, value.artist);
+                break;
+            case 'play-album':         /* value: { albumKey, name, artist, image, tracks, index } */
+                if (!value.tracks || !value.tracks[value.index]) break;
+                _loadAlbumQueue(value.albumKey, { name: value.name, artist: value.artist, image: value.image }, value.tracks, value.index);
+                melonRecordRecent('album', value.albumKey, value.name || '', value.image || '', value.artist || '');
                 break;
             case 'add-to-playlist':    /* value: id de la playlist */
                 if (track && track.videoId) withFreshPlaylist(value, function(pl) { addTrackToPlaylist(pl, track); });

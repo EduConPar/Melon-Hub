@@ -19,6 +19,15 @@ Thumbs.db
 # VS Code
 .vscode/
 
+# Claude Code: notas y ajustes locales del asistente y sus pruebas. No se
+# suben a GitHub.
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
+# Pruebas del reproductor flotante (Electron + API falsa).
+/electron/.e2e/
+
 # ─── Contenido generado por usuarios en producción ─────────────────
 # El auto-deploy de Hostinger hace `git reset --hard` y revierte todo
 # lo tracked → si dejamos estas rutas en el repo, cada push borra las

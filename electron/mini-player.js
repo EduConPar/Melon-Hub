@@ -1,7 +1,7 @@
 /* ──────────────────────────────────────────────────────────────────────
    REPRODUCTOR FLOTANTE
    ──────────────────────────────────────────────────────────────────────
-   Ventanita sin marco, siempre encima, que sale al cerrar Melon Hub con
+   Ventanita sin marco que sale al cerrar Melon Hub con
    música sonando (tray.js decide cuándo). Carga apps/mini-player.html de
    la web: un reproductor vertical en ventana Win98 con panel de playlists,
    letra y el mismo clic derecho que el reproductor del escritorio.
@@ -72,9 +72,9 @@ function create() {
         resizable: false,
         maximizable: false,
         fullscreenable: false,
-        alwaysOnTop: true,
-        /* En la barra de tareas mientras está abierto: al minimizarlo
-           (botón _ de su barra de título) se recupera desde ahí. */
+        /* Una ventana normal (no siempre encima), en la barra de tareas:
+           desde ahí se recupera si queda debajo de otra o se minimiza
+           (botón _ de su barra de título). */
         skipTaskbar: false,
         title: 'Melon Hub',
         icon: path.join(__dirname, 'icon.png'),
