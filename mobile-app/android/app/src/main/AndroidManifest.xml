@@ -56,6 +56,34 @@
                 android:resource="@xml/music_widget_info" />
         </receiver>
 
+        <!-- Widgets de calendario: el mes y "Próximos". -->
+        <receiver
+            android:name=".CalendarWidget"
+            android:exported="false"
+            android:label="@string/cal_month_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_month_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".CalendarAgendaWidget"
+            android:exported="false"
+            android:label="@string/cal_agenda_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_agenda_widget_info" />
+        </receiver>
+        <service
+            android:name=".CalendarAgendaService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <!-- Filas de las listas del widget. -->
         <service
             android:name=".WidgetListService"

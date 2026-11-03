@@ -23,4 +23,22 @@
     <string name="widget_offline">No se pudieron cargar las playlists</string>
     <string name="widget_no_playlists">No tienes playlists</string>
     <string name="widget_empty_playlist">Esta playlist está vacía</string>
+
+    <!-- Widgets de calendario -->
+    <string name="cal_month_label">Calendario</string>
+    <string name="cal_month_description">El mes con tus momentos y recordatorios</string>
+    <string name="cal_agenda_label">Próximos</string>
+    <string name="cal_agenda_description">Tus próximos recordatorios y eventos</string>
+    <string name="cal_title_agenda">Próximos</string>
+    <string name="cal_prev_month">Mes anterior</string>
+    <string name="cal_next_month">Mes siguiente</string>
+    <string name="cal_open">Abrir el calendario</string>
+    <string name="cal_nothing">No hay nada próximo</string>
+    <string name="cal_no_couple">El calendario es de pareja: invita a tu pareja en Melon Hub</string>
+    <string name="cal_today">Hoy</string>
+    <string name="cal_reminder">Recordatorio</string>
+    <string name="cal_event">Evento</string>
+    <string name="cal_every_week">cada semana</string>
+    <string name="cal_every_month">cada mes</string>
+    <string name="cal_every_year">cada año</string>
 </resources>

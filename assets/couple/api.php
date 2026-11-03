@@ -8,6 +8,7 @@
    GET   ?action=get-recordatorios&pareja_id=N
    GET   ?action=get-users
    GET   ?action=get-partner-invites
+   GET   ?action=widget-calendar       (widgets de la app: momentos + recordatorios sin pareja_id)
 
    POST  ?action=save-momento          { pareja_id, titulo, fecha, descripcion }
    POST  ?action=save-recordatorio     { pareja_id, titulo, fecha, descripcion, periodicidad }
@@ -292,6 +293,35 @@ case 'get-partner-invites': {
    Cada match registra un row en reminder_notifs_sent → solo se devuelve
    UNA vez. Si la tabla tiene PK compuesta y INSERT IGNORE, ejecuciones
    concurrentes no duplican notificaciones. Manda push best-effort. */
+/* Widgets de calendario de la app de Android (CalendarWidget): lo mismo que
+   carga el calendario del móvil (momentos y recordatorios de la pareja,
+   más los recordatorios personales, como los de los eventos), sin tener
+   que saber el pareja_id. Sin pareja el calendario del móvil no carga
+   nada, y esto tampoco. Las repeticiones las expande el widget. */
+case 'widget-calendar': {
+    $userId = getCurrentUserId($pdo, $userKey);
+    if (!$userId) jsonResponse(['ok' => true, 'pareja' => false, 'momentos' => [], 'recordatorios' => []]);
+    $stPair = $pdo->prepare("SELECT id FROM parejas WHERE usuario1_id = ? OR usuario2_id = ? LIMIT 1");
+    $stPair->execute([$userId, $userId]);
+    $parejaId = (int)($stPair->fetchColumn() ?: 0);
+    if (!$parejaId) jsonResponse(['ok' => true, 'pareja' => false, 'momentos' => [], 'recordatorios' => []]);
+
+    $stM = $pdo->prepare("SELECT fecha, foto FROM momentos WHERE pareja_id = ? ORDER BY fecha ASC");
+    $stM->execute([$parejaId]);
+    $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
+                          FROM recordatorios r
+                          WHERE r.pareja_id = ?
+                             OR (r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL))
+                          ORDER BY r.fecha ASC");
+    $stR->execute([$parejaId, $userId]);
+    jsonResponse([
+        'ok'            => true,
+        'pareja'        => true,
+        'momentos'      => $stM->fetchAll(PDO::FETCH_ASSOC),
+        'recordatorios' => $stR->fetchAll(PDO::FETCH_ASSOC),
+    ]);
+}
+
 case 'upcoming-reminders': {
     $userId = getCurrentUserId($pdo, $userKey);
     if (!$userId) jsonResponse(['ok' => true, 'reminders' => []]);

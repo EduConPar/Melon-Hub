@@ -23,6 +23,7 @@ import org.json.JSONObject;
      { action: 'toggle' | 'prev' | 'next' | 'shuffle' }
      { action: 'set-shuffle', on }   (🔀 tocado con la app cerrada)
      { action: 'play-playlist', name, tracks, index }
+     { action: 'open-calendar', day }  (widgets de calendario, CalendarWidget)
    y la web le cuenta al widget qué suena y con qué colores pintarse:
      setWidgetState({ playing, title, artist, videoId, position, duration, shuffle })
      setWidgetTheme({ interface, colors: { 'win-bg': '#…', … } }) */
@@ -91,7 +92,7 @@ public class MelonMusicPlugin extends Plugin {
            "oculta" y Chromium no deja arrancar el vídeo: se pone visible
            antes, como cuando suena. Al pausar, setPlaying(false) lo suelta. */
         String action = cmd.optString("action");
-        if (!action.equals("shuffle") && !action.equals("set-shuffle")) {
+        if (action.equals("toggle") || action.equals("prev") || action.equals("next") || action.equals("play-playlist")) {
             getActivity().runOnUiThread(() -> {
                 if (getBridge().getWebView() instanceof MusicWebView) {
                     ((MusicWebView) getBridge().getWebView()).setKeepVisible(true);

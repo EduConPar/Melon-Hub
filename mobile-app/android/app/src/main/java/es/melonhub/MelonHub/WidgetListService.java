@@ -106,13 +106,13 @@ public class WidgetListService extends RemoteViewsService {
                     title.isEmpty() ? row.optString("videoId") : title, 12, t.text, rowRoomDp, 1, false));
                 rv.setImageViewBitmap(R.id.w_item_sub, WidgetText.draw(ctx, t, WidgetText.BODY,
                     row.optString("artist"), 10, t.muted, rowRoomDp, 1, false));
-                PlayerWidget.paintRow(rv, t, 0);
+                WidgetPainter.paintRow(rv, t, 0);
                 fill.putExtra(PlayerWidget.EXTRA_PLAYLIST, playlistId).putExtra(PlayerWidget.EXTRA_INDEX, position);
             } else {
                 rv = new RemoteViews(ctx.getPackageName(), kawaii ? R.layout.widget_kw_item_playlist : R.layout.widget_w98_item_playlist);
                 rv.setImageViewBitmap(R.id.w_item_title, WidgetText.draw(ctx, t, WidgetText.BODY,
                     row.optString("name"), 12, t.text, rowRoomDp, 1, false));
-                PlayerWidget.paintRow(rv, t, R.id.w_item_ic);
+                WidgetPainter.paintRow(rv, t, R.id.w_item_ic);
                 fill.putExtra(PlayerWidget.EXTRA_SCREEN, WidgetStore.SCREEN_SONGS)
                     .putExtra(PlayerWidget.EXTRA_PLAYLIST, row.optString("id"));
             }

@@ -3,6 +3,7 @@ package es.melonhub.MelonHub;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.text.Layout;
 import android.text.StaticLayout;
@@ -44,6 +45,34 @@ final class WidgetText {
         Bitmap cached = CACHE.get(key);
         if (cached != null) return cached;
         Bitmap b = render(ctx, t, style, text, sp, color, maxWidthDp, maxLines, center);
+        CACHE.put(key, b);
+        return b;
+    }
+
+    /* Un número de la cuadrícula del calendario. shadow: sobre la foto de
+       un momento, con sombra para que se lea (como .cm-cell-foto). */
+    static Bitmap drawShadowed(Context ctx, WidgetTheme t, int style, String text, float sp, int color, boolean shadow) {
+        if (!shadow) return draw(ctx, t, style, text, sp, color, 40, 1, true);
+        String key = "s" + (t.kawaii ? "k" : "w") + style + "|" + sp + "|" + color + "|" + text;
+        Bitmap cached = CACHE.get(key);
+        if (cached != null) return cached;
+        DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
+        TextPaint paint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        paint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, dm));
+        paint.setTypeface(typeface(ctx, t, style));
+        float r = 3 * dm.density;
+        paint.setShadowLayer(r, 0, 0, 0xFF000000);
+        int pad = (int) Math.ceil(r);
+        Paint.FontMetricsInt fm = paint.getFontMetricsInt();
+        int w = (int) Math.ceil(paint.measureText(text)) + pad * 2;
+        int h = fm.descent - fm.ascent + pad * 2;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        b.setDensity(dm.densityDpi);
+        Canvas c = new Canvas(b);
+        /* Dos pasadas: la sombra sola se queda flojita. */
+        c.drawText(text, pad, pad - fm.ascent, paint);
+        c.drawText(text, pad, pad - fm.ascent, paint);
         CACHE.put(key, b);
         return b;
     }

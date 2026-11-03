@@ -208,7 +208,7 @@ final class WidgetStore {
         return false;
     }
 
-    private static String cookies(Context ctx) {
+    static String cookies(Context ctx) {
         try {
             return CookieManager.getInstance().getCookie(baseUrl(ctx));
         } catch (Exception e) {
@@ -288,7 +288,7 @@ final class WidgetStore {
     /* Si el servidor rehízo la sesión (melon_remember), manda un PHPSESSID
        nuevo y borra el viejo: hay que dárselo al WebView o la web
        perdería la sesión. */
-    private static void keepCookies(Context ctx, HttpURLConnection c) {
+    static void keepCookies(Context ctx, HttpURLConnection c) {
         Map<String, List<String>> headers = c.getHeaderFields();
         if (headers == null) return;
         for (Map.Entry<String, List<String>> h : headers.entrySet()) {
@@ -384,7 +384,7 @@ final class WidgetStore {
         return coverCache;
     }
 
-    private static String readAll(InputStream in) throws java.io.IOException {
+    static String readAll(InputStream in) throws java.io.IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         byte[] b = new byte[8192];
         int n;

@@ -6,11 +6,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.LinearGradient;
-import android.graphics.Shader;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -147,7 +143,7 @@ public class PlayerWidget extends AppWidgetProvider {
 
     private static RemoteViews playerViews(Context ctx, WidgetTheme t, float w) {
         RemoteViews rv = new RemoteViews(ctx.getPackageName(), t.kawaii ? R.layout.widget_kw_player : R.layout.widget_w98_player);
-        Painter p = new Painter(rv, t);
+        WidgetPainter p = new WidgetPainter(ctx, rv, t);
         p.frame();
         p.titleBar();
         p.button(R.id.w_shuf_1, R.id.w_shuf, R.id.w_shuf_ic, WidgetStore.shuffle(ctx));
@@ -210,7 +206,7 @@ public class PlayerWidget extends AppWidgetProvider {
 
     private static RemoteViews listViews(Context ctx, WidgetTheme t, String screen, int widgetId, float w) {
         RemoteViews rv = new RemoteViews(ctx.getPackageName(), t.kawaii ? R.layout.widget_kw_list : R.layout.widget_w98_list);
-        Painter p = new Painter(rv, t);
+        WidgetPainter p = new WidgetPainter(ctx, rv, t);
         p.frame();
         p.titleBar();
         p.button(R.id.w_back_1, R.id.w_back, R.id.w_back_ic, false);
@@ -268,22 +264,6 @@ public class PlayerWidget extends AppWidgetProvider {
         return rv;
     }
 
-    /* Una fila de las listas: fondo al pulsarla como la selección de la
-       web (Win98: acento; Kawaii: hover-bg). El fondo del layout es opaco
-       porque el tinte (SRC_IN) no pinta sobre transparente; sin pulsar,
-       el tinte lo deja transparente. Los textos son imágenes y no cambian
-       de color al pulsar (solo dura lo que el dedo está encima). */
-    static void paintRow(RemoteViews rv, WidgetTheme t, int iconId) {
-        int pressedBg = t.kawaii ? t.hoverBg : t.accent;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rv.setColorStateList(R.id.w_item, "setBackgroundTintList", states(0x00000000, pressedBg));
-            if (iconId != 0) rv.setColorStateList(iconId, "setImageTintList", states(t.text, t.kawaii ? t.text : t.accentText));
-        } else {
-            rv.setInt(R.id.w_item, "setBackgroundColor", 0x00000000);
-            if (iconId != 0) rv.setInt(iconId, "setColorFilter", t.text);
-        }
-    }
-
     /* Barra de progreso: relleno del color de acento hasta donde va, el
        resto del fondo del campo. Se estira a lo ancho (fitXY). */
     private static Bitmap progressBitmap(Context ctx, WidgetTheme t) {
@@ -326,118 +306,5 @@ public class PlayerWidget extends AppWidgetProvider {
        cada fila. */
     private static int mutable() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0;
-    }
-
-    private static ColorStateList states(int normal, int pressed) {
-        return new ColorStateList(
-            new int[][] { new int[] { android.R.attr.state_pressed }, new int[0] },
-            new int[] { pressed, normal });
-    }
-
-    /* Pinta los marcos de los layouts con los colores del tema. En Win98
-       cada relieve son 4 marcos anidados (<id>_1…_4: abajo-dcha externo,
-       arriba-izda externo, abajo-dcha interno, arriba-izda interno) como
-       los box-shadow de 98.css; en Kawaii, un marco (<id>_1) que hace de
-       borde de 2 dp. Los botones se hunden al pulsarlos (Android 12+: los
-       colores con estado solo se pueden cambiar desde ahí). */
-    private static final class Painter {
-        private final RemoteViews rv;
-        private final WidgetTheme t;
-
-        Painter(RemoteViews rv, WidgetTheme t) {
-            this.rv = rv;
-            this.t = t;
-        }
-
-        private void bg(int id, int color) {
-            rv.setInt(id, "setBackgroundColor", color);
-        }
-
-        private void bg(int id, int normal, int pressed) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                rv.setColorStateList(id, "setBackgroundTintList", states(normal, pressed));
-            } else {
-                bg(id, normal);
-            }
-        }
-
-        void frame() {
-            if (t.kawaii) {
-                bg(R.id.w_win_1, t.border);
-                bg(R.id.w_win, t.winBg);
-                bg(R.id.w_tb_1, t.border);
-                bg(R.id.w_tb, t.bodyBg);
-                bg(R.id.w_body_1, t.border);
-            } else {
-                bevel(WIN_IDS, t.dark1, t.light2, t.dark2, t.light1);
-                bg(R.id.w_win, t.winBg);
-            }
-            bg(R.id.w_body, t.bodyBg);
-        }
-
-        void titleBar() {
-            if (t.kawaii) return;
-            /* El degradado de la barra de título de Win98, como imagen. */
-            Bitmap b = Bitmap.createBitmap(64, 1, Bitmap.Config.ARGB_8888);
-            android.graphics.Paint g = new android.graphics.Paint();
-            g.setShader(new LinearGradient(0, 0, 64, 0, t.tbStart, t.tbEnd, Shader.TileMode.CLAMP));
-            new Canvas(b).drawRect(0, 0, 64, 1, g);
-            rv.setImageViewBitmap(R.id.w_tb_bg, b);
-        }
-
-        /* on: botón activado (🔀): hundido con el icono de acento en Win98,
-           relleno de acento en Kawaii. */
-        void button(int outerId, int fillId, int iconId, boolean on) {
-            if (t.kawaii) {
-                bg(outerId, t.border);
-                bg(fillId, on ? t.accent : t.btnBg, on ? t.accent : t.activeBg);
-                rv.setInt(iconId, "setColorFilter", on ? t.accentText : t.btnText);
-                return;
-            }
-            int[] ids = bevelIds(outerId);
-            if (on) {
-                bevel(ids, t.light1, t.dark1, t.light2, t.dark2);
-            } else {
-                bg(ids[0], t.dark1, t.light1);
-                bg(ids[1], t.light1, t.dark1);
-                bg(ids[2], t.dark2, t.light2);
-                bg(ids[3], t.light2, t.dark2);
-            }
-            bg(fillId, t.btnBg);
-            rv.setInt(iconId, "setColorFilter", on ? t.accent : t.btnText);
-        }
-
-        /* Campo hundido (carátula, barra, lista) con el fondo de los inputs. */
-        void field(int outerId, int fillId) {
-            if (t.kawaii) {
-                bg(outerId, t.border);
-            } else {
-                bevel(bevelIds(outerId), t.light1, t.dark2, t.light2, t.dark1);
-            }
-            bg(fillId, t.inputBg);
-        }
-
-        private void bevel(int[] ids, int c1, int c2, int c3, int c4) {
-            bg(ids[0], c1);
-            bg(ids[1], c2);
-            bg(ids[2], c3);
-            bg(ids[3], c4);
-        }
-    }
-
-    private static final int[] WIN_IDS = { R.id.w_win_1, R.id.w_win_2, R.id.w_win_3, R.id.w_win_4 };
-
-    /* Los 4 marcos de un relieve de Win98 a partir del primero. */
-    private static int[] bevelIds(int outerId) {
-        if (outerId == R.id.w_shuf_1) return new int[] { R.id.w_shuf_1, R.id.w_shuf_2, R.id.w_shuf_3, R.id.w_shuf_4 };
-        if (outerId == R.id.w_menu_1) return new int[] { R.id.w_menu_1, R.id.w_menu_2, R.id.w_menu_3, R.id.w_menu_4 };
-        if (outerId == R.id.w_back_1) return new int[] { R.id.w_back_1, R.id.w_back_2, R.id.w_back_3, R.id.w_back_4 };
-        if (outerId == R.id.w_prev_1) return new int[] { R.id.w_prev_1, R.id.w_prev_2, R.id.w_prev_3, R.id.w_prev_4 };
-        if (outerId == R.id.w_play_1) return new int[] { R.id.w_play_1, R.id.w_play_2, R.id.w_play_3, R.id.w_play_4 };
-        if (outerId == R.id.w_next_1) return new int[] { R.id.w_next_1, R.id.w_next_2, R.id.w_next_3, R.id.w_next_4 };
-        if (outerId == R.id.w_pa_1) return new int[] { R.id.w_pa_1, R.id.w_pa_2, R.id.w_pa_3, R.id.w_pa_4 };
-        if (outerId == R.id.w_cov_1) return new int[] { R.id.w_cov_1, R.id.w_cov_2, R.id.w_cov_3, R.id.w_cov_4 };
-        if (outerId == R.id.w_prog_1) return new int[] { R.id.w_prog_1, R.id.w_prog_2, R.id.w_prog_3, R.id.w_prog_4 };
-        return new int[] { R.id.w_lst_1, R.id.w_lst_2, R.id.w_lst_3, R.id.w_lst_4 };
     }
 }

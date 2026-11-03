@@ -1910,6 +1910,21 @@ if ('serviceWorker' in navigator) {
         } catch(_){}
     })();
 
+    /* Widgets de calendario de la app de Android (CalendarWidget): tocar un
+       día o algo de "Próximos" abre el calendario en ese día. Con una app
+       vieja el evento no llega nunca. */
+    (function() {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.addListener !== 'function') return;
+        try {
+            cap.addListener('MelonMusic', 'widgetCommand', function(cmd){
+                if (!cmd || cmd.action !== 'open-calendar') return;
+                var dia = /^\d{4}-\d{2}-\d{2}$/.test(cmd.day || '') ? cmd.day : '';
+                openApp('apps/mobile/calendario-mobile.php' + (dia ? '?dia=' + dia : ''), 'Calendario', false);
+            });
+        } catch (_) {}
+    })();
+
     /* Apps embebidas → postMessage para volver atrás o lanzar otra. */
     window.addEventListener('message', function(ev){
         var d = ev.data || {};
@@ -4085,7 +4100,7 @@ window.MuShell = (function(){
         var KEYS = ['win-bg', 'win-body-bg', 'titlebar-start', 'titlebar-end', 'titlebar-text', 'text',
                     'text-muted', 'btn-bg', 'btn-text', 'accent', 'accent-text', 'input-bg',
                     'bezel-light-1', 'bezel-light-2', 'bezel-dark-1', 'bezel-dark-2', 'border',
-                    'hover-bg', 'active-rose'];
+                    'hover-bg', 'active-rose', 'accent-deep'];
         /* El navegador pasa cualquier color CSS (nombres, rgb…) a rgb(). */
         var probe = document.createElement('span');
         probe.style.display = 'none';

@@ -14,12 +14,17 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
     /* La abrió el widget para poner una canción (WidgetPlayActivity). */
     static final String EXTRA_FROM_WIDGET = "fromWidget";
+
+    /* La abrió un widget de calendario: abre el calendario en ese día
+       ("AAAA-MM-DD"; "" = sin día). */
+    static final String EXTRA_OPEN_DAY = "openDay";
 
     /* Último color de barras de la página (null hasta que cargue). */
     private Integer barsColor = null;
@@ -33,6 +38,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MelonMusicPlugin.class);
         registerPlugin(MelonUpdaterPlugin.class);
         sendToBack = getIntent().getBooleanExtra(EXTRA_FROM_WIDGET, false);
+        openDayFromWidget(getIntent());
         super.onCreate(savedInstanceState);
         fitInsideSystemBars();
     }
@@ -41,6 +47,19 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (intent.getBooleanExtra(EXTRA_FROM_WIDGET, false)) sendToBack = true;
+        openDayFromWidget(intent);
+    }
+
+    /* La orden llega a la web como las del widget de música; si la app se
+       está abriendo, se entrega al cargar el plugin. */
+    private void openDayFromWidget(Intent intent) {
+        String day = intent.getStringExtra(EXTRA_OPEN_DAY);
+        if (day == null) return;
+        intent.removeExtra(EXTRA_OPEN_DAY);
+        JSObject cmd = new JSObject();
+        cmd.put("action", "open-calendar");
+        cmd.put("day", day);
+        if (!MelonMusicPlugin.sendWidgetCommand(cmd)) MelonMusicPlugin.pendingWidgetCommand = cmd;
     }
 
     /* Una sola vez: si luego el usuario la abre, se queda delante. */
@@ -50,12 +69,14 @@ public class MainActivity extends BridgeActivity {
         return b;
     }
 
-    /* Al salir de la app el widget se repinta: así coge la interfaz
-       (Win98 / Kawaii) si se ha cambiado. */
+    /* Al salir de la app los widgets se repintan: así cogen la interfaz
+       (Win98 / Kawaii) si se ha cambiado, y los de calendario lo que se
+       haya añadido. */
     @Override
     public void onPause() {
         super.onPause();
         PlayerWidget.refresh(this);
+        CalendarWidget.refreshFromApp(this);
     }
 
     /* La web va DENTRO de la barra de notificaciones y la de navegación,

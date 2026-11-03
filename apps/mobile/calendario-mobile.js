@@ -1101,6 +1101,16 @@ if (parejaId) {
 })();
 
 /* ── Init final ── */
-cargarTodo();
+/* ?dia=AAAA-MM-DD (widgets de calendario de la app de Android): se abre
+   en ese mes con el día abierto, como al tocarlo en la cuadrícula. */
+const diaInicial = new URLSearchParams(location.search).get('dia');
+cargarTodo().then(() => {
+    const d = diaInicial && parseISODate(diaInicial);
+    if (!d) return;
+    currentYear = d.getFullYear();
+    currentMonth = d.getMonth();
+    recalcAndRender();
+    abrirSheetDia(diaInicial);
+});
 
 })();
