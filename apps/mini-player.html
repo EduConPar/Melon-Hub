@@ -154,6 +154,7 @@
         .mp-form-msg { flex-shrink: 0; min-height: 14px; margin-top: 4px; font-size: 10px; color: var(--text); }
         .mp-form-buttons { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
         .mp-form-buttons .button { height: 23px; padding: 0 10px; }
+        .mp-form select { width: 100%; flex-shrink: 0; }
         .mp-lt-status { flex-shrink: 0; color: var(--text); line-height: 1.4; }
         .mp-row .button.mp-wide { width: auto; padding: 0 8px; }
 
@@ -260,6 +261,32 @@
                     </div>
                 </div>
             </div>
+            <!-- Descargar la canción (openDownloadDialog del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-dl">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-dl-back">◄ Volver</button>
+                    <span class="mp-panel-title">Descargar canción</span>
+                </div>
+                <div class="mp-form">
+                    <div class="mp-page-head">
+                        <img id="mp-dl-cover" alt="">
+                        <div class="mp-row-info"><span class="mp-page-name" id="mp-dl-title"></span><span class="mp-row-sub" id="mp-dl-artist"></span></div>
+                    </div>
+                    <label class="mp-label" for="mp-dl-format">Formato</label>
+                    <select id="mp-dl-format"><option value="mp3">MP3</option><option value="m4a">M4A (original)</option><option value="wav">WAV</option></select>
+                    <label class="mp-label" for="mp-dl-kbps">Calidad</label>
+                    <select id="mp-dl-kbps"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select>
+                    <p class="mp-hint" style="margin-top:8px;">Se guarda en Descargas como</p>
+                    <p class="mp-hint" id="mp-dl-name" style="font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></p>
+                    <div class="progress-indicator" id="mp-dl-bar" style="height:20px;padding:3px;display:none;flex-shrink:0;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent);"></span></div>
+                    <div class="mp-form-msg" id="mp-dl-msg"></div>
+                    <div style="flex:1"></div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-dl-cancel">Cancelar</button>
+                        <button class="button" id="mp-dl-go">Descargar</button>
+                    </div>
+                </div>
+            </div>
             <!-- Escuchar juntos (el modal lt-modal del escritorio) -->
             <div class="mp-view mp-panel" id="mp-lt">
                 <div class="mp-panel-head">
@@ -301,12 +328,13 @@
     var view = 'player';
     function show(name) {
         view = name;
-        ['player', 'lists', 'lyrics', 'fix', 'lt'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
+        ['player', 'lists', 'lyrics', 'fix', 'lt', 'dl'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
         $('mp-lyrics-btn').classList.toggle('btn-active', name === 'lyrics');
         if (name === 'lists') openPlaylists();
         if (name === 'lyrics') loadLyrics();
         if (name === 'fix') openFix();
         if (name === 'lt') openListenTogether();
+        if (name === 'dl') openDownload();
     }
 
     /* ── La ventana se ajusta a la ventana Win98 dibujada. Se mide sin
@@ -1118,6 +1146,70 @@
         });
     }
 
+    /* ── Descargar la canción: formato (MP3 con su calidad, M4A original o
+       WAV) y progreso, como la ventana del escritorio. La descarga la hace
+       la app (electron/download.js) y se guarda en Descargas. ── */
+    var dlInfo = null, dlJob = null;
+    function dlName(f) {
+        var base = [dlInfo.artist, dlInfo.title].filter(Boolean).join(' - ')
+            .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Canción';
+        return '"' + base + '.' + f + '"';
+    }
+    function dlRefresh() {
+        var f = $('mp-dl-format').value;
+        $('mp-dl-kbps').disabled = !!dlJob || f !== 'mp3';
+        $('mp-dl-format').disabled = !!dlJob;
+        $('mp-dl-go').disabled = !!dlJob;
+        $('mp-dl-name').textContent = dlName(f);
+    }
+    function openDownload() {
+        if (dlJob) return;   /* hay una en marcha: se ve su progreso */
+        dlInfo = {
+            videoId: state.videoId, title: state.title || '', artist: state.artist || '', album: state.album || '',
+            cover: state.cover || 'https://i.ytimg.com/vi/' + state.videoId + '/hqdefault.jpg',
+        };
+        $('mp-dl-cover').src = dlInfo.cover;
+        $('mp-dl-title').textContent = dlInfo.title;
+        $('mp-dl-artist').textContent = dlInfo.artist;
+        $('mp-dl-bar').style.display = 'none';
+        $('mp-dl-msg').textContent = '';
+        dlRefresh();
+    }
+    function dlStep(p, f) {
+        var pc = p.percent == null ? '' : ' ' + p.percent + ' %';
+        if (p.stage === 'setup') return 'Preparando el descargador (solo la primera vez)…' + pc;
+        if (p.stage === 'update') return 'Actualizando el descargador…';
+        if (p.stage === 'download') return 'Descargando…' + pc;
+        return f === 'm4a' ? 'Guardando…' : 'Convirtiendo a ' + f.toUpperCase() + '…';
+    }
+    if (md.onDownloadProgress) md.onDownloadProgress(function(p) {
+        if (!dlJob || p.id !== dlJob.id) return;
+        $('mp-dl-bar').firstChild.style.width = (p.percent == null ? 100 : p.percent) + '%';
+        $('mp-dl-msg').textContent = dlStep(p, dlJob.format);
+    });
+    $('mp-dl-format').addEventListener('change', dlRefresh);
+    $('mp-dl-back').addEventListener('click', function() { show('player'); });
+    $('mp-dl-cancel').addEventListener('click', function() {
+        if (dlJob) md.cancelDownload(dlJob.id);
+        show('player');
+    });
+    $('mp-dl-go').addEventListener('click', function() {
+        var f = $('mp-dl-format').value;
+        dlJob = { id: 'dl-' + Date.now(), format: f };
+        var job = dlJob;
+        dlRefresh();
+        $('mp-dl-bar').style.display = '';
+        $('mp-dl-bar').firstChild.style.width = '0%';
+        $('mp-dl-msg').textContent = 'Empezando…';
+        md.download(Object.assign({ id: job.id, format: f, kbps: Number($('mp-dl-kbps').value) }, dlInfo)).then(function(r) {
+            dlJob = null;
+            dlRefresh();
+            $('mp-dl-bar').style.display = 'none';
+            if (r && r.ok) $('mp-dl-msg').textContent = '✓ Guardada en Descargas: ' + r.name;
+            else $('mp-dl-msg').textContent = r && r.cancelled ? '' : '✕ ' + ((r && r.error) || 'No se pudo descargar');
+        });
+    });
+
     /* ── Clic derecho: las mismas opciones que el reproductor del
        escritorio (showTrackCtxMenu de apps/reproductor.php). ── */
     var menu = $('mp-menu');
@@ -1137,6 +1229,8 @@
         menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
                  function() { show('fix'); }, noTrack);
         menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
+        /* Descargar: la app de escritorio 0.3.5 o posterior. */
+        if (md.download) menuItem('⬇ Descargar…', function() { show('dl'); }, noTrack);
         var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
                : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
                : '🎧 Escuchar juntos…';

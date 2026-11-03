@@ -25,6 +25,7 @@ const path = require('path');
 const fs = require('fs');
 const updater = require('./updater');
 const tray = require('./tray');
+const download = require('./download');
 
 const START_URL  = process.env.MELONHUB_URL || require('./package.json').melonhub.url;
 const APP_ORIGIN = new URL(START_URL).origin;
@@ -180,6 +181,7 @@ if (!app.requestSingleInstanceLock()) {
         mainWindow.on('closed', () => { mainWindow = null; });
         updater.start(mainWindow);
         tray.start(mainWindow, START_URL);
+        download.init();
     });
 
     app.on('window-all-closed', () => app.quit());

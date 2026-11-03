@@ -2664,6 +2664,19 @@ window.notifSystem = (function() {
         });
         ctxMenu.appendChild(listItem);
 
+        /* Descargar la canción: solo en la app de escritorio (la web no
+           puede bajar el audio de YouTube). */
+        if (window.melonDesktop && window.melonDesktop.download && typeof window.openDownloadDialog === 'function') {
+            var dlItem = document.createElement('div');
+            dlItem.className = 'pl-menu-item';
+            dlItem.textContent = '⬇ Descargar…';
+            dlItem.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                window.openDownloadDialog(track);
+            });
+            ctxMenu.appendChild(dlItem);
+        }
+
         /* Item Listen Together — añadido aquí también para que aparezca
            al click derecho en el reproductor (este handler captura
            antes de que llegue al #music-player listener). */

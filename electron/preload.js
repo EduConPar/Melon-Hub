@@ -26,6 +26,21 @@ contextBridge.exposeInMainWorld('melonDesktop', {
         ipcRenderer.on('melon:player-command', (_e, action, value) => cb(action, value));
     },
 
+    /* Descargar la canción que suena (download.js). info: { id, videoId,
+       title, artist, album, cover, format: mp3 | m4a | wav, kbps }. Devuelve
+       { ok, name, file } | { ok: false, error } | { ok: false, cancelled }.
+       onDownloadProgress recibe { id, stage: setup | update | download |
+       convert, percent }. */
+    download(info) {
+        return ipcRenderer.invoke('melon:download', info);
+    },
+    cancelDownload(id) {
+        ipcRenderer.send('melon:download-cancel', id);
+    },
+    onDownloadProgress(cb) {
+        ipcRenderer.on('melon:download-progress', (_e, p) => cb(p));
+    },
+
     /* Reproductor flotante (apps/mini-player.html, mini-player.js). */
     mini: {
         onState(cb) {

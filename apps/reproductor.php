@@ -881,6 +881,137 @@ function decorateSearchRatings(container) {
     });
 }
 
+/* ── Descargar la canción (solo en la app de escritorio) ──────────────
+   Clic derecho → "⬇ Descargar…" abre esta ventana: formato (MP3 con su
+   calidad, M4A original o WAV), dónde se guarda y una barra de progreso.
+   La descarga la hace la app (electron/download.js); al terminar avisa el
+   haro. El reproductor flotante tiene la misma ventana como panel. */
+var DL_FORMATS = { mp3: 'MP3', m4a: 'M4A (original)', wav: 'WAV' };
+function melonDownloadName(track, format) {
+    var base = [track.artist, track.title].filter(Boolean).join(' - ')
+        .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Canción';
+    return base + '.' + format;
+}
+/* Texto de cada paso de la descarga ({ stage, percent }). */
+function melonDownloadStep(p, format) {
+    var pc = (p.percent == null) ? '' : ' ' + p.percent + ' %';
+    if (p.stage === 'setup')    return 'Preparando el descargador (solo la primera vez)…' + pc;
+    if (p.stage === 'update')   return 'Actualizando el descargador…';
+    if (p.stage === 'download') return 'Descargando…' + pc;
+    return format === 'm4a' ? 'Guardando…' : 'Convirtiendo a ' + format.toUpperCase() + '…';
+}
+function openDownloadDialog(track) {
+    var md = window.melonDesktop;
+    if (!track || !track.videoId || !md || !md.download) return;
+    var cover = document.getElementById('player-cover');
+    var info = {
+        videoId: track.videoId, title: track.title || '', artist: track.artist || '',
+        album: (_currentAlbum && _currentAlbum.albumName) || '',
+        cover: cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/hqdefault.jpg',
+    };
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:340px;max-width:94vw;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar canción</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+                '<img data-dl="cover" alt="" style="width:48px;height:48px;object-fit:cover;flex:0 0 48px;background:var(--inset-bg,#222);">' +
+                '<div style="min-width:0;flex:1;">' +
+                    '<div data-dl="title" style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                    '<div data-dl="artist" style="font-size:10px;opacity:0.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="field-row" style="margin-bottom:6px;"><label style="width:56px;">Formato:</label>' +
+                '<select data-dl="format" style="flex:1;"></select></div>' +
+            '<div class="field-row" style="margin-bottom:8px;"><label style="width:56px;">Calidad:</label>' +
+                '<select data-dl="kbps" style="flex:1;"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
+            '<div style="font-size:10px;line-height:1.4;">Se guarda en Descargas como</div>' +
+            '<div data-dl="name" style="font-size:10px;line-height:1.4;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;"></div>' +
+            '<div class="progress-indicator" data-dl="bar" style="height:20px;padding:3px;display:none;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent,navy);"></span></div>' +
+            '<div data-dl="msg" style="font-size:10px;min-height:14px;margin-top:4px;"></div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">' +
+                '<button class="button" data-act="cancel">Cancelar</button>' +
+                '<button class="button" data-act="go">Descargar</button>' +
+            '</div>' +
+        '</div>';
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    var q = function(k) { return win.querySelector('[data-dl="' + k + '"]'); };
+    q('cover').src = info.cover;
+    q('cover').onerror = function() { this.style.visibility = 'hidden'; };
+    q('title').textContent = info.title;
+    q('artist').textContent = info.artist;
+    Object.keys(DL_FORMATS).forEach(function(f) {
+        var o = document.createElement('option');
+        o.value = f; o.textContent = DL_FORMATS[f];
+        q('format').appendChild(o);
+    });
+    /* La calidad solo se elige en MP3: M4A va tal cual y WAV sin comprimir. */
+    function refresh() {
+        var f = q('format').value;
+        q('kbps').disabled = f !== 'mp3';
+        q('name').textContent = '"' + melonDownloadName(info, f) + '"';
+    }
+    q('format').addEventListener('change', refresh);
+    refresh();
+
+    var jobId = null;
+    function close() {
+        if (jobId) md.cancelDownload(jobId);
+        document.removeEventListener('keydown', onKey, true);
+        bd.remove();
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelector('[data-act="close"]').addEventListener('click', close);
+    win.querySelector('[data-act="cancel"]').addEventListener('click', close);
+
+    var go = win.querySelector('[data-act="go"]');
+    go.addEventListener('click', function() {
+        var format = q('format').value;
+        jobId = 'dl-' + Date.now();
+        var myId = jobId;
+        go.disabled = true;
+        q('format').disabled = q('kbps').disabled = true;
+        q('bar').style.display = '';
+        q('msg').textContent = 'Empezando…';
+        var bar = q('bar').firstChild;
+        melonDownloadListen(myId, function(p) {
+            bar.style.width = (p.percent == null ? 100 : p.percent) + '%';
+            q('msg').textContent = melonDownloadStep(p, format);
+        });
+        md.download(Object.assign({ id: myId, format: format, kbps: Number(q('kbps').value) }, info)).then(function(r) {
+            melonDownloadListen(myId, null);
+            if (jobId !== myId) return;   /* cancelada (ventana cerrada) */
+            jobId = null;
+            if (r && r.ok) {
+                close();
+                if (window.notifSystem) notifSystem.show({ type: 'success', title: 'Canción descargada', message: 'Guardada en Descargas: ' + r.name });
+                return;
+            }
+            go.disabled = false;
+            q('format').disabled = false;
+            refresh();
+            q('bar').style.display = 'none';
+            q('msg').textContent = r && r.cancelled ? '' : '✕ ' + ((r && r.error) || 'No se pudo descargar');
+        });
+    });
+}
+/* Un único oyente del progreso para todas las descargas de esta página. */
+var _dlListeners = {}, _dlHooked = false;
+function melonDownloadListen(id, cb) {
+    if (!_dlHooked && window.melonDesktop && melonDesktop.onDownloadProgress) {
+        _dlHooked = true;
+        melonDesktop.onDownloadProgress(function(p) { if (_dlListeners[p.id]) _dlListeners[p.id](p); });
+    }
+    if (cb) _dlListeners[id] = cb; else delete _dlListeners[id];
+}
+window.openDownloadDialog = openDownloadDialog;
+
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
 function melonPlaySong(tr) {
@@ -1188,6 +1319,43 @@ _winDragResize('lt-modal', 260, 200);
 let ytPlayer = null;
 let progressInterval  = null;
 let autoplayRandom    = false;
+/* Historial de lo escuchado para el modo aleatorio: "anterior" vuelve a la
+   canción que sonaba antes (no a la de antes en la lista) y "siguiente",
+   después de volver atrás, rehace el mismo camino en vez de sortear otra.
+   Cada entrada guarda la playlist y el videoId de la canción: si la cola ya
+   no es la misma, se descarta. */
+let shuffleBack = [], shuffleForward = [], shuffleNow = null, shuffleNav = false;
+function rememberListened(index, track) {
+    const entry = { pl: currentPlaylistId, idx: index, vid: track.videoId };
+    if (shuffleNow && shuffleNow.vid === entry.vid && shuffleNow.pl === entry.pl) return;   /* repintado de la misma */
+    if (!shuffleNav && shuffleNow) {
+        shuffleBack.push(shuffleNow);
+        if (shuffleBack.length > 200) shuffleBack.shift();
+        shuffleForward = [];
+    }
+    shuffleNow = entry;
+}
+/* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+function historyStep(stack) {
+    while (stack.length) {
+        const e = stack.pop();
+        if (e.pl === currentPlaylistId && playlist[e.idx] && playlist[e.idx].videoId === e.vid) return e.idx;
+    }
+    return -1;
+}
+/* Siguiente en aleatorio: la del historial si se había vuelto atrás; si no,
+   una al azar distinta de la actual. */
+function nextShuffleIndex() {
+    const fwd = historyStep(shuffleForward);
+    if (fwd !== -1) {
+        if (shuffleNow) shuffleBack.push(shuffleNow);
+        shuffleNav = true;   /* rememberListened no debe borrar el resto del camino */
+        return fwd;
+    }
+    let next;
+    do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
+    return next;
+}
 
 /* Publica el track actual a save-now-playing para que (1) la TV lo lea
    por polling y (2) el apartado social del perfil muestre "escuchando
@@ -1290,6 +1458,7 @@ function syncSystemMedia(isPlaying) {
             shuffle:    autoplayRandom,
             ltRole:     LT_ROLE,
             volume:     vol ? parseInt(vol.value, 10) : 100,
+            album:      (_currentAlbum && _currentAlbum.albumName) || '',
             ltInvites:  Object.values(LT_PENDING),
             ltInvited:  LT_INVITED,
             discordClientId: discordClientId
@@ -2004,6 +2173,8 @@ function updateTrackUI(index)
 {
     if (!playlist.length) return;
     const track = playlist[index];
+    rememberListened(index, track);
+    shuffleNav = false;
     playerTitle.textContent  = track.title;
     playerArtist.textContent = track.artist || '—';
     playerCover.crossOrigin = 'anonymous';
@@ -3314,9 +3485,7 @@ function onYouTubeIframeAPIReady()
                    wrapped/escuchando-ahora. */
                 if (e.data === YT.PlayerState.ENDED && LT_ROLE !== 'guest') {
                     if (autoplayRandom && playlist.length > 1) {
-                        let next;
-                        do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
-                        currentTrack = next;
+                        currentTrack = nextShuffleIndex();
                     } else {
                         currentTrack = (currentTrack + 1) % playlist.length;
                     }
@@ -3353,6 +3522,14 @@ btnPlay.addEventListener('click', () => {
 document.getElementById('btn-prev').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+    /* En aleatorio, a la que sonaba antes (si queda en el historial). */
+    const back = autoplayRandom ? historyStep(shuffleBack) : -1;
+    if (back !== -1) {
+        if (shuffleNow) shuffleForward.push(shuffleNow);
+        shuffleNav = true;
+        switchTrack(back, playing);
+        return;
+    }
     switchTrack((currentTrack - 1 + playlist.length) % playlist.length, playing);
 });
 
@@ -3360,9 +3537,7 @@ document.getElementById('btn-next').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
     if (autoplayRandom && playlist.length > 1) {
-        let next;
-        do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
-        switchTrack(next, playing);
+        switchTrack(nextShuffleIndex(), playing);
     } else {
         switchTrack((currentTrack + 1) % playlist.length, playing);
     }

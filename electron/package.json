@@ -1,7 +1,7 @@
 {
   "name": "melonhub-desktop",
   "productName": "Melon Hub",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Melon Hub como aplicación de escritorio",
   "author": "Melon Hub",
   "main": "main.js",
@@ -30,6 +30,8 @@
       "tray.js",
       "mini-player.js",
       "discord.js",
+      "download.js",
+      "convert.html",
       "settings.js",
       "icon.png",
       "package.json"
@@ -61,7 +63,8 @@
   },
   "dependencies": {
     "dbus-next": "^0.10.2",
-    "electron-updater": "^6.8.11"
+    "electron-updater": "^6.8.11",
+    "lamejs": "^1.2.1"
   },
   "devDependencies": {
     "electron": "^45.2.1",
