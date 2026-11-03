@@ -176,7 +176,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <script src="../../assets/js/icon-pack.js"></script>
     <script src="../../assets/js/notif-sound.js"></script>
     <script src="../../assets/js/cover-fallback.js"></script>
-    <script src="../../assets/js/melon-links.js"></script>
+    <script src="../../assets/js/melon-links.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-links.js') ?>"></script>
     <?php
         require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php";
         emitInterfaceCss("../../");

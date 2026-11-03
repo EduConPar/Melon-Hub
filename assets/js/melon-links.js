@@ -2,7 +2,8 @@
    "🔗 Copiar enlace" (ver assets/links.php)
    ──────────────────────────────────────────────────────────────────────
    melonLinkUrl('perfil', 'user2') → https://…/enlace.php?perfil=user2
-   melonCopyLink(tipo, valor)       → lo copia y avisa ("Enlace copiado").
+   melonCopyLink(tipo, valor)       → lo copia y avisa ("Enlace copiado"
+                                      junto al ratón).
    La raíz de la web sale de dónde está este archivo (assets/js/), así
    vale igual en el escritorio, en las apps del móvil (apps/mobile/) y en
    local (/scrapbookOnline/).
@@ -15,22 +16,45 @@
         return root + 'enlace.php?' + encodeURIComponent(tipo) + '=' + encodeURIComponent(valor);
     };
 
+    /* "Enlace copiado" sale junto al ratón (donde se pulsó la opción), como
+       los tooltips de la web (.has-tip: --warning-bg / --bezel-dark-2; en
+       Kawaii, su regla de tooltip, que incluye .melon-link-tip). Con
+       teclado, junto al elemento con el foco. */
+    var ultimo = null;
+    document.addEventListener('pointerdown', function (e) { ultimo = { x: e.clientX, y: e.clientY }; }, true);
+
+    function estilo() {
+        if (document.getElementById('melon-link-tip-css')) return;
+        var st = document.createElement('style');
+        st.id = 'melon-link-tip-css';
+        st.textContent = '.melon-link-tip{position:fixed;z-index:2147483647;pointer-events:none;white-space:nowrap;' +
+            'background:var(--warning-bg,#ffffe1);color:var(--warning-text,#000);font-size:10px;padding:3px 7px;' +
+            'border-radius:3px;border:1px solid var(--bezel-dark-2,#808080);}';
+        (document.head || document.documentElement).appendChild(st);
+    }
+
     function aviso(msg) {
-        /* El haro del escritorio (también desde un iframe del escritorio). */
-        var ns = window.notifSystem;
-        try { if (!ns && window.parent && window.parent !== window) ns = window.parent.notifSystem; } catch (_) {}
-        if (ns && ns.show) {
-            ns.show({ id: 'melon-link-copied', type: 'info', title: '🔗 Enlace', message: msg, autoDismissAfter: 3000 });
-            return;
+        estilo();
+        var old = document.querySelector('.melon-link-tip');
+        if (old) old.parentNode.removeChild(old);
+        var pos = ultimo;
+        var a = document.activeElement;
+        if (!pos && a && a !== document.body && a.getBoundingClientRect) {
+            var r = a.getBoundingClientRect();
+            pos = { x: r.left + r.width / 2, y: r.bottom };
         }
-        /* Móvil / sin haro: un aviso pequeño abajo. */
+        if (!pos) pos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
         var t = document.createElement('div');
+        t.className = 'melon-link-tip';
         t.textContent = msg;
-        t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99999;' +
-            'background:var(--win-bg,silver);color:var(--text,#000);padding:6px 12px;font-size:12px;' +
-            'box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px grey,inset 2px 2px #dfdfdf;';
         document.body.appendChild(t);
-        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 2500);
+        /* Abajo a la derecha del puntero, sin salirse de la ventana. */
+        var x = Math.min(pos.x + 12, window.innerWidth - t.offsetWidth - 4);
+        var y = pos.y + 16;
+        if (y + t.offsetHeight > window.innerHeight - 4) y = pos.y - t.offsetHeight - 8;
+        t.style.left = Math.max(4, x) + 'px';
+        t.style.top = Math.max(4, y) + 'px';
+        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 1500);
     }
 
     function copiarViejo(txt) {

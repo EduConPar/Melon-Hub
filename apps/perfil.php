@@ -155,7 +155,7 @@ if ($_perfilStandalone) {
     </script>
     <script src="assets/js/icon-pack.js"></script>
     <script src="assets/js/cover-fallback.js"></script>
-    <script src="assets/js/melon-links.js"></script>
+    <script src="assets/js/melon-links.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/melon-links.js'); ?>"></script>
     <link rel="stylesheet" href="assets/css/reproductor.css">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
