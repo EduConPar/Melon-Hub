@@ -22,6 +22,7 @@
      - Atajos globales de la música, notificaciones del sistema, contador
        de mensajes en la bandeja, botones de la miniatura de Windows y
        arrastrar imágenes fuera (desktop-extras.js).
+     - Enlaces melonhub://… y los de la web compartidos (links.js).
    ────────────────────────────────────────────────────────────────────── */
 const { app, BrowserWindow, shell, Menu, session } = require('electron');
 const path = require('path');
@@ -30,6 +31,7 @@ const updater = require('./updater');
 const tray = require('./tray');
 const download = require('./download');
 const extras = require('./desktop-extras');
+const links = require('./links');
 
 const START_URL  = process.env.MELONHUB_URL || require('./package.json').melonhub.url;
 const APP_ORIGIN = new URL(START_URL).origin;
@@ -121,11 +123,16 @@ function createWindow() {
     /* Ventanas nuevas (target=_blank, window.open): las de la propia web
        se abren en otra ventana de la app; el resto, en el navegador. */
     wc.setWindowOpenHandler(({ url }) => {
+        /* Enlaces compartidos (enlace.php…): se abren dentro, sin ventana. */
+        const link = links.fromWebUrl(url, APP_ORIGIN);
+        if (link) { links.open(link); return { action: 'deny' }; }
         if (isInternal(url)) return { action: 'allow' };
         openOutside(url);
         return { action: 'deny' };
     });
     wc.on('will-navigate', (e, url) => {
+        const link = links.fromWebUrl(url, APP_ORIGIN);
+        if (link) { e.preventDefault(); links.open(link); return; }
         if (isInternal(url) || url.startsWith('data:')) return;
         e.preventDefault();
         openOutside(url);
@@ -151,7 +158,8 @@ function createWindow() {
         e.preventDefault();
     });
 
-    win.loadURL(START_URL);
+    /* Abierta con un enlace melonhub://… (app cerrada). */
+    win.loadURL(links.startUrl(START_URL, process.argv));
     return win;
 }
 
@@ -176,7 +184,11 @@ function setupPermissions() {
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on('second-instance', () => tray.openMain());
+    app.on('second-instance', (_e, argv) => {
+        tray.openMain();
+        const link = links.fromArgv(argv);
+        if (link) links.open(link);
+    });
 
     /* Windows: sin esto las notificaciones del sistema no salen (o salen como "electron"). */
     if (process.platform === 'win32') app.setAppUserModelId(require('./package.json').build.appId);
@@ -190,6 +202,7 @@ if (!app.requestSingleInstanceLock()) {
         tray.start(mainWindow, START_URL);
         download.init();
         extras.start(mainWindow, tray.getTray(), { openMain: tray.openMain });
+        links.start(mainWindow, START_URL, { openMain: tray.openMain });
     });
 
     app.on('window-all-closed', () => app.quit());

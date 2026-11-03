@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="assets/css/98.css">
     <link rel="stylesheet" href="assets/css/tokens.css">
     <script src="assets/js/icon-pack.js"></script>
+    <script src="assets/js/melon-links.js"></script>
     <!-- Va siempre la última: el CSS del escritorio que se copia de la
          ventana principal se inserta delante. -->
     <style id="mini-overrides">
@@ -1238,8 +1239,10 @@
         /* Sobre una canción del panel (playlist, búsqueda, álbum): descargar
            esa canción. */
         var row = e.target.closest && e.target.closest('#mp-lists-box .mp-row');
-        if (row && row.song && md.download) {
-            menuItem('⬇ Descargar…', function() { dlSong = row.song; show('dl'); });
+        if (row && row.song && (md.download || window.melonCopyLink)) {
+            if (md.download) menuItem('⬇ Descargar…', function() { dlSong = row.song; show('dl'); });
+            var rowVid = row.song.videoId;
+            if (rowVid && window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', rowVid); });
             placeMenu(e);
             return;
         }
@@ -1250,6 +1253,8 @@
         menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
         /* Descargar: la app de escritorio 0.3.5 o posterior. */
         if (md.download) menuItem('⬇ Descargar…', function() { show('dl'); }, noTrack);
+        /* Enlace para compartir la que suena (enlace.php?cancion=…). */
+        if (window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', state.videoId); }, noTrack || !state.videoId);
         var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
                : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
                : '🎧 Escuchar juntos…';

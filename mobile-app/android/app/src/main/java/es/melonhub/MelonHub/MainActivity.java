@@ -2,6 +2,7 @@ package es.melonhub.MelonHub;
 
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.net.Uri;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -39,6 +40,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MelonUpdaterPlugin.class);
         sendToBack = getIntent().getBooleanExtra(EXTRA_FROM_WIDGET, false);
         openDayFromWidget(getIntent());
+        openLink(getIntent());
         super.onCreate(savedInstanceState);
         fitInsideSystemBars();
     }
@@ -48,6 +50,58 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         if (intent.getBooleanExtra(EXTRA_FROM_WIDGET, false)) sendToBack = true;
         openDayFromWidget(intent);
+        openLink(intent);
+    }
+
+    /* Enlaces compartidos: melonhub://<tipo>/<valor> o
+       https://…/enlace.php?<tipo>=<valor>. Llegan a la web como la orden
+       "open-link" (mOpenLink en mobile.php) con "<tipo>:<valor>", igual
+       que las del widget; si la app se está abriendo, al cargar. El data
+       se quita del intent para que Capacitor no intente cargar esa URL. */
+    private void openLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
+        String link = parseLink(intent.getData());
+        intent.setData(null);
+        if (link == null) return;
+        JSObject cmd = new JSObject();
+        cmd.put("action", "open-link");
+        cmd.put("link", link);
+        if (!MelonMusicPlugin.sendWidgetCommand(cmd)) MelonMusicPlugin.pendingWidgetCommand = cmd;
+    }
+
+    /* Igual que melonParseLink (assets/links.php). */
+    private static final String[][] LINK_TYPES = {
+        { "perfil",   "[A-Za-z0-9_-]{1,50}" },
+        { "escuchar", "[A-Za-z0-9_-]{1,50}" },
+        { "cancion",  "[A-Za-z0-9_-]{11}" },
+        { "album",    "[a-z]{2,12}:[A-Za-z0-9_-]{1,80}" },
+        { "playlist", "[0-9]{1,10}" },
+    };
+
+    static String parseLink(Uri uri) {
+        if (uri == null) return null;
+        String scheme = uri.getScheme();
+        try {
+            if ("melonhub".equals(scheme)) {
+                String path = uri.getPath() == null ? "" : uri.getPath().replaceAll("^/+|/+$", "");
+                return checkLink(uri.getHost(), path);
+            }
+            if ("https".equals(scheme) || "http".equals(scheme)) {
+                for (String[] t : LINK_TYPES) {
+                    String v = uri.getQueryParameter(t[0]);
+                    if (v != null) return checkLink(t[0], v);
+                }
+            }
+        } catch (Exception ignored) { /* enlace raro */ }
+        return null;
+    }
+
+    private static String checkLink(String type, String value) {
+        if (type == null || value == null) return null;
+        for (String[] t : LINK_TYPES) {
+            if (t[0].equals(type)) return value.matches(t[1]) ? type + ":" + value : null;
+        }
+        return null;
     }
 
     /* La orden llega a la web como las del widget de música; si la app se

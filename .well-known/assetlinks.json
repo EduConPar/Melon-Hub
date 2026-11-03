@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "es.melonhub.MelonHub",
+      "sha256_cert_fingerprints": [
+        "1F:B3:0F:C3:06:B0:3F:B2:83:63:1C:20:F3:F0:72:D1:50:73:B8:53:CA:04:14:4F:B6:27:20:D3:B2:58:40:F4"
+      ]
+    }
+  }
+]

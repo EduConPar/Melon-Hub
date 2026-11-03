@@ -13,6 +13,28 @@ require_once __DIR__ . '/assets/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/assets/themes/theme-helpers.php';
 
+/* Enlaces compartidos (assets/links.php): ?abrir=<tipo>:<valor> espera en
+   la sesión (aunque haya que iniciarla antes) y lo abre el escritorio o
+   mobile.php. Va antes de la redirección de los móviles para no perderse.
+   "Escuchar conmigo" de la presencia de Discord (?escuchar=<user_key>,
+   también el de versiones viejas de la app) pasa por enlace.php para
+   intentar abrir la app; dentro de la app de Android, directo. */
+require_once __DIR__ . '/assets/links.php';
+if (isset($_GET['abrir'])) {
+    $_abrir = melonParseLinkString((string)$_GET['abrir']);
+    if ($_abrir !== null) $_SESSION['abrir'] = $_abrir;
+}
+if (isset($_GET['escuchar'])) {
+    $_esc = melonParseLink('escuchar', (string)$_GET['escuchar']);
+    if ($_esc !== null) {
+        if (strpos($_SERVER['HTTP_USER_AGENT'] ?? '', 'MelonHubApp') === false) {
+            header('Location: enlace.php?escuchar=' . rawurlencode(substr($_esc, strlen('escuchar:'))));
+            exit;
+        }
+        $_SESSION['abrir'] = $_esc;
+    }
+}
+
 /* Móviles SIEMPRE entran por la landing. Es la única puerta a Melon
    Hub — la landing decide client-side qué hacer:
      - Standalone (la PWA está abierta) + sesión → mobile.php?pwa=1.
@@ -30,18 +52,10 @@ if (isMobileDevice()) {
    así la app de escritorio abre ya dentro. Para volver al selector hay
    que cerrar sesión (logout.php). */
 require_once __DIR__ . '/assets/remember-login.php';
-/* "Escuchar conmigo" (botón de la presencia de Discord): ?escuchar=<user_key>
-   se guarda hasta entrar y se le pasa al escritorio (apps/reproductor.php). */
-if (isset($_GET['escuchar'])) {
-    $_SESSION['lt_join'] = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$_GET['escuchar']);
-}
+/* El enlace pendiente ($_SESSION['abrir'], arriba) lo recoge el propio
+   escritorio (desktop-base.php). */
 function desktopUrlFor(string $label): string {
-    $url = 'desktops/' . strtolower($label) . '-desktop.php';
-    if (!empty($_SESSION['lt_join'])) {
-        $url .= '?escuchar=' . rawurlencode($_SESSION['lt_join']);
-        unset($_SESSION['lt_join']);
-    }
-    return $url;
+    return 'desktops/' . strtolower($label) . '-desktop.php';
 }
 $rememberedUser = restoreRememberedLogin($pdo);
 if ($rememberedUser !== null && isset($loginUsers[$rememberedUser]) && $_SERVER['REQUEST_METHOD'] !== 'POST') {

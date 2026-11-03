@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('melonDesktop', {
         ipcRenderer.send('melon:drag-start', url);
     },
 
+    /* Enlaces melonhub://… y los de la web pulsados dentro de la app
+       (links.js): cb recibe "<tipo>:<valor>" (melonOpenLink en
+       desktop-base.php). Registrarlo avisa de que la página ya escucha. */
+    onOpenLink(cb) {
+        ipcRenderer.on('melon:open-link', (_e, link) => cb(link));
+        ipcRenderer.send('melon:open-link-ready');
+    },
+
     /* Reproductor flotante (apps/mini-player.html, mini-player.js). */
     mini: {
         onState(cb) {

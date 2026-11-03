@@ -22,6 +22,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Enlaces compartidos (assets/links.php en la web): los abre
+                 MainActivity.openLink. melonhub://<tipo>/<valor> llega
+                 desde enlace.php (intent:// en Chrome); los enlace.php de
+                 la web se abren directos en la app si Android verifica
+                 el dominio (.well-known/assetlinks.json en la web). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="melonhub" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="melonhub.es" />
+                <data android:host="melonhubdev.melonhub.es" />
+                <data android:path="/enlace.php" />
+            </intent-filter>
+
         </activity>
 
         <provider

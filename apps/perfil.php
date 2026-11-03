@@ -155,6 +155,7 @@ if ($_perfilStandalone) {
     </script>
     <script src="assets/js/icon-pack.js"></script>
     <script src="assets/js/cover-fallback.js"></script>
+    <script src="assets/js/melon-links.js"></script>
     <link rel="stylesheet" href="assets/css/reproductor.css">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
@@ -360,6 +361,8 @@ if ($_perfilStandalone) {
                         </div>
                         <div id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></div>
                         <button class="button" id="profile-follow-btn" style="display:none;font-size:9px;margin-top:5px;">+ Seguir</button>
+                        <!-- Enlace para compartir este perfil (enlace.php?perfil=…). -->
+                        <button class="button" id="profile-link-btn" type="button" title="Copiar el enlace de este perfil" style="font-size:9px;margin-top:3px;">🔗 Enlace</button>
                     </div>
                     <div id="profile-info-col">
                         <div id="profile-info-row">
@@ -5093,6 +5096,17 @@ var PROFILE_USERS = <?php
                 alert('No se pudo cargar el perfil');
             });
     }
+
+    /* 🔗 Enlace: el del perfil que se está viendo (el mío si no). */
+    (function () {
+        var b = document.getElementById('profile-link-btn');
+        if (!b) return;
+        var ownKey = <?php echo json_encode(isset($desktopUserKey) ? $desktopUserKey : ($_SESSION['user'] ?? '')); ?>;
+        b.addEventListener('click', function () {
+            var key = viewingUser || window.__PERFIL_VIEWING_KEY || ownKey;
+            if (key && typeof window.melonCopyLink === 'function') window.melonCopyLink('perfil', key);
+        });
+    })();
 
     function updateFollowButton(isFollowing) {
         var btn = document.getElementById('profile-follow-btn');

@@ -176,6 +176,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <script src="../../assets/js/icon-pack.js"></script>
     <script src="../../assets/js/notif-sound.js"></script>
     <script src="../../assets/js/cover-fallback.js"></script>
+    <script src="../../assets/js/melon-links.js"></script>
     <?php
         require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php";
         emitInterfaceCss("../../");
@@ -1506,6 +1507,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Editar perfil</button>
                 <button class="button" id="pf-follow-btn" type="button" hidden>+ Seguir</button>
                 <button class="button" id="pf-chat-btn" type="button" hidden><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Chat</button>
+                <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
+                <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
             </div>
             <div class="pf-new-post" id="pf-new-post">
                 <textarea id="pf-post-text" maxlength="1000" placeholder="Escribe algo..."></textarea>
@@ -4630,6 +4633,11 @@ function deletePost(postId) {
         });
     });
 })();
+
+/* 🔗 Enlace del perfil que se está viendo (el mío si no). */
+document.getElementById('pf-link-btn').addEventListener('click', function(){
+    if (window.melonCopyLink) window.melonCopyLink('perfil', STATE.viewingUser || USER_KEY);
+});
 
 /* Botón "Seguir" — solo aparece viendo otro perfil. Toggle. */
 document.getElementById('pf-follow-btn').addEventListener('click', function(){

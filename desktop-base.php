@@ -55,6 +55,11 @@ if (!isset($_SESSION['user']) || $_SESSION['user'] !== $desktopUserKey) {
     exit;
 }
 
+/* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
+   lo abre melonOpenLink al cargar. */
+require_once __DIR__ . '/assets/links.php';
+$melonPendingLink = melonTakePendingLink();
+
 // Tras validar sesión: averiguar la pareja del usuario (0 si no tiene).
 require_once __DIR__ . '/db.php';
 /** @var PDO $pdo */
@@ -321,6 +326,7 @@ $_isTablet = isTabletDevice();
     <!-- En tablet, los iconos del escritorio y mascota usan long-press
          para abrir su menú contextual (sustituto del click derecho). -->
     <script src="assets/js/longpress.js"></script>
+    <script src="assets/js/melon-links.js"></script>
     <?php endif; ?>
     <link rel="stylesheet" href="assets/css/reproductor.css?v=<?php echo filemtime(__DIR__ . '/assets/css/reproductor.css'); ?>">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/perfil.css'); ?>">
@@ -4504,6 +4510,69 @@ window.notifSystem = (function() {
     if (mascota) longPressMenu.attach(mascota);
 })();
 <?php endif; ?>
+</script>
+
+<script>
+/* ── Enlaces compartidos (assets/links.php) ──────────────────────────
+   melonOpenLink('<tipo>:<valor>') abre lo que dice el enlace. Llega:
+   - al entrar desde enlace.php → index.php?abrir=… (enlace pendiente en
+     la sesión, abajo);
+   - de la app de escritorio (melonhub://… o un enlace pulsado dentro),
+     con melonDesktop.onOpenLink, sin recargar la página. */
+(function () {
+    /* La música de un enlace gana a "la última canción" que el
+       reproductor pone al arrancar (ver onReady en reproductor.php). */
+    function whenPlayer(fn) {
+        window.__melonLinkPlayed = true;
+        if (window.__melonPlayerReady) fn();
+        else window.__melonLinkPlay = fn;
+    }
+    function showPlayer() {
+        if (window.taskbarManager && taskbarManager.isRegistered('music-player')) {
+            try { taskbarManager.restore('music-player'); } catch (_) {}
+        }
+    }
+    window.melonOpenLink = function (link) {
+        var m = /^([a-z]+):(.+)$/.exec(String(link || ''));
+        if (!m) return;
+        var tipo = m[1], valor = m[2];
+        if (tipo === 'perfil') {
+            if (valor === currentUserKey) {
+                var ic = document.getElementById('profile-icon');
+                if (ic) ic.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            } else if (typeof window.openProfileAtUser === 'function') {
+                window.openProfileAtUser(valor);
+            }
+        } else if (tipo === 'cancion') {
+            fetch('assets/music/api.php?action=yt-title&id=' + encodeURIComponent(valor))
+                .then(function (r) { return r.json(); })
+                .catch(function () { return {}; })
+                .then(function (d) {
+                    whenPlayer(function () {
+                        melonPlaySong({ videoId: valor, title: (d && d.title) || '', artist: (d && d.author) || '' });
+                        showPlayer();
+                    });
+                });
+        } else if (tipo === 'album') {
+            if (typeof openAlbumViewer === 'function') openAlbumViewer(valor);
+        } else if (tipo === 'playlist') {
+            if (typeof openSharedPlaylistViewer === 'function') openSharedPlaylistViewer(valor);
+        } else if (tipo === 'escuchar') {
+            if (typeof window.melonJoinListen === 'function') window.melonJoinListen(valor);
+        }
+    };
+
+    if (window.melonDesktop && typeof window.melonDesktop.onOpenLink === 'function') {
+        window.melonDesktop.onOpenLink(window.melonOpenLink);
+    }
+
+    var pending = <?= json_encode($melonPendingLink) ?>;
+    if (pending) {
+        var run = function () { setTimeout(function () { window.melonOpenLink(pending); }, 300); };
+        if (document.readyState === 'complete') run();
+        else window.addEventListener('load', run);
+    }
+})();
 </script>
 
 <?php

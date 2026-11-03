@@ -317,7 +317,7 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
     <div class="title-bar" id="album-viewer-titlebar">
         <div class="title-bar-text">
             <img src="assets/img/appIcons/musicaIcon.png" alt="" class="album-viewer-titlebar-icon">
-            Álbum
+            <span id="album-viewer-title-text">Álbum</span>
         </div>
         <div class="title-bar-controls">
             <button aria-label="Close" id="album-viewer-close"></button>
@@ -340,6 +340,9 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
                 <span class="album-viewer-play-tri">▶</span> Reproducir álbum
             </button>
             <button class="button" id="album-viewer-download" disabled title="Descargar el álbum entero">⬇ Descargar</button>
+            <!-- Solo con una playlist de otro abierta desde un enlace
+                 (openSharedPlaylistViewer). -->
+            <button class="button" id="album-viewer-save" style="display:none;">➕ Guardar en mis playlists</button>
         </div>
     </div>
     <!-- Resize handles por los 4 lados + 4 esquinas (8 direcciones).
@@ -2246,21 +2249,16 @@ window.ltLeave     = ltLeave;
 
 /* ── "Escuchar conmigo" (botón de la presencia de Discord de la app de
    escritorio, electron/discord.js) ──────────────────────────────────
-   - Quien lo pulsa llega con ?escuchar=<user_key del anfitrión> (index.php
-     lo pasa al escritorio aunque haya que iniciar sesión antes): se pide
-     unirse (request-join, solo amigos con seguimiento mutuo) y, cuando
-     llega la invitación del anfitrión, se acepta sola.
+   - Quien lo pulsa llega por enlace.php?escuchar=<user_key del anfitrión>
+     (intenta abrir su app; si no, sigue en la web aunque haya que iniciar
+     sesión antes) y melonOpenLink (desktop-base.php) llama a
+     melonJoinListen: se pide unirse (request-join, solo amigos con
+     seguimiento mutuo) y, cuando llega la invitación del anfitrión, se
+     acepta sola. ?escuchar= en la URL del escritorio sigue valiendo.
    - La app del anfitrión atiende esas peticiones cada 5 s: abre la sesión
      si no la tiene e invita a quien lo pidió (ltInviteUser). */
-(function ltJoinFromLink() {
-    const m = /[?&]escuchar=([A-Za-z0-9_-]+)/.exec(location.search);
-    if (!m) return;
-    const host = m[1];
-    try {
-        const qs = location.search.replace(/([?&])escuchar=[^&]*&?/, '$1').replace(/[?&]$/, '');
-        history.replaceState(null, '', location.pathname + qs + location.hash);
-    } catch (_) {}
-    if (host === currentUserKey) return;
+window.melonJoinListen = function(host) {
+    if (!host || host === currentUserKey) return;
     ltFetch('request-join', { body: { host: host } }).then(function(r) {
         /* A quien no es amigo solo se le abre Melon Hub. */
         if (!r || !r.ok) return;
@@ -2285,6 +2283,15 @@ window.ltLeave     = ltLeave;
             ltJoinAsGuest(mine.id);
         }, 2000);
     });
+};
+(function ltJoinFromUrl() {
+    const m = /[?&]escuchar=([A-Za-z0-9_-]+)/.exec(location.search);
+    if (!m) return;
+    try {
+        const qs = location.search.replace(/([?&])escuchar=[^&]*&?/, '$1').replace(/[?&]$/, '');
+        history.replaceState(null, '', location.pathname + qs + location.hash);
+    } catch (_) {}
+    window.melonJoinListen(m[1]);
 })();
 if (window.melonDesktop) {
     setInterval(async function() {
@@ -2711,6 +2718,164 @@ let _albumViewerToken = 0;
 
 function _albumViewerEl(id) { return document.getElementById(id); }
 
+/* La misma ventana sirve de visor de álbum y de playlist compartida
+   (enlace.php?playlist=N). Cambia el título, el nombre en la barra de
+   tareas y el botón de guardar. */
+function _albumViewerSetMode(win, mode) {
+    const prev = win.dataset.mode || 'album';
+    win.dataset.mode = mode;
+    const label = mode === 'playlist' ? 'Playlist' : 'Álbum';
+    const t = _albumViewerEl('album-viewer-title-text');
+    if (t) t.textContent = label;
+    const save = _albumViewerEl('album-viewer-save');
+    if (save) { save.style.display = 'none'; save.disabled = false; save.onclick = null; }
+    if (prev !== mode && window.taskbarManager && taskbarManager.isRegistered('album-viewer')) {
+        try { taskbarManager.unregister('album-viewer'); } catch (_) {}
+    }
+}
+
+/* Playlist de otra persona abierta desde un enlace: la ve cualquiera con
+   sesión (music api shared-playlist). Se reproduce como cola suelta (no
+   queda como "playlist actual", que es de otro) y se puede guardar una
+   copia en mis playlists. */
+async function openSharedPlaylistViewer(playlistId) {
+    const win = _albumViewerEl('album-viewer');
+    if (!win || !playlistId) return;
+    const myToken = ++_albumViewerToken;
+    _albumViewerSetMode(win, 'playlist');
+    const nameEl   = _albumViewerEl('album-viewer-name');
+    const artistEl = _albumViewerEl('album-viewer-artist');
+    const metaEl   = _albumViewerEl('album-viewer-meta');
+    const coverEl  = _albumViewerEl('album-viewer-cover');
+    const tracksEl = _albumViewerEl('album-viewer-tracks');
+    const playBtn  = _albumViewerEl('album-viewer-play');
+    const dlBtn    = _albumViewerEl('album-viewer-download');
+    const saveBtn  = _albumViewerEl('album-viewer-save');
+    nameEl.textContent = 'Cargando…';
+    artistEl.textContent = '';
+    metaEl.textContent = '';
+    coverEl.src = '';
+    tracksEl.innerHTML = '<div class="album-viewer-msg">Cargando…</div>';
+    playBtn.disabled = true;
+    playBtn.innerHTML = '<span class="album-viewer-play-tri">▶</span> Reproducir';
+    dlBtn.disabled = true;
+    _albumViewerCurrent = null;
+    if (window.taskbarManager) {
+        if (taskbarManager.isRegistered('album-viewer')) taskbarManager.restore('album-viewer');
+        else taskbarManager.register('album-viewer', 'Playlist',
+            '<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">',
+            'flex');
+    } else {
+        win.style.display = 'flex';
+    }
+
+    let pl;
+    try {
+        const r = await fetch('assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(playlistId));
+        pl = await r.json();
+    } catch (_) { pl = null; }
+    if (myToken !== _albumViewerToken) return;
+    if (!pl || !pl.ok) {
+        nameEl.textContent = 'Playlist';
+        tracksEl.innerHTML = '<div class="album-viewer-msg"></div>';
+        tracksEl.firstChild.textContent = (pl && pl.error) || 'No se pudo abrir la playlist.';
+        return;
+    }
+    const tracks = (pl.tracks || []).filter(t => t && t.videoId);
+    nameEl.textContent   = pl.name || 'Playlist';
+    artistEl.textContent = pl.mine ? '' : 'Playlist de ' + pl.ownerLabel;
+    coverEl.src = pl.image || (tracks[0] ? 'https://i.ytimg.com/vi/' + tracks[0].videoId + '/mqdefault.jpg' : '');
+    let totalSec = 0;
+    tracks.forEach(t => { totalSec += t.duration || 0; });
+    let metaText = tracks.length + (tracks.length === 1 ? ' canción' : ' canciones');
+    if (totalSec) {
+        const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60);
+        metaText += ' · ' + (h > 0 ? h + 'h ' : '') + m + 'm';
+    }
+    metaEl.textContent = metaText;
+
+    tracksEl.innerHTML = '';
+    if (!tracks.length) tracksEl.innerHTML = '<div class="album-viewer-msg">Esta playlist está vacía.</div>';
+    tracks.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'album-viewer-row';
+        const num = document.createElement('span');
+        num.className = 'album-viewer-num';
+        num.textContent = i + 1;
+        const info = document.createElement('div');
+        info.className = 'album-viewer-info';
+        const ttl = document.createElement('div');
+        ttl.className = 'album-viewer-title';
+        ttl.textContent = t.title;
+        const ar = document.createElement('div');
+        ar.className = 'album-viewer-artist';
+        ar.textContent = t.artist || '';
+        info.appendChild(ttl); info.appendChild(ar);
+        const dur = document.createElement('span');
+        dur.className = 'album-viewer-dur';
+        dur.textContent = t.duration ? formatTime(t.duration) : '';
+        row.appendChild(num); row.appendChild(info); row.appendChild(dur);
+        row.addEventListener('click', () => _playSharedPlaylistFrom(i));
+        row.addEventListener('contextmenu', ev => {
+            ev.preventDefault();
+            if (typeof window.openTrackCtxMenu === 'function') {
+                window.openTrackCtxMenu(ev, { title: t.title, artist: t.artist, videoId: t.videoId, duration: t.duration });
+            }
+        });
+        tracksEl.appendChild(row);
+    });
+
+    _albumViewerCurrent = { shared: true, playlistId: pl.id, meta: { name: pl.name, image: pl.image }, resolved: tracks };
+    if (!tracks.length) return;
+    playBtn.disabled = false;
+    playBtn.onclick = () => _playSharedPlaylistFrom(0);
+    dlBtn.disabled = false;
+    dlBtn.onclick = () => openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: tracks });
+    if (!pl.mine) {
+        saveBtn.style.display = '';
+        saveBtn.onclick = () => _saveSharedPlaylist(pl, tracks, saveBtn);
+    }
+}
+
+function _playSharedPlaylistFrom(i) {
+    const cur = _albumViewerCurrent;
+    if (!cur || !cur.shared || !cur.resolved.length) return;
+    const start = Math.max(0, Math.min(i, cur.resolved.length - 1));
+    window.__melonLinkPlayed = true;
+    currentPlaylistId = null;
+    currentPlaylistHasCollabs = false;
+    playlist.length = 0;
+    cur.resolved.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist, duration: t.duration || 0 }));
+    currentTrack = start;
+    updatePlayerTitle(cur.meta.name || 'Playlist');
+    updateTrackUI(start);
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') ytPlayer.loadVideoById(playlist[start].videoId);
+    closeAlbumViewer();
+}
+
+/* Copia la playlist (nombre, imagen y canciones) en una nueva mía. */
+function _saveSharedPlaylist(pl, tracks, btn) {
+    btn.disabled = true;
+    const me = (typeof usersInfo !== 'undefined' && usersInfo[currentUserKey]) ? usersInfo[currentUserKey].label : '';
+    fetch('assets/music/api.php?action=save-playlist-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            id: 'pl_' + Date.now(), name: pl.name, image: pl.image || '',
+            tracks: tracks.map(t => ({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0, addedBy: me })),
+        }),
+    }).then(r => r.json()).then(d => {
+        if (!d || !d.ok) throw new Error((d && d.error) || 'No se pudo guardar');
+        btn.textContent = '✓ Guardada';
+        if (typeof refreshPlaylists === 'function') refreshPlaylists();
+        if (window.notifSystem) notifSystem.show({ id: 'pl-saved-' + d.id, type: 'info', title: 'Playlists',
+            message: '"' + pl.name + '" está ahora en tus playlists.', autoDismissAfter: 5000 });
+    }).catch(e => {
+        btn.disabled = false;
+        alert(e.message || 'No se pudo guardar');
+    });
+}
+
 function closeAlbumViewer() {
     const win = _albumViewerEl('album-viewer');
     if (!win) return;
@@ -2732,6 +2897,7 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
        _albumViewerToken para verificar verá un valor distinto si entre
        medias alguien cerró o abrió otro álbum. */
     const myToken = ++_albumViewerToken;
+    _albumViewerSetMode(win, 'album');
 
     const nameEl   = _albumViewerEl('album-viewer-name');
     const artistEl = _albumViewerEl('album-viewer-artist');
@@ -3007,6 +3173,7 @@ function _playAlbumFrom(origIdx) {
         /* Aún cargando videoIds. */
         return;
     }
+    if (_albumViewerCurrent.shared) return _playSharedPlaylistFrom(origIdx);
     const { albumId, meta, resolved } = _albumViewerCurrent;
     /* Filtrar a las canciones que SÍ tienen videoId — son las que se
        reproducirán. Mantenemos el orden del álbum original. */
@@ -3215,7 +3382,30 @@ function _showAlbumCtxMenu(x, y) {
     const menu = document.getElementById('pl-ctx-menu-el');
     if (!menu || !_albumViewerCurrent) return;
     menu.innerHTML = '';
+    const cur = _albumViewerCurrent;
+    const linkItem = (tipo, valor) => {
+        if (typeof window.melonCopyLink !== 'function') return;
+        const it = document.createElement('div');
+        it.className = 'pl-menu-item';
+        it.textContent = '🔗 Copiar enlace';
+        it.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink(tipo, valor); });
+        menu.appendChild(it);
+    };
 
+    /* Playlist de un enlace: solo guardar copia y el enlace. */
+    if (cur.shared) {
+        const save = _albumViewerEl('album-viewer-save');
+        if (save && save.style.display !== 'none' && !save.disabled) {
+            const it = document.createElement('div');
+            it.className = 'pl-menu-item';
+            it.textContent = '➕ Guardar en mis playlists';
+            it.addEventListener('click', () => { menu.style.display = 'none'; save.click(); });
+            menu.appendChild(it);
+        }
+        linkItem('playlist', String(cur.playlistId));
+    }
+
+    if (!cur.shared) {
     const addPl = document.createElement('div');
     addPl.className = 'pl-menu-item';
     addPl.textContent = 'Añadir álbum a playlist';
@@ -3233,6 +3423,12 @@ function _showAlbumCtxMenu(x, y) {
         _addAlbumToProfile();
     });
     menu.appendChild(addProfile);
+
+    /* Enlace del álbum (solo con clave real: itunes:/deezer:/spotify:). */
+    if (typeof cur.albumId === 'string' && /^[a-z]+:[A-Za-z0-9_-]+$/.test(cur.albumId) && cur.albumId.indexOf('synthetic:') !== 0) {
+        linkItem('album', cur.albumId);
+    }
+    }
 
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
@@ -3398,6 +3594,14 @@ function showSearchAlbumCtxMenu(x, y, album) {
         _addAlbumObjToProfile(album);
     });
     menu.appendChild(addProf);
+    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
+            && typeof window.melonCopyLink === 'function') {
+        const lnk = document.createElement('div');
+        lnk.className = 'pl-menu-item';
+        lnk.textContent = '🔗 Copiar enlace';
+        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
+        menu.appendChild(lnk);
+    }
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth  - cw - 8) + 'px';
@@ -3755,6 +3959,16 @@ function onYouTubeIframeAPIReady()
                     var globalF = (typeof window.getGlobalVolumeFactor === 'function')
                         ? window.getGlobalVolumeFactor() : 1;
                     ytPlayer.setVolume(Math.round(baseVol * globalF));
+                    /* Se ha entrado por un enlace que pone música
+                       (melonOpenLink en desktop-base.php): esa gana a la
+                       última canción y a la playlist guardada. */
+                    window.__melonPlayerReady = true;
+                    if (typeof window.__melonLinkPlay === 'function') {
+                        var linkPlay = window.__melonLinkPlay;
+                        window.__melonLinkPlay = null;
+                        linkPlay();
+                        return;
+                    }
                     var last = MelonLastTrack.read();
                     if (last) restoreLast(last);
                     else restorePlaylist(saved);
@@ -3791,6 +4005,8 @@ function onYouTubeIframeAPIReady()
                     fetch('assets/music/api.php?action=get-playlists')
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
+                        /* Mientras llegaba, un enlace ya puso otra cosa. */
+                        if (window.__melonLinkPlayed) return;
                         if (!Array.isArray(data)) { restoreDefault(); return; }
                         var found = null;
                         for (var i = 0; i < data.length; i++) {
@@ -4377,6 +4593,16 @@ var addTrackCallback = null;
             menu.appendChild(dlAll);
         }
 
+        /* Enlace para compartir: cualquiera con sesión la puede ver y
+           copiar (enlace.php?playlist=N). */
+        if (/^\d+$/.test(String(pl.id)) && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function(){ menu.style.display = 'none'; window.melonCopyLink('playlist', String(pl.id)); });
+            menu.appendChild(lnk);
+        }
+
         var del = document.createElement('div');
         del.className = 'pl-menu-item';
         del.textContent = pl.sharedFrom ? '⊗ Abandonar' : '✕ Eliminar';
@@ -4928,6 +5154,19 @@ var addTrackCallback = null;
                 else openGetAppDialog();
             });
             ctxMenu.appendChild(dl);
+        }
+
+        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
+           tiene). */
+        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                window.melonCopyLink('cancion', track.videoId);
+            });
+            ctxMenu.appendChild(lnk);
         }
 
         /* Item Listen Together — abre el modal de invitar (o gestiona

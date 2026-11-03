@@ -5,6 +5,7 @@
    Acciones (vía ?action= o $_POST['action']):
 
    GET   ?action=get-playlists
+   GET   ?action=shared-playlist&id=N   (playlist de un enlace, solo lectura)
    GET   ?action=get-users
    GET   ?action=yt-title&id=VIDEOID
    GET   ?action=yt-duration&id=VIDEOID
@@ -420,6 +421,47 @@ case 'save-playlist-item': {
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
     jsonResponse(['ok' => true, 'id' => $playlistId]);
+}
+
+/* Playlist abierta desde un enlace (enlace.php?playlist=N): la puede ver
+   cualquiera con sesión que tenga el enlace, como las de Spotify sin
+   publicar. Solo lectura; "Guardar en mis playlists" la copia con
+   save-playlist-item (id nuevo). `mine` = es tuya o colaboras en ella. */
+case 'shared-playlist': {
+    $uid = uidByKey($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    if (!isNumericId($_GET['id'] ?? null)) jsonError('ID inválido');
+    $playlistId = (int)$_GET['id'];
+    _ensurePlaylistImageCol($pdo);
+    $stmt = $pdo->prepare("SELECT p.id, p.name, COALESCE(p.image_url,'') AS image, p.owner_id,
+                                  ou.user_key AS ownerKey, ou.label AS ownerLabel
+                           FROM playlists p JOIN usuarios ou ON p.owner_id = ou.id
+                           WHERE p.id = ?");
+    $stmt->execute([$playlistId]);
+    $pl = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$pl) jsonError('Esta playlist ya no existe', 404);
+    $mine = (int)$pl['owner_id'] === $uid;
+    if (!$mine) {
+        $st = $pdo->prepare("SELECT 1 FROM playlist_collaborators WHERE playlist_id = ? AND user_id = ?");
+        $st->execute([$playlistId, $uid]);
+        $mine = (bool)$st->fetch();
+    }
+    $stmt = $pdo->prepare("SELECT video_id AS videoId, title, artist, duration
+                           FROM playlist_tracks WHERE playlist_id = ? ORDER BY position ASC");
+    $stmt->execute([$playlistId]);
+    $tracks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($tracks as &$t) $t['duration'] = (int)$t['duration'];
+    unset($t);
+    jsonResponse([
+        'ok'         => true,
+        'id'         => $playlistId,
+        'name'       => $pl['name'],
+        'image'      => $pl['image'],
+        'ownerKey'   => $pl['ownerKey'],
+        'ownerLabel' => $pl['ownerLabel'] ?: $pl['ownerKey'],
+        'mine'       => $mine,
+        'tracks'     => _applySongOverrides($pdo, $tracks),
+    ]);
 }
 
 case 'delete-playlist': {

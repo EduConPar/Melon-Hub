@@ -80,6 +80,12 @@ if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
 $userKey   = $_SESSION['user'];
 $userLabel = $loginUsers[$userKey]['label'];
 
+/* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
+   lo abre mOpenLink al cargar. */
+require_once __DIR__ . '/assets/links.php';
+$melonPendingLink = melonTakePendingLink();
+if (isset($_GET['abrir'])) $melonPendingLink = melonParseLinkString((string)$_GET['abrir']) ?? $melonPendingLink;
+
 $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
 
 /* TV LAN URL — para Smart TVs que no soportan TLS 1.3/SNI moderno del
@@ -1917,12 +1923,75 @@ if ('serviceWorker' in navigator) {
         var cap = window.Capacitor;
         if (!cap || typeof cap.addListener !== 'function') return;
         try {
+            /* También los enlaces ("open-link", mOpenLink abajo): con la app
+               abriéndose, Capacitor entrega la orden guardada solo al
+               primer oyente, que es este. */
             cap.addListener('MelonMusic', 'widgetCommand', function(cmd){
+                if (cmd && cmd.action === 'open-link') { mOpenLink(cmd.link); return; }
                 if (!cmd || cmd.action !== 'open-calendar') return;
                 var dia = /^\d{4}-\d{2}-\d{2}$/.test(cmd.day || '') ? cmd.day : '';
                 openApp('apps/mobile/calendario-mobile.php' + (dia ? '?dia=' + dia : ''), 'Calendario', false);
             });
         } catch (_) {}
+    })();
+
+    /* ── Enlaces compartidos (assets/links.php) ──
+       "<tipo>:<valor>" de index.php?abrir=… (pendiente al entrar) o de la
+       app de Android (melonhub://… o enlace.php abierto con la app), que
+       lo manda como la orden "open-link" del widget. */
+    function mOpenLink(link) {
+        var m = /^([a-z]+):(.+)$/.exec(String(link || ''));
+        if (!m) return;
+        var tipo = m[1], valor = m[2];
+        if (tipo === 'perfil') {
+            openApp('apps/mobile/perfil-mobile.php' + (valor === <?= json_encode($userKey) ?> ? '' : '?as=' + encodeURIComponent(valor)), 'Perfil');
+        } else if (tipo === 'album' || tipo === 'playlist') {
+            openApp('apps/mobile/musica-mobile.php?' + tipo + '=' + encodeURIComponent(valor), 'Música');
+        } else if (tipo === 'cancion') {
+            fetch('assets/music/api.php?action=yt-title&id=' + encodeURIComponent(valor), { credentials: 'same-origin' })
+                .then(function(r){ return r.json(); })
+                .catch(function(){ return {}; })
+                .then(function(d){
+                    if (!window.MuShell) return;
+                    MuShell.loadQueue([{ videoId: valor, title: (d && d.title) || '', artist: (d && d.author) || '', duration: 0 }], 0, '');
+                    if (MuShell.openFullscreen) MuShell.openFullscreen();
+                });
+        } else if (tipo === 'escuchar') {
+            mJoinListen(valor);
+        }
+    }
+    window.mOpenLink = mOpenLink;
+
+    /* "Escuchar conmigo": como melonJoinListen del escritorio. Pide unirse
+       (solo amigos mutuos) y acepta sola la invitación del anfitrión. */
+    function mJoinListen(host) {
+        var ltF = window.ltFetchFromNotif, join = window.ltJoinAsGuestFromNotif;
+        if (!host || host === <?= json_encode($userKey) ?> || !ltF || !join) return;
+        ltF('request-join', { body: { host: host } }).then(function(r){
+            if (!r || !r.ok) return;
+            var until = Date.now() + 120000;
+            var t = setInterval(function(){
+                if (Date.now() > until) { clearInterval(t); return; }
+                ltF('invites').then(function(inv){
+                    var mine = inv && inv.ok && (inv.invites || []).filter(function(i){ return i.from_user_key === host; })[0];
+                    if (!mine) return;
+                    clearInterval(t);
+                    join(mine.id);
+                });
+            }, 2000);
+        });
+    }
+
+    (function() {
+        var pending = <?= json_encode($melonPendingLink) ?>;
+        /* Que recargar no lo vuelva a abrir. */
+        if (/[?&]abrir=/.test(location.search)) {
+            try {
+                var qs = location.search.replace(/([?&])abrir=[^&]*&?/, '$1').replace(/[?&]$/, '');
+                history.replaceState(history.state, '', location.pathname + qs + location.hash);
+            } catch (_) {}
+        }
+        if (pending) setTimeout(function(){ mOpenLink(pending); }, 600);
     })();
 
     /* Apps embebidas → postMessage para volver atrás o lanzar otra. */

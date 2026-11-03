@@ -33,6 +33,7 @@
       "download.js",
       "convert.html",
       "desktop-extras.js",
+      "links.js",
       "icons/**",
       "settings.js",
       "icon.png",
@@ -42,6 +43,12 @@
       {
         "provider": "generic",
         "url": "https://github.com/EduConPar/Scrapbook-Online/releases/download/escritorio-dev/"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Melon Hub",
+        "schemes": ["melonhub"]
       }
     ],
     "linux": {
