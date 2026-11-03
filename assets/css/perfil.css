@@ -1531,6 +1531,27 @@
     padding: 3px 4px;
 }
 
+/* Clip de "copiar enlace del perfil", debajo del país (renderProfileInfo). */
+.pinfo-link {
+    display: inline-flex;
+    align-self: flex-start;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    cursor: pointer;
+}
+.pinfo-link svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.pinfo-link:hover svg { stroke: var(--accent-deep, var(--accent)); }
+.pinfo-link:focus-visible { outline: 1px dotted var(--text); outline-offset: 1px; }
+
 .pinfo-line {
     font-size: 10px;
     color: var(--text);

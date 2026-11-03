@@ -361,8 +361,6 @@ if ($_perfilStandalone) {
                         </div>
                         <div id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></div>
                         <button class="button" id="profile-follow-btn" style="display:none;font-size:9px;margin-top:5px;">+ Seguir</button>
-                        <!-- Enlace para compartir este perfil (enlace.php?perfil=…). -->
-                        <button class="button" id="profile-link-btn" type="button" title="Copiar el enlace de este perfil" style="font-size:9px;margin-top:3px;">🔗 Enlace</button>
                     </div>
                     <div id="profile-info-col">
                         <div id="profile-info-row">
@@ -2635,6 +2633,20 @@ var PROFILE_USERS = <?php
         if (age !== '' && age != null) metaEl.appendChild(line(age + ' años'));
         if (data.birthday) metaEl.appendChild(line('🎂 ' + cumpleLegible(data.birthday)));
         if (data.country)  metaEl.appendChild(line('📍 ' + data.country));
+        /* Clip para copiar el enlace del perfil, debajo del país, en el
+           color del tema (--accent). No sale al editar: buildMetaInputs
+           vacía esta columna. */
+        var clip = document.createElement('span');
+        clip.className = 'pinfo-link';
+        clip.setAttribute('role', 'button');
+        clip.tabIndex = 0;
+        clip.title = 'Copiar el enlace del perfil';
+        clip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        clip.addEventListener('click', function () { if (window.__perfilCopyLink) window.__perfilCopyLink(); });
+        clip.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (window.__perfilCopyLink) window.__perfilCopyLink(); }
+        });
+        metaEl.appendChild(clip);
 
         linksEl.innerHTML = '';
         /* Iconos PNG dedicados para cada red social. */
@@ -5097,15 +5109,14 @@ var PROFILE_USERS = <?php
             });
     }
 
-    /* 🔗 Enlace: el del perfil que se está viendo (el mío si no). */
+    /* Clip de la columna de datos (renderProfileInfo): copia el enlace del
+       perfil que se está viendo (el mío si no). */
     (function () {
-        var b = document.getElementById('profile-link-btn');
-        if (!b) return;
         var ownKey = <?php echo json_encode(isset($desktopUserKey) ? $desktopUserKey : ($_SESSION['user'] ?? '')); ?>;
-        b.addEventListener('click', function () {
+        window.__perfilCopyLink = function () {
             var key = viewingUser || window.__PERFIL_VIEWING_KEY || ownKey;
             if (key && typeof window.melonCopyLink === 'function') window.melonCopyLink('perfil', key);
-        });
+        };
     })();
 
     function updateFollowButton(isFollowing) {

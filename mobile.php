@@ -1948,12 +1948,14 @@ if ('serviceWorker' in navigator) {
         } else if (tipo === 'album' || tipo === 'playlist') {
             openApp('apps/mobile/musica-mobile.php?' + tipo + '=' + encodeURIComponent(valor), 'Música');
         } else if (tipo === 'cancion') {
-            fetch('assets/music/api.php?action=yt-title&id=' + encodeURIComponent(valor), { credentials: 'same-origin' })
+            /* Como se ve en Melon Hub (song-info), no el título de YouTube. */
+            fetch('assets/music/api.php?action=song-info&id=' + encodeURIComponent(valor), { credentials: 'same-origin' })
                 .then(function(r){ return r.json(); })
                 .catch(function(){ return {}; })
                 .then(function(d){
+                    d = d || {};
                     if (!window.MuShell) return;
-                    MuShell.loadQueue([{ videoId: valor, title: (d && d.title) || '', artist: (d && d.author) || '', duration: 0 }], 0, '');
+                    MuShell.loadQueue([{ videoId: d.videoId || valor, title: d.title || '', artist: d.artist || '', duration: d.duration || 0 }], 0, '');
                     if (MuShell.openFullscreen) MuShell.openFullscreen();
                 });
         } else if (tipo === 'escuchar') {

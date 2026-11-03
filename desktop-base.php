@@ -4545,12 +4545,15 @@ window.notifSystem = (function() {
                 window.openProfileAtUser(valor);
             }
         } else if (tipo === 'cancion') {
-            fetch('assets/music/api.php?action=yt-title&id=' + encodeURIComponent(valor))
+            /* Título y artista como se ven en Melon Hub (song-info), no
+               los de YouTube: con esos find-album sacaba otro álbum. */
+            fetch('assets/music/api.php?action=song-info&id=' + encodeURIComponent(valor))
                 .then(function (r) { return r.json(); })
                 .catch(function () { return {}; })
                 .then(function (d) {
+                    d = d || {};
                     whenPlayer(function () {
-                        melonPlaySong({ videoId: valor, title: (d && d.title) || '', artist: (d && d.author) || '' });
+                        melonPlaySong({ videoId: d.videoId || valor, title: d.title || '', artist: d.artist || '', duration: d.duration || 0 });
                         showPlayer();
                     });
                 });
