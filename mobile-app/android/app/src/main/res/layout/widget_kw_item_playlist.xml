@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Fila de "Mis playlists" (Kawaii).
      Generado (mismos ids en las dos interfaces). Los colores son los
-     de la interfaz sin tema; MusicWidget pone los del tema del usuario.
+     de la interfaz sin tema; PlayerWidget pone los del tema del usuario.
      Los textos son imágenes (WidgetText): los widgets no cargan fuentes
      de la app. -->
 <LinearLayout

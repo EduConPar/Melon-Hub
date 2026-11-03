@@ -14,6 +14,8 @@ import android.graphics.Shader;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.RemoteViews;
 import org.json.JSONObject;
@@ -30,7 +32,7 @@ import org.json.JSONObject;
    se queda en el widget aunque la app se cierre; ⏯ (y tocar una canción)
    pasan por WidgetPlayActivity, que si hace falta abre la app y esta se
    va al fondo en cuanto empieza a sonar. */
-public class MusicWidget extends AppWidgetProvider {
+public class PlayerWidget extends AppWidgetProvider {
 
     static final String ACTION_SHOW = "es.melonhub.MelonHub.widget.SHOW";
     static final String ACTION_COMMAND = "es.melonhub.MelonHub.widget.COMMAND";
@@ -68,7 +70,14 @@ public class MusicWidget extends AppWidgetProvider {
         } else if (ACTION_COMMAND.equals(action)) {
             String command = intent.getStringExtra(EXTRA_COMMAND);
             try {
-                if (MelonMusicPlugin.sendWidgetCommand(new JSONObject().put("action", command))) return;
+                if (MelonMusicPlugin.sendWidgetCommand(new JSONObject().put("action", command))) {
+                    /* ⏯ cambia de icono ya; la web lo confirma al pausar. */
+                    if ("toggle".equals(command)) {
+                        WidgetStore.setPlayingFlag(ctx, !WidgetStore.playing(ctx));
+                        refresh(ctx);
+                    }
+                    return;
+                }
             } catch (Exception ignored) {}
             /* Sin app en marcha: 🔀 se apunta para cuando se abra. */
             if ("shuffle".equals(command)) WidgetStore.toggleShuffleOffline(ctx);
@@ -76,9 +85,24 @@ public class MusicWidget extends AppWidgetProvider {
         }
     }
 
+    /* La web suele avisar varias veces seguidas (setPlaying, setWidgetState,
+       la carátula…): se juntan en un solo repintado. */
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static Context refreshCtx;
+    private static final Runnable REFRESH = () -> {
+        Context c = refreshCtx;
+        if (c != null) refreshNow(c);
+    };
+
     static void refresh(Context ctx) {
+        refreshCtx = ctx.getApplicationContext();
+        MAIN.removeCallbacks(REFRESH);
+        MAIN.postDelayed(REFRESH, 30);
+    }
+
+    private static void refreshNow(Context ctx) {
         AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
-        int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, MusicWidget.class));
+        int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, PlayerWidget.class));
         if (ids.length > 0) render(ctx, mgr, ids);
     }
 
@@ -87,7 +111,7 @@ public class MusicWidget extends AppWidgetProvider {
     static void refreshProgress(Context ctx) {
         if (!WidgetStore.SCREEN_PLAYER.equals(WidgetStore.screen(ctx))) return;
         AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
-        int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, MusicWidget.class));
+        int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, PlayerWidget.class));
         if (ids.length == 0) return;
         WidgetTheme t = WidgetTheme.load(ctx);
         RemoteViews rv = new RemoteViews(ctx.getPackageName(), t.kawaii ? R.layout.widget_kw_player : R.layout.widget_w98_player);
@@ -133,7 +157,10 @@ public class MusicWidget extends AppWidgetProvider {
         p.button(R.id.w_prev_1, R.id.w_prev, R.id.w_prev_ic, false);
         p.button(R.id.w_play_1, R.id.w_play, R.id.w_play_ic, false);
         p.button(R.id.w_next_1, R.id.w_next, R.id.w_next_ic, false);
-        rv.setInt(R.id.w_cover_ph, "setColorFilter", t.kawaii ? t.accent : t.dark2);
+        /* La nota de la carátula vacía: en Win98, el gris del texto
+           secundario (el relieve oscuro se confundía con el fondo en temas
+           oscuros). */
+        rv.setInt(R.id.w_cover_ph, "setColorFilter", t.kawaii ? t.accent : t.muted);
 
         /* La última canción sigue aunque la app esté cerrada (en pausa). */
         String title = WidgetStore.title(ctx);
@@ -159,12 +186,20 @@ public class MusicWidget extends AppWidgetProvider {
 
         rv.setOnClickPendingIntent(R.id.w_menu_1, show(ctx, REQ_TO_PLAYLISTS, WidgetStore.SCREEN_PLAYLISTS, null));
         rv.setOnClickPendingIntent(R.id.w_shuf_1, command(ctx, REQ_SHUFFLE, "shuffle"));
-        /* ⏮⏯⏭ pasan por una actividad (WidgetPlayActivity): ⏯ puede tener
-           que abrir la app, y los tres pueden poner música desde una pausa,
-           que necesita arrancar el servicio de música desde ahí. */
-        rv.setOnClickPendingIntent(R.id.w_prev_1, control(ctx, REQ_PREV, "prev"));
-        rv.setOnClickPendingIntent(R.id.w_play_1, control(ctx, REQ_TOGGLE, "toggle"));
-        rv.setOnClickPendingIntent(R.id.w_next_1, control(ctx, REQ_NEXT, "next"));
+        /* Mientras suena, ⏮⏯⏭ van directos a la web (rápido). Si no, pasan
+           por una actividad (WidgetPlayActivity): ⏯ puede tener que abrir
+           la app, y los tres ponen música desde una pausa, que necesita
+           arrancar el servicio de música desde ahí. Abrir la actividad es
+           lo lento (sobre todo en Xiaomi), así que solo cuando hace falta. */
+        if (playing) {
+            rv.setOnClickPendingIntent(R.id.w_prev_1, command(ctx, REQ_PREV, "prev"));
+            rv.setOnClickPendingIntent(R.id.w_play_1, command(ctx, REQ_TOGGLE, "toggle"));
+            rv.setOnClickPendingIntent(R.id.w_next_1, command(ctx, REQ_NEXT, "next"));
+        } else {
+            rv.setOnClickPendingIntent(R.id.w_prev_1, control(ctx, REQ_PREV, "prev"));
+            rv.setOnClickPendingIntent(R.id.w_play_1, control(ctx, REQ_TOGGLE, "toggle"));
+            rv.setOnClickPendingIntent(R.id.w_next_1, control(ctx, REQ_NEXT, "next"));
+        }
         return rv;
     }
 
@@ -210,7 +245,7 @@ public class MusicWidget extends AppWidgetProvider {
         } else {
             rv.setImageViewBitmap(R.id.w_title, WidgetText.draw(ctx, t, WidgetText.TITLE, ctx.getString(R.string.widget_my_playlists), 13, t.tbText, titleRoom, 1, false));
             rv.setViewVisibility(R.id.w_pa_1, View.GONE);
-            Intent row = new Intent(ctx, MusicWidget.class).setAction(ACTION_SHOW);
+            Intent row = new Intent(ctx, PlayerWidget.class).setAction(ACTION_SHOW);
             rv.setPendingIntentTemplate(R.id.w_list,
                 PendingIntent.getBroadcast(ctx, REQ_PLAYLIST_ROW, row, PendingIntent.FLAG_UPDATE_CURRENT | mutable()));
         }
@@ -276,14 +311,14 @@ public class MusicWidget extends AppWidgetProvider {
     }
 
     private static PendingIntent show(Context ctx, int req, String screen, String playlistId) {
-        Intent i = new Intent(ctx, MusicWidget.class).setAction(ACTION_SHOW)
+        Intent i = new Intent(ctx, PlayerWidget.class).setAction(ACTION_SHOW)
             .putExtra(EXTRA_SCREEN, screen)
             .putExtra(EXTRA_PLAYLIST, playlistId);
         return PendingIntent.getBroadcast(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     private static PendingIntent command(Context ctx, int req, String command) {
-        Intent i = new Intent(ctx, MusicWidget.class).setAction(ACTION_COMMAND).putExtra(EXTRA_COMMAND, command);
+        Intent i = new Intent(ctx, PlayerWidget.class).setAction(ACTION_COMMAND).putExtra(EXTRA_COMMAND, command);
         return PendingIntent.getBroadcast(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 

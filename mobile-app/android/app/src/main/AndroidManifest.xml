@@ -40,9 +40,12 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Widget de música (MusicWidget): reproductor y playlists. -->
+        <!-- Widget de música (PlayerWidget): reproductor y playlists. Antes
+             se llamaba MusicWidget (4×3): el lanzador de Xiaomi se quedaba
+             con ese tamaño guardado aunque la app declarara 2×2, así que
+             cambió de nombre para que lo lea como widget nuevo. -->
         <receiver
-            android:name=".MusicWidget"
+            android:name=".PlayerWidget"
             android:exported="false"
             android:label="@string/app_name">
             <intent-filter>

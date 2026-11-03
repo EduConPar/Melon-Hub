@@ -55,7 +55,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
-        MusicWidget.refresh(this);
+        PlayerWidget.refresh(this);
     }
 
     /* La web va DENTRO de la barra de notificaciones y la de navegación,

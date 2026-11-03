@@ -64,7 +64,26 @@ final class WidgetTheme {
         return Color.parseColor(defaults[i]);
     }
 
+    /* El último tema leído: se pide en cada repintado y casi nunca cambia. */
+    private static String cachedRaw;
+    private static WidgetTheme cached;
+
     static WidgetTheme load(Context ctx) {
+        String raw = WidgetStore.themeRaw(ctx);
+        synchronized (WidgetTheme.class) {
+            if (raw != null && raw.equals(cachedRaw) && cached != null) return cached;
+        }
+        WidgetTheme theme = parse(ctx);
+        if (raw != null) {
+            synchronized (WidgetTheme.class) {
+                cachedRaw = raw;
+                cached = theme;
+            }
+        }
+        return theme;
+    }
+
+    private static WidgetTheme parse(Context ctx) {
         JSONObject t = WidgetStore.theme(ctx);
         String iface = t != null ? t.optString("interface", "") : "";
         boolean kawaii = iface.isEmpty() ? WidgetStore.cookieKawaii(ctx) : iface.equals("kawaii");

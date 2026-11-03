@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Widget de música (MusicWidget), 2×2. Sin updatePeriodMillis: se
+<!-- Widget de música (PlayerWidget), 2×2. Sin updatePeriodMillis: se
      repinta cuando cambia la canción o se toca algo, y la barra de
      progreso cada 5 s mientras suena (MelonMusicPlugin). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"

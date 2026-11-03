@@ -18,7 +18,7 @@ import org.json.JSONObject;
    Mientras suena: servicio en primer plano + WebView "visible", para que
    ni salir de la app ni apagar la pantalla corten la música.
 
-   También es el camino de vuelta del widget (MusicWidget): sus botones
+   También es el camino de vuelta del widget (PlayerWidget): sus botones
    llegan a la web como el evento "widgetCommand"
      { action: 'toggle' | 'prev' | 'next' | 'shuffle' }
      { action: 'set-shuffle', on }   (🔀 tocado con la app cerrada)
@@ -43,7 +43,7 @@ public class MelonMusicPlugin extends Plugin {
         @Override
         public void run() {
             WidgetStore.savePosition(getContext());
-            MusicWidget.refreshProgress(getContext());
+            PlayerWidget.refreshProgress(getContext());
             handler.postDelayed(this, PROGRESS_EVERY_MS);
         }
     };
@@ -71,7 +71,7 @@ public class MelonMusicPlugin extends Plugin {
         if (instance == this) instance = null;
         handler.removeCallbacks(progressTick);
         WidgetStore.savePosition(getContext());
-        MusicWidget.refresh(getContext());
+        PlayerWidget.refresh(getContext());
     }
 
     static boolean isAlive() {
@@ -128,7 +128,7 @@ public class MelonMusicPlugin extends Plugin {
         }
 
         WidgetStore.setNowPlaying(getContext(), playing, call.getString("title", ""), call.getString("artist", ""), call.getString("videoId", ""));
-        MusicWidget.refresh(getContext());
+        PlayerWidget.refresh(getContext());
 
         getActivity().runOnUiThread(() -> {
             if (getBridge().getWebView() instanceof MusicWebView) {
@@ -149,7 +149,7 @@ public class MelonMusicPlugin extends Plugin {
         WidgetStore.setState(getContext(), playing,
             call.getString("title", ""), call.getString("artist", ""), call.getString("videoId", ""),
             call.getDouble("position", 0.0), call.getDouble("duration", 0.0), call.getBoolean("shuffle", false));
-        MusicWidget.refresh(getContext());
+        PlayerWidget.refresh(getContext());
         handler.removeCallbacks(progressTick);
         if (playing) handler.postDelayed(progressTick, PROGRESS_EVERY_MS);
         call.resolve();
@@ -158,7 +158,7 @@ public class MelonMusicPlugin extends Plugin {
     @PluginMethod
     public void setWidgetTheme(PluginCall call) {
         WidgetStore.setTheme(getContext(), call.getData());
-        MusicWidget.refresh(getContext());
+        PlayerWidget.refresh(getContext());
         call.resolve();
     }
 }

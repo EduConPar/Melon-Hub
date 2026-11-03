@@ -1,5 +1,6 @@
 package es.melonhub.MelonHub;
 
+import android.appwidget.AppWidgetManager;
 import android.content.Context;
 import android.content.Intent;
 import android.widget.RemoteViews;
@@ -8,8 +9,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /* Filas de las listas del widget: "Mis playlists" o las canciones de una
-   playlist. onDataSetChanged corre en un hilo aparte, así que aquí se
-   pueden pedir las playlists a la web sin bloquear nada. */
+   playlist. onDataSetChanged corre en un hilo aparte. "Mis playlists" sale
+   al momento con las guardadas y se piden a la web por detrás; si han
+   cambiado, la lista se recarga. Solo la primera vez (sin nada guardado)
+   se espera a la web. */
 public class WidgetListService extends RemoteViewsService {
 
     @Override
@@ -20,6 +23,7 @@ public class WidgetListService extends RemoteViewsService {
     private static class Factory implements RemoteViewsFactory {
 
         private final Context ctx;
+        private final int widgetId;
         private final boolean songs;
         private final String playlistId;
         private final float rowRoomDp;
@@ -31,8 +35,9 @@ public class WidgetListService extends RemoteViewsService {
 
         Factory(Context ctx, Intent intent) {
             this.ctx = ctx;
-            this.songs = WidgetStore.SCREEN_SONGS.equals(intent.getStringExtra(MusicWidget.EXTRA_SCREEN));
-            String pl = intent.getStringExtra(MusicWidget.EXTRA_PLAYLIST);
+            this.widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+            this.songs = WidgetStore.SCREEN_SONGS.equals(intent.getStringExtra(PlayerWidget.EXTRA_SCREEN));
+            String pl = intent.getStringExtra(PlayerWidget.EXTRA_PLAYLIST);
             this.playlistId = pl != null ? pl : "";
             this.rowRoomDp = intent.getFloatExtra("rowRoomDp", 120);
         }
@@ -50,10 +55,25 @@ public class WidgetListService extends RemoteViewsService {
                 rows = pl != null && pl.optJSONArray("tracks") != null ? pl.optJSONArray("tracks") : new JSONArray();
                 message = rows.length() == 0 ? ctx.getString(R.string.widget_empty_playlist) : null;
             } else {
-                WidgetStore.fetchPlaylists(ctx);
                 rows = WidgetStore.playlists(ctx);
-                message = rows.length() == 0 ? MusicWidget.playlistsMessage(ctx) : null;
+                if (rows.length() == 0) {
+                    WidgetStore.fetchPlaylists(ctx);
+                    rows = WidgetStore.playlists(ctx);
+                } else if (!WidgetStore.playlistsFresh(ctx)) {
+                    refreshInBackground();
+                }
+                message = rows.length() == 0 ? PlayerWidget.playlistsMessage(ctx) : null;
             }
+        }
+
+        /* Al recargar (notifyAppWidgetViewDataChanged) vuelve a pasar por
+           onDataSetChanged, pero ya están frescas y no se piden otra vez. */
+        private void refreshInBackground() {
+            new Thread(() -> {
+                if (WidgetStore.fetchPlaylists(ctx)) {
+                    AppWidgetManager.getInstance(ctx).notifyAppWidgetViewDataChanged(widgetId, R.id.w_list);
+                }
+            }).start();
         }
 
         @Override
@@ -86,15 +106,15 @@ public class WidgetListService extends RemoteViewsService {
                     title.isEmpty() ? row.optString("videoId") : title, 12, t.text, rowRoomDp, 1, false));
                 rv.setImageViewBitmap(R.id.w_item_sub, WidgetText.draw(ctx, t, WidgetText.BODY,
                     row.optString("artist"), 10, t.muted, rowRoomDp, 1, false));
-                MusicWidget.paintRow(rv, t, 0);
-                fill.putExtra(MusicWidget.EXTRA_PLAYLIST, playlistId).putExtra(MusicWidget.EXTRA_INDEX, position);
+                PlayerWidget.paintRow(rv, t, 0);
+                fill.putExtra(PlayerWidget.EXTRA_PLAYLIST, playlistId).putExtra(PlayerWidget.EXTRA_INDEX, position);
             } else {
                 rv = new RemoteViews(ctx.getPackageName(), kawaii ? R.layout.widget_kw_item_playlist : R.layout.widget_w98_item_playlist);
                 rv.setImageViewBitmap(R.id.w_item_title, WidgetText.draw(ctx, t, WidgetText.BODY,
                     row.optString("name"), 12, t.text, rowRoomDp, 1, false));
-                MusicWidget.paintRow(rv, t, R.id.w_item_ic);
-                fill.putExtra(MusicWidget.EXTRA_SCREEN, WidgetStore.SCREEN_SONGS)
-                    .putExtra(MusicWidget.EXTRA_PLAYLIST, row.optString("id"));
+                PlayerWidget.paintRow(rv, t, R.id.w_item_ic);
+                fill.putExtra(PlayerWidget.EXTRA_SCREEN, WidgetStore.SCREEN_SONGS)
+                    .putExtra(PlayerWidget.EXTRA_PLAYLIST, row.optString("id"));
             }
             rv.setOnClickFillInIntent(R.id.w_item, fill);
             return rv;

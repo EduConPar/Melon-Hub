@@ -2051,6 +2051,7 @@ window.MuShell = (function(){
     var IS_ANDROID_APP = /MelonHubApp/.test(navigator.userAgent);
     var LAST_QUEUE_KEY = 'melonApp:lastQueue';
     var LAST_POS_KEY   = 'melonApp:lastPos';
+    var LAST_SHUFFLE_KEY = 'melonApp:shuffle';
     var pendingCue = null;
     var restorePos = 0;
     var playWhenReady = false;
@@ -2227,13 +2228,17 @@ window.MuShell = (function(){
 
     /* Lo que pinta el widget de la app: canción, por dónde va (la app la
        va avanzando sola mientras suena) y si está en aleatorio. */
-    function nativeWidgetState(playing) {
+    /* fresh: canción recién puesta; YouTube aún da el tiempo de la
+       anterior, así que va desde 0 con la duración de la lista. */
+    function nativeWidgetState(playing, fresh) {
         var cap = window.Capacitor;
         if (!cap || typeof cap.nativePromise !== 'function') return;
         var tr = QUEUE[CUR_IDX];
         if (!tr) return;
         var cur = 0, tot = 0;
-        try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
+        if (!fresh) {
+            try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
+        }
         /* Recién recuperada y sin tocar, YouTube aún dice 0. */
         if (!cur && restorePos) cur = restorePos;
         if (!tot) tot = tr.duration || 0;
@@ -2801,6 +2806,8 @@ window.MuShell = (function(){
            cargarla, onYTState le vuelve a dar a ▶. */
         autoPlayUntil = Date.now() + 10000;
         saveLastQueue();
+        /* El widget cambia de canción ya, sin esperar a que YouTube cargue. */
+        nativeWidgetState(true, true);
         if (!YT_READY || !YT_PLAYER) { pendingLoadId = tr.videoId; return; }
         YT_PLAYER.loadVideoById(tr.videoId);
         broadcast({ type: 'mushell:track', idx: CUR_IDX, total: QUEUE.length, track: tr, plName: CUR_PL_NAME });
@@ -3089,6 +3096,8 @@ window.MuShell = (function(){
         var btn = document.getElementById('mu-full-shuffle');
         btn.classList.toggle('is-on', SHUFFLE_ON);
         btn.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
+        /* En la app se recuerda con la última canción (restoreLast). */
+        if (IS_ANDROID_APP) { try { localStorage.setItem(LAST_SHUFFLE_KEY, SHUFFLE_ON ? '1' : '0'); } catch (_) {} }
         nativeWidgetStateNow();
     }
     document.getElementById('mu-full-shuffle').addEventListener('click', function(){
@@ -4041,6 +4050,11 @@ window.MuShell = (function(){
     /* Al abrir la app: la última canción preparada en pausa donde iba. */
     (function restoreLast(){
         if (!IS_ANDROID_APP) return;
+        /* El aleatorio sigue como estaba, también en el widget (si no,
+           al reabrir la app salía apagado y se lo contaba así). */
+        var shuffleOn = false;
+        try { shuffleOn = localStorage.getItem(LAST_SHUFFLE_KEY) === '1'; } catch (_) {}
+        if (shuffleOn) setShuffle(true);
         var d = null;
         try { d = JSON.parse(localStorage.getItem(LAST_QUEUE_KEY) || 'null'); } catch (_) {}
         if (!d || !Array.isArray(d.queue) || !d.queue.length) return;

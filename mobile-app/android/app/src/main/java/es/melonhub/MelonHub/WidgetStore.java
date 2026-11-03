@@ -111,6 +111,11 @@ final class WidgetStore {
             .apply();
     }
 
+    /* Solo el icono de ⏯, sin esperar a la web (PlayerWidget). */
+    static void setPlayingFlag(Context ctx, boolean playing) {
+        prefs(ctx).edit().putBoolean("playing", playing).apply();
+    }
+
     static boolean playing(Context ctx) {
         return prefs(ctx).getBoolean("playing", false);
     }
@@ -178,9 +183,13 @@ final class WidgetStore {
         prefs(ctx).edit().putString("theme", theme.toString()).apply();
     }
 
+    static String themeRaw(Context ctx) {
+        return prefs(ctx).getString("theme", null);
+    }
+
     static JSONObject theme(Context ctx) {
         try {
-            String t = prefs(ctx).getString("theme", null);
+            String t = themeRaw(ctx);
             return t != null ? new JSONObject(t) : null;
         } catch (Exception e) {
             return null;
@@ -225,9 +234,11 @@ final class WidgetStore {
 
     /* Se llama desde el adaptador de la lista (hilo aparte, puede tardar).
        Si falla se quedan las de la última vez. */
-    static void fetchPlaylists(Context ctx) {
+    /* true si la lista guardada ha cambiado. */
+    static boolean fetchPlaylists(Context ctx) {
         HttpURLConnection c = null;
         String status;
+        boolean changed = false;
         try {
             URL url = new URL(new URL(baseUrl(ctx)), "assets/music/api.php?action=get-playlists");
             c = (HttpURLConnection) url.openConnection();
@@ -245,8 +256,12 @@ final class WidgetStore {
                     body = readAll(in);
                 }
                 new JSONArray(body); /* que sea una lista de verdad antes de guardarla */
-                try (OutputStream out = new FileOutputStream(new File(ctx.getFilesDir(), PLAYLISTS_FILE))) {
-                    out.write(body.getBytes(StandardCharsets.UTF_8));
+                File f = new File(ctx.getFilesDir(), PLAYLISTS_FILE);
+                changed = !body.equals(f.exists() ? readFile(f) : null);
+                if (changed) {
+                    try (OutputStream out = new FileOutputStream(f)) {
+                        out.write(body.getBytes(StandardCharsets.UTF_8));
+                    }
                 }
                 status = LIST_OK;
             } else {
@@ -258,7 +273,16 @@ final class WidgetStore {
         } finally {
             if (c != null) c.disconnect();
         }
-        prefs(ctx).edit().putString("listStatus", status).apply();
+        prefs(ctx).edit().putString("listStatus", status).putLong("playlistsAt", System.currentTimeMillis()).apply();
+        return changed;
+    }
+
+    private static String readFile(File f) {
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            return readAll(in);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /* Si el servidor rehízo la sesión (melon_remember), manda un PHPSESSID
@@ -277,14 +301,29 @@ final class WidgetStore {
         }
     }
 
-    static JSONArray playlists(Context ctx) {
+    /* La lista ya leída (puede ser grande: lleva todas las canciones):
+       se vuelve a leer solo si cambia el archivo. */
+    private static JSONArray playlistsCache;
+    private static long playlistsCacheTime = -1;
+
+    static synchronized JSONArray playlists(Context ctx) {
         File f = new File(ctx.getFilesDir(), PLAYLISTS_FILE);
         if (!f.exists()) return new JSONArray();
+        if (playlistsCache != null && f.lastModified() == playlistsCacheTime) return playlistsCache;
         try (InputStream in = new java.io.FileInputStream(f)) {
-            return new JSONArray(readAll(in));
+            playlistsCache = new JSONArray(readAll(in));
+            playlistsCacheTime = f.lastModified();
+            return playlistsCache;
         } catch (Exception e) {
             return new JSONArray();
         }
+    }
+
+    /* Si hace poco que se pidieron, no se vuelven a pedir: al entrar en
+       "Mis playlists" se enseñan las guardadas al momento y se refrescan
+       por detrás (WidgetListService). */
+    static boolean playlistsFresh(Context ctx) {
+        return System.currentTimeMillis() - prefs(ctx).getLong("playlistsAt", 0) < 20000;
     }
 
     static JSONObject findPlaylist(Context ctx, String id) {
@@ -321,7 +360,7 @@ final class WidgetStore {
                     sq.compress(Bitmap.CompressFormat.PNG, 100, out);
                 }
                 prefs(app).edit().putString("coverId", videoId).apply();
-                MusicWidget.refresh(app);
+                PlayerWidget.refresh(app);
             } catch (Exception e) {
                 Log.w(TAG, "No se pudo bajar la carátula", e);
             } finally {
@@ -331,10 +370,18 @@ final class WidgetStore {
     }
 
     /* La carátula de la canción que suena, o null si aún no ha bajado. */
-    static Bitmap cover(Context ctx) {
+    private static String coverCacheId;
+    private static Bitmap coverCache;
+
+    static synchronized Bitmap cover(Context ctx) {
         String id = videoId(ctx);
         if (id.isEmpty() || !id.equals(prefs(ctx).getString("coverId", ""))) return null;
-        return BitmapFactory.decodeFile(new File(ctx.getFilesDir(), COVER_FILE).getPath());
+        /* Se decodifica una vez por canción, no en cada repintado. */
+        if (!id.equals(coverCacheId) || coverCache == null) {
+            coverCache = BitmapFactory.decodeFile(new File(ctx.getFilesDir(), COVER_FILE).getPath());
+            coverCacheId = id;
+        }
+        return coverCache;
     }
 
     private static String readAll(InputStream in) throws java.io.IOException {

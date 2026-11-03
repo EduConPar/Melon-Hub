@@ -27,7 +27,7 @@ public class WidgetPlayActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        String command = getIntent().getStringExtra(MusicWidget.EXTRA_COMMAND);
+        String command = getIntent().getStringExtra(PlayerWidget.EXTRA_COMMAND);
         JSObject cmd = command != null ? controlCommand(command) : playlistCommand();
         if (cmd != null) {
             if (MelonMusicPlugin.isAlive()) {
@@ -81,8 +81,8 @@ public class WidgetPlayActivity extends Activity {
 
     private JSObject playlistCommand() {
         Intent in = getIntent();
-        String playlistId = in.getStringExtra(MusicWidget.EXTRA_PLAYLIST);
-        int index = in.getIntExtra(MusicWidget.EXTRA_INDEX, 0);
+        String playlistId = in.getStringExtra(PlayerWidget.EXTRA_PLAYLIST);
+        int index = in.getIntExtra(PlayerWidget.EXTRA_INDEX, 0);
         JSONObject pl = playlistId != null ? WidgetStore.findPlaylist(this, playlistId) : null;
         JSONArray tracks = pl != null ? pl.optJSONArray("tracks") : null;
         if (tracks == null || tracks.length() == 0) return null;
@@ -102,7 +102,7 @@ public class WidgetPlayActivity extends Activity {
                 0, tr.optDouble("duration", 0), WidgetStore.shuffle(this));
         }
         WidgetStore.setScreen(this, WidgetStore.SCREEN_PLAYER, null);
-        MusicWidget.refresh(this);
+        PlayerWidget.refresh(this);
         return cmd;
     }
 }

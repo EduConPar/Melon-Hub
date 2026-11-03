@@ -9,6 +9,7 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+import android.util.LruCache;
 import android.util.TypedValue;
 import androidx.core.content.res.ResourcesCompat;
 
@@ -21,6 +22,16 @@ final class WidgetText {
 
     private WidgetText() {}
 
+    /* Los textos se repiten en cada repintado (título, botones, filas):
+       dibujarlos cada vez era lo que más tardaba. Caché por todo lo que
+       cambia el dibujo; ~2 MB. */
+    private static final LruCache<String, Bitmap> CACHE = new LruCache<String, Bitmap>(2 * 1024 * 1024) {
+        @Override
+        protected int sizeOf(String key, Bitmap b) {
+            return b.getByteCount();
+        }
+    };
+
     static final int TITLE = 0;   /* barra de título: negrita */
     static final int BODY = 1;
 
@@ -28,6 +39,17 @@ final class WidgetText {
        líneas (mensaje de lista vacía). */
     static Bitmap draw(Context ctx, WidgetTheme t, int style, String text, float sp, int color,
                        float maxWidthDp, int maxLines, boolean center) {
+        String key = (t.kawaii ? "k" : "w") + style + "|" + sp + "|" + color + "|" + Math.round(maxWidthDp)
+            + "|" + maxLines + "|" + center + "|" + text;
+        Bitmap cached = CACHE.get(key);
+        if (cached != null) return cached;
+        Bitmap b = render(ctx, t, style, text, sp, color, maxWidthDp, maxLines, center);
+        CACHE.put(key, b);
+        return b;
+    }
+
+    private static Bitmap render(Context ctx, WidgetTheme t, int style, String text, float sp, int color,
+                                 float maxWidthDp, int maxLines, boolean center) {
         DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
         TextPaint paint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
         paint.setColor(color);
