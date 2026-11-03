@@ -51,6 +51,14 @@ if (isset($_GET['pwa']) || isset($_GET['t'])) {
     exit;
 }
 
+/* Sesión recordada (assets/remember-login.php): si el servidor borró la
+   sesión de PHP, se rehace con el token de la cookie. Así la app de
+   Android no pide entrar cada vez. */
+if (!isset($_SESSION['user']) && !empty($_COOKIE['melon_remember'])) {
+    require_once __DIR__ . '/db.php';
+    require_once __DIR__ . '/assets/remember-login.php';
+    restoreRememberedLogin($pdo);
+}
 if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
     /* Móvil sin sesión → al login manual. La landing PWA (pitch +
        guía de instalación + register) sigue disponible vía el link
