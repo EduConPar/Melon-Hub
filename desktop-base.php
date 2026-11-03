@@ -1981,9 +1981,27 @@ window.notifSystem = (function() {
         }
     }
 
+    /* App de escritorio: lo que avisa el haro sale también como
+       notificación del sistema cuando no se está mirando Melon Hub
+       (electron/desktop-extras.js). Una vez por aviso, aunque espere en
+       la cola. */
+    var nativeIds = {};
+    function nativeNotify(opts) {
+        var md = window.melonDesktop;
+        if (!md || !md.notify || nativeIds[opts.id] || document.hasFocus()) return;
+        nativeIds[opts.id] = true;
+        var plain = function(h) {
+            var d = document.createElement('div');
+            d.innerHTML = String(h || '');
+            return (d.textContent || '').replace(/\s+/g, ' ').trim();
+        };
+        md.notify({ title: plain(opts.title) || 'Melon Hub', body: plain(opts.message) });
+    }
+
     function createCard(opts) {
         if (!opts || !opts.id) return;
         if (shownIds[opts.id] || dismissedIds[opts.id]) return;
+        nativeNotify(opts);
         if (Object.keys(shownIds).length >= MAX_VISIBLE) {
             if (!pendingQueue.some(function(q) { return q.id === opts.id; })) pendingQueue.push(opts);
             return;
@@ -2201,6 +2219,76 @@ window.notifSystem = (function() {
             }
         });
     }, 8000);
+})();
+
+/* =========================
+   APP DE ESCRITORIO: CONTADOR Y ARRASTRAR IMÁGENES
+   - Los mensajes del chat sin leer salen en el icono de la bandeja
+     (get-unread-chats, cada 20 s y al volver a la ventana).
+   - Una imagen de Melon Hub (galería, momentos, chat…) se puede arrastrar
+     fuera de la app como archivo: al pulsarla la app la va descargando y
+     al arrastrarla entrega el archivo (electron/desktop-extras.js). Vale
+     para esta página y para las apps abiertas en ventanas (iframes de la
+     misma web). No se toca lo que ya se arrastra dentro de Melon Hub
+     (elementos draggable, como las filas de las playlists).
+========================= */
+(function() {
+    var md = window.melonDesktop;
+    if (!md) return;
+    if (md.setBadge) {
+        var pollUnread = function() {
+            fetch('assets/profile/api.php?action=get-unread-chats', { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var n = 0;
+                    Object.keys((d && d.counts) || {}).forEach(function(k) { n += parseInt(d.counts[k], 10) || 0; });
+                    md.setBadge(n);
+                })
+                .catch(function() {});
+        };
+        pollUnread();
+        setInterval(pollUnread, 20000);
+        window.addEventListener('focus', pollUnread);
+    }
+    if (md.startDrag) {
+        var draggableImg = function(t) {
+            var img = t && t.closest ? t.closest('img') : null;
+            if (!img || !img.currentSrc || img.getAttribute('draggable') === 'false') return null;
+            if (img.closest('[draggable="true"]')) return null;
+            if (/\/appIcons\//.test(img.currentSrc)) return null;   /* iconos de la interfaz */
+            if ((img.naturalWidth || 0) < 64 && (img.naturalHeight || 0) < 64) return null;
+            return img;
+        };
+        var hook = function(doc) {
+            if (!doc || doc.__melonDrag) return;
+            doc.__melonDrag = true;
+            doc.addEventListener('pointerdown', function(e) {
+                var img = draggableImg(e.target);
+                if (img) md.prepareDrag(img.currentSrc);
+            }, true);
+            doc.addEventListener('dragstart', function(e) {
+                var img = draggableImg(e.target);
+                if (!img) return;
+                e.preventDefault();
+                md.startDrag(img.currentSrc);
+            }, true);
+        };
+        var hookFrame = function(f) {
+            var tryHook = function() { try { hook(f.contentDocument); } catch (_) { /* otra web: no */ } };
+            tryHook();
+            f.addEventListener('load', function() { try { f.contentDocument.__melonDrag = false; } catch (_) {} tryHook(); });
+        };
+        hook(document);
+        document.querySelectorAll('iframe').forEach(hookFrame);
+        new MutationObserver(function(muts) {
+            muts.forEach(function(m) {
+                m.addedNodes.forEach(function(n) {
+                    if (n.tagName === 'IFRAME') hookFrame(n);
+                    else if (n.querySelectorAll) n.querySelectorAll('iframe').forEach(hookFrame);
+                });
+            });
+        }).observe(document.body, { childList: true, subtree: true });
+    }
 })();
 
 /* =========================

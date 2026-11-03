@@ -93,6 +93,7 @@ function start(mainWindow, startUrl) {
     mainWin = mainWindow;
     app.on('before-quit', () => { quitting = true; });
 
+    discord.setSite(startUrl);
     mini.init(mainWin, startUrl, {
         isQuitting: () => quitting,
         onOpenMain: openMain,
@@ -120,4 +121,6 @@ function start(mainWindow, startUrl) {
     tray.on('click', openMain);
 }
 
-module.exports = { start, openMain, menuTemplate };
+function getTray() { return tray; }
+
+module.exports = { start, openMain, menuTemplate, getTray };

@@ -41,6 +41,24 @@ contextBridge.exposeInMainWorld('melonDesktop', {
         ipcRenderer.on('melon:download-progress', (_e, p) => cb(p));
     },
 
+    /* Extras de escritorio (desktop-extras.js). notify: notificación del
+       sistema { title, body } (solo sale si no se está mirando la app).
+       setBadge: mensajes del chat sin leer en el icono de la bandeja.
+       prepareDrag / startDrag: arrastrar una imagen fuera de la app como
+       archivo (preparar al pulsarla, empezar al arrastrarla). */
+    notify(n) {
+        ipcRenderer.send('melon:notify', n);
+    },
+    setBadge(n) {
+        ipcRenderer.send('melon:badge', n);
+    },
+    prepareDrag(url) {
+        ipcRenderer.send('melon:drag-prepare', url);
+    },
+    startDrag(url) {
+        ipcRenderer.send('melon:drag-start', url);
+    },
+
     /* Reproductor flotante (apps/mini-player.html, mini-player.js). */
     mini: {
         onState(cb) {

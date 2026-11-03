@@ -1899,6 +1899,35 @@ document.getElementById('gal-search').addEventListener('input', function() {
 });
 
 document.getElementById('gal-upload').addEventListener('click', openUploadDialog);
+
+/* Soltar una imagen del ordenador sobre la galería: abre "Subir imagen" con
+   ese archivo ya elegido (el mismo camino que "Examinar..."). Solo la
+   primera si se sueltan varias. */
+(function() {
+    var hasFiles = function(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1; };
+    document.addEventListener('dragover', function(e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        document.body.classList.add('gal-dropping');
+    });
+    document.addEventListener('dragleave', function(e) {
+        if (!e.relatedTarget) document.body.classList.remove('gal-dropping');
+    });
+    document.addEventListener('drop', function(e) {
+        document.body.classList.remove('gal-dropping');
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        openUploadDialog();
+        var input = document.getElementById('gal-file-input');
+        var dt = new DataTransfer();
+        dt.items.add(f);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change'));
+    });
+})();
 document.getElementById('gal-up-browse').addEventListener('click', function() {
     document.getElementById('gal-file-input').click();
 });
@@ -2493,6 +2522,8 @@ window.addEventListener('load', tryAutoConnectDrive);
   justify-content: flex-end;
   background: var(--win-bg);
 }
+/* Al arrastrar un archivo del ordenador encima: marco para soltarlo. */
+body.gal-dropping { outline: 3px dashed var(--accent, navy); outline-offset: -6px; }
 </style>
 
 <!-- ══════════ JS ══════════ -->

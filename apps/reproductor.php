@@ -339,6 +339,7 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
             <button class="button" id="album-viewer-play" disabled>
                 <span class="album-viewer-play-tri">▶</span> Reproducir álbum
             </button>
+            <button class="button" id="album-viewer-download" disabled title="Descargar el álbum entero">⬇ Descargar</button>
         </div>
     </div>
     <!-- Resize handles por los 4 lados + 4 esquinas (8 direcciones).
@@ -909,11 +910,10 @@ function openDownloadDialog(track) {
        bandas negras arriba y abajo). */
     var cur = nowPlayingTrack();
     var playing = cur && cur.videoId === track.videoId;
-    var cover = document.getElementById('player-cover');
     var info = {
         videoId: track.videoId, title: track.title || '', artist: track.artist || '',
         album: playing && _currentAlbum ? (_currentAlbum.albumName || '') : '',
-        cover: playing && cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/mqdefault.jpg',
+        cover: (playing && playerCoverUrl()) || 'https://i.ytimg.com/vi/' + track.videoId + '/mqdefault.jpg',
     };
     var bd = document.createElement('div');
     bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
@@ -1069,6 +1069,126 @@ function openGetAppDialog() {
         close();
     });
 }
+
+/* "⬇ Descargar todo…" de una playlist (clic derecho en su tarjeta) o un
+   álbum (botón del visor): la misma ventana que una canción, con el formato
+   elegido una vez para todas. Se descargan de una en una en
+   Descargas/<nombre>/ ("3 de 12"); las que fallan se apuntan y se sigue
+   con las demás. set: { name, cover, album, tracks: [{ videoId, title,
+   artist }] }. */
+function openBulkDownloadDialog(set) {
+    var md = window.melonDesktop;
+    if (!md || !md.download) { openGetAppDialog(); return; }
+    var tracks = (set.tracks || []).filter(function(t) { return t && t.videoId; });
+    if (!tracks.length) return;
+    var folder = String(set.name || 'Melon Hub').replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Melon Hub';
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:360px;max-width:94vw;';
+    var sel = 'flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar todo</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+                '<img data-dl="cover" alt="" style="width:48px;height:48px;object-fit:cover;flex:0 0 48px;background:var(--inset-bg,#222);">' +
+                '<div style="min-width:0;flex:1;">' +
+                    '<div data-dl="title" style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                    '<div data-dl="count" style="font-size:10px;opacity:0.75;"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="field-row" style="margin-bottom:6px;"><label style="width:56px;">Formato:</label>' +
+                '<select data-dl="format" style="' + sel + '"></select></div>' +
+            '<div class="field-row" style="margin-bottom:8px;"><label style="width:56px;">Calidad:</label>' +
+                '<select data-dl="kbps" style="' + sel + '"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
+            '<div style="font-size:10px;line-height:1.4;">Se guardan en la carpeta</div>' +
+            '<div data-dl="folder" style="font-size:10px;line-height:1.4;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;"></div>' +
+            '<div class="progress-indicator" data-dl="bar" style="height:20px;padding:3px;display:none;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent,navy);"></span></div>' +
+            '<div data-dl="msg" style="font-size:10px;min-height:14px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+            '<div data-dl="failed" class="sunken-panel" style="display:none;max-height:80px;overflow-y:auto;margin-top:4px;padding:3px 5px;font-size:10px;line-height:1.4;"></div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">' +
+                '<button class="button" data-act="cancel">Cancelar</button>' +
+                '<button class="button" data-act="go">Descargar</button>' +
+            '</div>' +
+        '</div>';
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    var q = function(k) { return win.querySelector('[data-dl="' + k + '"]'); };
+    q('cover').src = set.cover || ('https://i.ytimg.com/vi/' + tracks[0].videoId + '/mqdefault.jpg');
+    q('cover').onerror = function() { this.style.visibility = 'hidden'; };
+    q('title').textContent = set.name || '';
+    q('count').textContent = tracks.length + (tracks.length === 1 ? ' canción' : ' canciones');
+    q('folder').textContent = 'Descargas/' + folder + '/';
+    Object.keys(DL_FORMATS).forEach(function(f) {
+        var o = document.createElement('option');
+        o.value = f; o.textContent = DL_FORMATS[f];
+        q('format').appendChild(o);
+    });
+    q('format').addEventListener('change', function() { q('kbps').disabled = this.value !== 'mp3'; });
+
+    var running = false, cancelled = false, currentId = null;
+    function close() {
+        if (running) { cancelled = true; if (currentId) md.cancelDownload(currentId); }
+        document.removeEventListener('keydown', onKey, true);
+        bd.remove();
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelector('[data-act="close"]').addEventListener('click', close);
+    win.querySelector('[data-act="cancel"]').addEventListener('click', close);
+
+    var go = win.querySelector('[data-act="go"]');
+    go.addEventListener('click', function() {
+        var format = q('format').value, kbps = Number(q('kbps').value);
+        var bar = q('bar').firstChild, failed = [], done = 0;
+        running = true;
+        go.disabled = q('format').disabled = q('kbps').disabled = true;
+        q('bar').style.display = '';
+        (function next(i) {
+            if (cancelled) return;
+            if (i >= tracks.length) { finish(); return; }
+            var t = tracks[i], label = (i + 1) + ' de ' + tracks.length + ' · ' + (t.title || '');
+            currentId = 'dl-' + Date.now() + '-' + i;
+            var id = currentId;
+            q('msg').textContent = label;
+            melonDownloadListen(id, function(p) {
+                bar.style.width = (100 * (i + (p.percent == null ? 0.95 : p.percent / 100)) / tracks.length) + '%';
+                q('msg').textContent = label + ' — ' + melonDownloadStep(p, format);
+            });
+            md.download({
+                id: id, videoId: t.videoId, title: t.title || '', artist: t.artist || '', format: format, kbps: kbps, folder: folder,
+                /* En un álbum todas llevan su nombre y su carátula; en una
+                   playlist, cada una su miniatura de YouTube. */
+                album: set.album || '',
+                cover: set.album && set.cover ? set.cover : 'https://i.ytimg.com/vi/' + t.videoId + '/mqdefault.jpg',
+            }).then(function(r) {
+                melonDownloadListen(id, null);
+                if (cancelled || (r && r.cancelled)) return;
+                if (r && r.ok) done++;
+                else failed.push((t.title || t.videoId) + ': ' + ((r && r.error) || 'no se pudo descargar'));
+                bar.style.width = (100 * (i + 1) / tracks.length) + '%';
+                next(i + 1);
+            });
+        })(0);
+        function finish() {
+            running = false;
+            currentId = null;
+            var msg = done + ' de ' + tracks.length + ' guardadas en Descargas/' + folder + '/';
+            if (window.notifSystem) notifSystem.show({ type: failed.length ? 'info' : 'success', title: 'Descarga terminada', message: msg });
+            if (!failed.length) { close(); return; }
+            /* Con fallos, la ventana se queda para enseñar cuáles. */
+            q('msg').textContent = '✓ ' + msg + ' · ✕ ' + failed.length + ' no se pudieron descargar:';
+            q('failed').textContent = failed.join('\n');
+            q('failed').style.whiteSpace = 'pre-line';
+            q('failed').style.display = '';
+            go.style.display = 'none';
+            win.querySelector('[data-act="cancel"]').textContent = 'Cerrar';
+        }
+    });
+}
+window.openBulkDownloadDialog = openBulkDownloadDialog;
 
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
@@ -1507,6 +1627,7 @@ function syncSystemMedia(isPlaying) {
             title:      tr ? (tr.title  || '') : '',
             artist:     tr ? (tr.artist || '') : '',
             cover:      cover ? cover.src : '',
+            coverUrl:   playerCoverUrl(),   /* la original (presencia de Discord, descargas) */
             playlist:   plName ? plName.textContent : '',
             playlistId: currentPlaylistId,
             trackIndex: currentTrack,
@@ -1519,6 +1640,7 @@ function syncSystemMedia(isPlaying) {
             album:      (_currentAlbum && _currentAlbum.albumName) || '',
             ltInvites:  Object.values(LT_PENDING),
             ltInvited:  LT_INVITED,
+            userKey:    currentUserKey,   /* botón "Escuchar conmigo" de Discord */
             discordClientId: discordClientId
         });
     }
@@ -1552,6 +1674,12 @@ function syncSystemMedia(isPlaying) {
                    volumen (con el general de la barra de tareas) y lo guarda. */
                 var vol = document.getElementById('player-volume');
                 if (vol) { vol.value = value; vol.dispatchEvent(new Event('input')); }
+            }
+            else if (action === 'volume-step') {
+                /* Ctrl+Alt+↑ / ↓ (atajos globales de la app, desktop-extras.js). */
+                var v = document.getElementById('player-volume');
+                if (v) { v.value = Math.max(0, Math.min(100, parseInt(v.value, 10) + value)); v.dispatchEvent(new Event('input')); }
+                syncSystemMedia();
             }
             else if (action === 'seekto') actions.seekto({ seekTime: value });
             else if (actions[action]) actions[action]();
@@ -2059,6 +2187,64 @@ window.ltLeave     = ltLeave;
     }
 })();
 
+/* ── "Escuchar conmigo" (botón de la presencia de Discord de la app de
+   escritorio, electron/discord.js) ──────────────────────────────────
+   - Quien lo pulsa llega con ?escuchar=<user_key del anfitrión> (index.php
+     lo pasa al escritorio aunque haya que iniciar sesión antes): se pide
+     unirse (request-join, solo amigos con seguimiento mutuo) y, cuando
+     llega la invitación del anfitrión, se acepta sola.
+   - La app del anfitrión atiende esas peticiones cada 5 s: abre la sesión
+     si no la tiene e invita a quien lo pidió (ltInviteUser). */
+(function ltJoinFromLink() {
+    const m = /[?&]escuchar=([A-Za-z0-9_-]+)/.exec(location.search);
+    if (!m) return;
+    const host = m[1];
+    try {
+        const qs = location.search.replace(/([?&])escuchar=[^&]*&?/, '$1').replace(/[?&]$/, '');
+        history.replaceState(null, '', location.pathname + qs + location.hash);
+    } catch (_) {}
+    if (host === currentUserKey) return;
+    ltFetch('request-join', { body: { host: host } }).then(function(r) {
+        /* A quien no es amigo solo se le abre Melon Hub. */
+        if (!r || !r.ok) return;
+        const name = r.host_label || 'tu amigo';
+        if (window.notifSystem) notifSystem.show({ id: 'lt-joining-' + host, type: 'info', title: '🎧 Escuchar juntos', message: 'Uniéndote a lo que escucha ' + name + '…' });
+        const until = Date.now() + 120000;
+        const t = setInterval(async function() {
+            if (Date.now() > until) {
+                clearInterval(t);
+                if (window.notifSystem) notifSystem.show({ id: 'lt-joining-fail-' + host, type: 'info', title: '🎧 Escuchar juntos', message: name + ' no ha respondido: tiene que tener abierta la app de escritorio.' });
+                return;
+            }
+            const inv = await ltFetch('invites');
+            const mine = inv && inv.ok && (inv.invites || []).find(function(i) { return i.from_user_key === host; });
+            if (!mine) return;
+            clearInterval(t);
+            /* Que no se quede también como invitación por contestar. */
+            LT_SHOWN_INVITES.add(mine.id);
+            delete LT_PENDING[mine.id];
+            if (window.notifSystem && notifSystem.dismiss) notifSystem.dismiss('lt-invite-' + mine.id);
+            if (LT_ROLE) ltLeaveLocal();
+            ltJoinAsGuest(mine.id);
+        }, 2000);
+    });
+})();
+if (window.melonDesktop) {
+    setInterval(async function() {
+        if (LT_ROLE === 'guest') return;   /* escuchando a otro: no se puede hostear */
+        const r = await ltFetch('join-requests');
+        if (!r || !r.ok || !r.requests || !r.requests.length) return;
+        for (const req of r.requests) {
+            await ltFetch('answer-join', { body: { requestId: req.id } });
+            const inv = await ltInviteUser(req.from_user_key);
+            if (inv && inv.ok && window.notifSystem) {
+                notifSystem.show({ id: 'lt-joinreq-' + req.id, type: 'info', title: '🎧 ' + req.from_label + ' se une',
+                    message: req.from_label + ' va a escuchar contigo desde tu presencia de Discord.' });
+            }
+        }
+    }, 5000);
+}
+
 /* win98Confirm vive ahora en assets/js/win98-dialogs.js (compartido).
    La firma (message, title, onOk) se mantiene compatible con los callers. */
 let stopTitleMarquee  = null;
@@ -2215,8 +2401,18 @@ function pixelateImg(img, factor) {
     ctx.imageSmoothingEnabled = false;
     try {
         ctx.drawImage(img, 0, 0, w, h);
+        /* La URL de verdad se guarda: Discord y las descargas necesitan
+           la imagen original, no el data: pixelado (playerCoverUrl). */
+        img.dataset.origSrc = img.src;
         img.src = c.toDataURL('image/png');
     } catch (e) {}
+}
+/* URL de la carátula que enseña el reproductor, la de antes de pixelarla. */
+function playerCoverUrl() {
+    var c = document.getElementById('player-cover');
+    if (!c) return '';
+    if (/^https?:/.test(c.src)) return c.src;
+    return c.dataset.origSrc || '';
 }
 
 playerCover.addEventListener('load', function() { pixelateImg(playerCover, 0.25); });
@@ -2496,6 +2692,8 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
     tracksEl.innerHTML   = '<div class="album-viewer-msg">Cargando…</div>';
     playBtn.disabled     = true;
     playBtn.textContent  = '▶ Reproducir álbum';
+    const dlBtn = _albumViewerEl('album-viewer-download');
+    if (dlBtn) dlBtn.disabled = true;
 
     /* Abrir ventana usando taskbarManager (mismo patrón que
        playlist-editor) para que se registre en la taskbar. */
@@ -2706,6 +2904,14 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
         });
 
         const anyPlayable = resolved.some(t => t.videoId);
+        if (anyPlayable && dlBtn) {
+            dlBtn.disabled = false;
+            dlBtn.onclick = () => openBulkDownloadDialog({
+                name: [meta.artist, meta.name].filter(Boolean).join(' - ') || 'Álbum',
+                album: meta.name || albumName || '', cover: meta.image || albumImage || '',
+                tracks: resolved.filter(t => t.videoId).map(t => ({ videoId: t.videoId, title: t.title, artist: t.artist || meta.artist || '' })),
+            });
+        }
         if (anyPlayable) {
             playBtn.disabled = false;
             playBtn.onclick = () => _playAlbumFrom(0);
@@ -4069,6 +4275,18 @@ var addTrackCallback = null;
             buildAddToOtherMenu(menu, pl);
         });
         menu.appendChild(addOther);
+
+        /* Descargar todas sus canciones (en el navegador ofrece la app). */
+        if ((pl.tracks || []).some(function(t) { return t && t.videoId; })) {
+            var dlAll = document.createElement('div');
+            dlAll.className = 'pl-menu-item';
+            dlAll.textContent = '⬇ Descargar todo…';
+            dlAll.addEventListener('click', function(){
+                menu.style.display = 'none';
+                openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: pl.tracks });
+            });
+            menu.appendChild(dlAll);
+        }
 
         var del = document.createElement('div');
         del.className = 'pl-menu-item';

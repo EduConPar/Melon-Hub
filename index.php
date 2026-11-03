@@ -30,11 +30,24 @@ if (isMobileDevice()) {
    así la app de escritorio abre ya dentro. Para volver al selector hay
    que cerrar sesión (logout.php). */
 require_once __DIR__ . '/assets/remember-login.php';
+/* "Escuchar conmigo" (botón de la presencia de Discord): ?escuchar=<user_key>
+   se guarda hasta entrar y se le pasa al escritorio (apps/reproductor.php). */
+if (isset($_GET['escuchar'])) {
+    $_SESSION['lt_join'] = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$_GET['escuchar']);
+}
+function desktopUrlFor(string $label): string {
+    $url = 'desktops/' . strtolower($label) . '-desktop.php';
+    if (!empty($_SESSION['lt_join'])) {
+        $url .= '?escuchar=' . rawurlencode($_SESSION['lt_join']);
+        unset($_SESSION['lt_join']);
+    }
+    return $url;
+}
 $rememberedUser = restoreRememberedLogin($pdo);
 if ($rememberedUser !== null && isset($loginUsers[$rememberedUser]) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $rememberedLabel = $loginUsers[$rememberedUser]['label'];
     ensureDesktopStub($rememberedLabel);
-    header('Location: desktops/' . strtolower($rememberedLabel) . '-desktop.php');
+    header('Location: ' . desktopUrlFor($rememberedLabel));
     exit;
 }
 
@@ -180,7 +193,7 @@ if ($selectedUser && isset($users[$selectedUser])) {
             ensureDesktopStub($selectedLabel);
             $target = isMobileDevice()
                 ? 'mobile.php'
-                : 'desktops/' . strtolower($selectedLabel) . '-desktop.php';
+                : desktopUrlFor($selectedLabel);
             header('Location: ' . $target);
             exit;
         }

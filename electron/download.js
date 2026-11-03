@@ -3,7 +3,9 @@
    ──────────────────────────────────────────────────────────────────────
    La web lo pide con melonDesktop.download() (clic derecho → Descargar…
    del reproductor y del reproductor flotante) y el archivo acaba en la
-   carpeta Descargas como "Artista - Título.ext".
+   carpeta Descargas como "Artista - Título.ext". Para una playlist o un
+   álbum entero la web pide las canciones de una en una con `folder`
+   (Descargas/<nombre>/).
 
    Solo se puede desde la app: el audio de YouTube no se deja leer desde
    otra web (CORS) y YouTube bloquea las descargas desde servidores. Aquí
@@ -274,7 +276,10 @@ async function download(info, progress) {
         const audio = await fetchAudio(job, dir, progress);
         if (job.cancelled) throw new Error('cancelled');
         const base = safeName([info.artist, info.title].filter(Boolean).join(' - ')) || 'Canción';
-        const out = await freePath(app.getPath('downloads'), base, format);
+        /* folder: subcarpeta de Descargas (descargar una playlist o un álbum entero). */
+        const outDir = info.folder ? path.join(app.getPath('downloads'), safeName(info.folder) || 'Melon Hub') : app.getPath('downloads');
+        await fsp.mkdir(outDir, { recursive: true });
+        const out = await freePath(outDir, base, format);
         const tags = { title: info.title || '', artist: info.artist || '', album: info.album || '' };
         progress('convert', null);
         const cover = format === 'wav' ? null : await fetchCover(info.cover);

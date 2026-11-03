@@ -26,6 +26,13 @@
      leave         POST   guest sale O host cierra la sesión entera.
      current       GET    devuelve la sesión activa del usuario (como
                           host o guest) o null.
+     request-join  POST   {host} → "Escuchar conmigo" (botón de la presencia
+                          de Discord de la app de escritorio): pide unirse a
+                          lo que escucha un amigo (seguimiento mutuo).
+     join-requests GET    peticiones pendientes para mí como anfitrión: mi
+                          app las atiende sola (abre la sesión e invita, y
+                          la app de quien lo pidió acepta sola).
+     answer-join   POST   {requestId} → petición atendida.
 
    No es WebSocket — usa polling cada 2s. Tradeoff: ~2s de lag, pero
    simple, sin infra extra.
@@ -92,6 +99,17 @@ $pdo->exec("
         responded_at  TIMESTAMP NULL,
         INDEX idx_to (to_user_id, status),
         INDEX idx_session (session_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+");
+
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS listening_join_requests (
+        id            INT AUTO_INCREMENT PRIMARY KEY,
+        host_user_id  INT NOT NULL,
+        from_user_id  INT NOT NULL,
+        status        ENUM('pending','done','expired') DEFAULT 'pending',
+        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_host (host_user_id, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 ");
 
@@ -358,7 +376,7 @@ if ($action === 'invites') {
        si la sesión se cerró pero el invite es reciente, lo mostramos
        igual; el accept reabrirá la sesión si hace falta. */
     $st = $pdo->prepare("
-        SELECT i.id, i.session_id, i.from_user_id, u.label AS from_label,
+        SELECT i.id, i.session_id, i.from_user_id, u.user_key AS from_user_key, u.label AS from_label,
                s.track_title, s.track_artist, s.video_id, s.cover_url
           FROM listening_invites i
           JOIN usuarios u ON u.id = i.from_user_id
@@ -442,6 +460,50 @@ if ($action === 'leave') {
     $pdo->prepare("UPDATE listening_participants SET left_at = NOW() WHERE user_id = ? AND left_at IS NULL")
         ->execute([$userId]);
     echo json_encode(['ok' => true, 'role' => 'guest', 'closed' => false]);
+    exit;
+}
+
+if ($action === 'request-join') {
+    $j = bodyJson();
+    $hostKey = trim((string)($j['host'] ?? ''));
+    $hostId = $hostKey !== '' ? userIdByKey($hostKey) : 0;
+    if (!$hostId || $hostId === $userId) {
+        echo json_encode(['ok' => false, 'error' => 'Usuario inválido']);
+        exit;
+    }
+    require_once dirname(__DIR__) . '/social-helpers.php';
+    if (!isMutualFollow($pdo, (int)$userId, (int)$hostId)) {
+        echo json_encode(['ok' => false, 'error' => 'Solo pueden unirse sus amigos (seguimiento mutuo)']);
+        exit;
+    }
+    $pdo->prepare("UPDATE listening_join_requests SET status = 'expired'
+                    WHERE host_user_id = ? AND from_user_id = ? AND status = 'pending'")
+        ->execute([$hostId, $userId]);
+    $pdo->prepare("INSERT INTO listening_join_requests (host_user_id, from_user_id) VALUES (?, ?)")
+        ->execute([$hostId, $userId]);
+    echo json_encode(['ok' => true, 'host_label' => getHostLabel($pdo, (int)$hostId)]);
+    exit;
+}
+
+if ($action === 'join-requests') {
+    $st = $pdo->prepare("
+        SELECT r.id, u.user_key AS from_user_key, u.label AS from_label
+          FROM listening_join_requests r
+          JOIN usuarios u ON u.id = r.from_user_id
+         WHERE r.host_user_id = ? AND r.status = 'pending'
+           AND r.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+         ORDER BY r.id
+    ");
+    $st->execute([$userId]);
+    echo json_encode(['ok' => true, 'requests' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+    exit;
+}
+
+if ($action === 'answer-join') {
+    $j = bodyJson();
+    $pdo->prepare("UPDATE listening_join_requests SET status = 'done' WHERE id = ? AND host_user_id = ?")
+        ->execute([(int)($j['requestId'] ?? 0), $userId]);
+    echo json_encode(['ok' => true]);
     exit;
 }
 

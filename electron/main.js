@@ -19,6 +19,9 @@
      - Cerrar la ventana la deja en segundo plano con su icono en la barra
        de tareas, y si suena música sale el reproductor flotante (tray.js,
        mini-player.js).
+     - Atajos globales de la música, notificaciones del sistema, contador
+       de mensajes en la bandeja, botones de la miniatura de Windows y
+       arrastrar imágenes fuera (desktop-extras.js).
    ────────────────────────────────────────────────────────────────────── */
 const { app, BrowserWindow, shell, Menu, session } = require('electron');
 const path = require('path');
@@ -26,6 +29,7 @@ const fs = require('fs');
 const updater = require('./updater');
 const tray = require('./tray');
 const download = require('./download');
+const extras = require('./desktop-extras');
 
 const START_URL  = process.env.MELONHUB_URL || require('./package.json').melonhub.url;
 const APP_ORIGIN = new URL(START_URL).origin;
@@ -174,6 +178,9 @@ if (!app.requestSingleInstanceLock()) {
 } else {
     app.on('second-instance', () => tray.openMain());
 
+    /* Windows: sin esto las notificaciones del sistema no salen (o salen como "electron"). */
+    if (process.platform === 'win32') app.setAppUserModelId(require('./package.json').build.appId);
+
     app.whenReady().then(() => {
         Menu.setApplicationMenu(null);
         setupPermissions();
@@ -182,6 +189,7 @@ if (!app.requestSingleInstanceLock()) {
         updater.start(mainWindow);
         tray.start(mainWindow, START_URL);
         download.init();
+        extras.start(mainWindow, tray.getTray(), { openMain: tray.openMain });
     });
 
     app.on('window-all-closed', () => app.quit());

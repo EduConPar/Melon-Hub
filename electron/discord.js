@@ -3,7 +3,7 @@
    ──────────────────────────────────────────────────────────────────────
    Mientras suena algo en el reproductor, el perfil de Discord enseña
    "Escuchando a <aplicación>" con la canción, el artista, la carátula, la
-   barra de tiempo y un botón "Abrir Melon Hub". En pausa o sin canción no
+   barra de tiempo y los botones "Escuchar conmigo" y "Abrir Melon Hub". En pausa o sin canción no
    enseña nada. Se puede apagar desde el menú de la bandeja (tray.js,
    setting `discordPresence`).
 
@@ -26,6 +26,10 @@ const RETRY_MS = 15000;
    cambia algo que se ve, y como mucho una vez por segundo. */
 const MIN_GAP_MS = 1000;
 const SITE_URL = 'https://melonhub.es/';
+/* La web que abre la app (la de dev en la build de dev): el botón
+   "Escuchar conmigo" tiene que llevar a la misma, que es donde están la
+   cuenta y la sesión de escuchar juntos (tray.js → setSite). */
+let appSite = SITE_URL;
 
 let clientId = '';
 let sock = null, ready = false, connecting = false, retryTimer = null;
@@ -132,7 +136,8 @@ function flush() {
    (16:9 sin bordes): Discord recorta la imagen a cuadrado por el centro y la
    hqdefault trae franjas negras arriba y abajo. */
 function coverOf(s) {
-    const c = String(s.cover || '');
+    /* coverUrl: la original; cover puede ser el data: pixelado del reproductor. */
+    const c = String(s.coverUrl || s.cover || '');
     const yt = c.match(/^https:\/\/(?:img\.youtube\.com|i\.ytimg\.com)\/vi\/([\w-]{11})\//);
     if (/^https:\/\//.test(c) && !yt) return c;
     const vid = yt ? yt[1] : s.videoId;
@@ -171,7 +176,12 @@ function update(s) {
                 ? { start: Math.round(start), end: Math.round(start + s.duration * 1000) }
                 : { start: Math.round(start) },
             assets: cover ? { large_image: cover, large_text: text(s.playlist || s.title, 'Melon Hub') } : undefined,
-            buttons: [{ label: 'Abrir Melon Hub', url: SITE_URL }],
+            /* "Escuchar conmigo": quien lo pulsa se une a lo que suena si
+               sois amigos en Melon Hub (index.php?escuchar → reproductor.php).
+               No sale escuchando como invitado de otro. */
+            buttons: (s.userKey && s.ltRole !== 'guest'
+                ? [{ label: 'Escuchar conmigo', url: appSite + 'index.php?escuchar=' + encodeURIComponent(s.userKey) }]
+                : []).concat([{ label: 'Abrir Melon Hub', url: SITE_URL }]),
         };
         Object.defineProperty(next, '_video', { value: s.videoId, enumerable: false });
     }
@@ -184,4 +194,8 @@ function update(s) {
 
 function clear() { update(null); }
 
-module.exports = { update, clear };
+function setSite(url) {
+    try { appSite = new URL('.', url).href; } catch (_) {}
+}
+
+module.exports = { update, clear, setSite };
