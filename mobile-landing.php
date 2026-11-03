@@ -45,8 +45,7 @@ $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']))
    la PWA (si este entorno tiene APK; ver assets/mobile-downloads.php).
    iPhone y el resto siguen con la PWA. */
 require_once __DIR__ . '/assets/mobile-downloads.php';
-$ua     = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
-$apkUrl = (stripos($ua, 'Android') !== false && strpos($ua, 'MelonHubApp') === false) ? androidApkUrl() : '';
+$apkUrl = androidApkUrlForVisitor();
 
 /* NO saltamos server-side a mobile.php aunque is_pwa esté en sesión.
    En Android las cookies son compartidas entre PWA y navegador, así
@@ -127,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php else: ?>
         <link rel="manifest" href="manifest.php">
     <?php endif; ?>
+    <?php suppressPwaInstallPrompt(); ?>
     <link rel="apple-touch-icon" href="assets/img/mobile/icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">

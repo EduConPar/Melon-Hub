@@ -292,6 +292,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <title>Melon Hub — <?= htmlspecialchars($userLabel) ?></title>
     <link rel="icon" href="assets/img/mobile/icon.png" type="image/png">
     <link rel="manifest" href="manifest.php<?= $tokenForManifest !== '' ? '?token=' . htmlspecialchars($tokenForManifest) : '' ?>">
+    <?php require_once __DIR__ . '/assets/mobile-downloads.php'; suppressPwaInstallPrompt(); ?>
     <link rel="apple-touch-icon" href="assets/img/mobile/icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">

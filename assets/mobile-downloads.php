@@ -18,3 +18,19 @@ function androidApkUrl(): string {
     if ($tag === '') return '';
     return 'https://github.com/EduConPar/Scrapbook-Online/releases/download/' . $tag . '/MelonHub.apk';
 }
+
+/* El APK si quien visita está en un Android y no dentro de la propia
+   app ("MelonHubApp" en el User-Agent); si no, ''. */
+function androidApkUrlForVisitor(): string {
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    if (stripos($ua, 'Android') === false || strpos($ua, 'MelonHubApp') !== false) return '';
+    return androidApkUrl();
+}
+
+/* Con APK, Chrome no debe ofrecer instalar la PWA (su aviso de "Instalar
+   app" sale solo por tener manifiesto): cancelar beforeinstallprompt
+   lo quita. Va en el <head> de las páginas con manifiesto. */
+function suppressPwaInstallPrompt(): void {
+    if (androidApkUrlForVisitor() === '') return;
+    echo "<script>window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); });</script>\n";
+}

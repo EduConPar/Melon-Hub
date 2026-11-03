@@ -1,2 +1,4 @@
 /build/*
 !/build/.npmkeep
+# APK/AAB firmados que genera Android Studio: van a la release de GitHub, no al repo
+/release
