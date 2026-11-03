@@ -2054,6 +2054,9 @@ window.MuShell = (function(){
     var pendingCue = null;
     var restorePos = 0;
     var playWhenReady = false;
+    /* Hasta cuándo una parada de YouTube tras cambiar de canción no cuenta
+       como pausa (ver onYTState). 0 = nada pendiente. */
+    var autoPlayUntil = 0;
     var subscribers = [];
     var progressTimer = null;
     /* Label del usuario actual — usado al añadir tracks a playlists
@@ -2139,11 +2142,28 @@ window.MuShell = (function(){
         /* App Android: solo cuenta play (1) y pausa/parada (2, 5). Entre
            canciones (0, -1, 3) no se avisa: si se soltara, la música se
            cortaría al pasar de canción con la app en segundo plano. */
+        /* Al cambiar de canción (⏭ del widget con la app en segundo plano,
+           o al acabar una), YouTube a veces carga la siguiente y se queda
+           parada (2 / 5 / -1) en vez de arrancar. Eso no es una pausa: no
+           se suelta el servicio (la app se congelaría y la página pasaría a
+           oculta, y ya no arrancaría sin darle a ▶) y se le vuelve a dar a
+           ▶. Una pausa de verdad (togglePlay, MediaSession) cancela esto. */
+        var stalled = (e.data === 2 || e.data === 5 || e.data === -1) && Date.now() < autoPlayUntil;
+        if (e.data === 1) autoPlayUntil = 0;
+        if (stalled) {
+            setTimeout(function(){
+                if (!autoPlayUntil || !YT_PLAYER) return;
+                try {
+                    var st = YT_PLAYER.getPlayerState();
+                    if (st !== 1 && st !== 3) YT_PLAYER.playVideo();
+                } catch (_) {}
+            }, 400);
+        }
         if (e.data === 1) nativeMusicPlaying(true, QUEUE[CUR_IDX]);
-        else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
+        else if ((e.data === 2 || e.data === 5) && !stalled) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
         if (e.data === 1) restorePos = 0;
-        if (e.data === 1 || e.data === 2 || e.data === 5) nativeWidgetState(e.data === 1);
-        if (e.data === 2) saveLastPos();
+        if (e.data === 1 || ((e.data === 2 || e.data === 5) && !stalled)) nativeWidgetState(e.data === 1);
+        if (e.data === 2 && !stalled) saveLastPos();
         if (e.data === 0) next();
         broadcast({ type: 'mushell:state', state: e.data, idx: CUR_IDX });
         publishNowPlaying(playing, true);
@@ -2300,10 +2320,10 @@ window.MuShell = (function(){
     if ('mediaSession' in navigator) {
         try {
             navigator.mediaSession.setActionHandler('play',           function(){ if (YT_PLAYER) YT_PLAYER.playVideo();  });
-            navigator.mediaSession.setActionHandler('pause',          function(){ if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
+            navigator.mediaSession.setActionHandler('pause',          function(){ autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
             navigator.mediaSession.setActionHandler('previoustrack',  prev);
             navigator.mediaSession.setActionHandler('nexttrack',      next);
-            navigator.mediaSession.setActionHandler('stop',           function(){ if (YT_PLAYER) YT_PLAYER.stopVideo();  });
+            navigator.mediaSession.setActionHandler('stop',           function(){ autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.stopVideo();  });
         } catch (_) {}
     }
 
@@ -2593,7 +2613,7 @@ window.MuShell = (function(){
         try {
             var ps = YT_PLAYER.getPlayerState();
             if (isPlaying && ps !== 1) YT_PLAYER.playVideo();
-            else if (!isPlaying && ps === 1) YT_PLAYER.pauseVideo();
+            else if (!isPlaying && ps === 1) { autoPlayUntil = 0; YT_PLAYER.pauseVideo(); }
         } catch (_) {}
     }
 
@@ -2777,6 +2797,9 @@ window.MuShell = (function(){
         startProgressTimer();
         restorePos = 0;
         pendingCue = null;
+        /* Esta canción tiene que sonar: si YouTube se queda parado al
+           cargarla, onYTState le vuelve a dar a ▶. */
+        autoPlayUntil = Date.now() + 10000;
         saveLastQueue();
         if (!YT_READY || !YT_PLAYER) { pendingLoadId = tr.videoId; return; }
         YT_PLAYER.loadVideoById(tr.videoId);
@@ -2807,7 +2830,7 @@ window.MuShell = (function(){
            cuanto esté (⏯ del widget con la app recién abierta). */
         if (!YT_READY || !YT_PLAYER) { if (pendingCue) playWhenReady = true; return; }
         var st = YT_PLAYER.getPlayerState();
-        if (st === 1) YT_PLAYER.pauseVideo();
+        if (st === 1) { autoPlayUntil = 0; YT_PLAYER.pauseVideo(); }
         else          YT_PLAYER.playVideo();
     }
 
