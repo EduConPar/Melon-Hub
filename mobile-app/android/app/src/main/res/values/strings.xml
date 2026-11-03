@@ -4,4 +4,22 @@
     <string name="title_activity_main">Melon Hub</string>
     <string name="package_name">es.melonhub.MelonHub</string>
     <string name="custom_url_scheme">es.melonhub.MelonHub</string>
+
+    <!-- Widget de música -->
+    <string name="widget_description">Lo que suena y tus playlists</string>
+    <string name="widget_title">Melon Hub</string>
+    <string name="widget_idle">Nada sonando</string>
+    <string name="widget_my_playlists">Mis playlists</string>
+    <string name="widget_play_all">Reproducir</string>
+    <string name="widget_playlists">Playlists</string>
+    <string name="widget_back">Atrás</string>
+    <string name="widget_cover">Carátula</string>
+    <string name="widget_prev">Anterior</string>
+    <string name="widget_toggle">Reproducir / pausar</string>
+    <string name="widget_next">Siguiente</string>
+    <string name="widget_loading">Cargando…</string>
+    <string name="widget_login">Abre Melon Hub e inicia sesión</string>
+    <string name="widget_offline">No se pudieron cargar las playlists</string>
+    <string name="widget_no_playlists">No tienes playlists</string>
+    <string name="widget_empty_playlist">Esta playlist está vacía</string>
 </resources>

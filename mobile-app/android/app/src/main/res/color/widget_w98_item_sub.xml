@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Artista en las filas de canciones Win98. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="#DFDFDF" />
+    <item android:color="@color/widget_w98_muted" />
+</selector>

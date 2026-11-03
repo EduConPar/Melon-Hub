@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget de música, pantalla del reproductor (Kawaii). Mismos ids que la
+     otra interfaz: MusicWidget pinta las dos con el mismo código. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_kw_window"
+    android:orientation="vertical"
+    android:padding="2dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:background="@drawable/widget_kw_box"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:layout_marginStart="4dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="4dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="4dp">
+
+        <TextView
+            android:id="@+id/w_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="@font/pixelify_sans"
+            android:singleLine="true"
+            android:text="@string/widget_title"
+            android:textColor="@color/widget_kw_text"
+            android:textSize="13sp" />
+
+        <ImageView
+            android:id="@+id/w_btn_menu"
+            android:layout_width="20dp"
+            android:layout_height="18dp"
+            android:background="@drawable/widget_kw_button"
+            android:contentDescription="@string/widget_playlists"
+            android:padding="4dp"
+            android:src="@drawable/widget_ic_menu"
+            android:tint="@color/widget_kw_border" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:layout_margin="4dp"
+        android:background="@drawable/widget_kw_box"
+        android:padding="6dp">
+
+        <ImageView
+            android:id="@+id/w_cover"
+            android:layout_width="wrap_content"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:adjustViewBounds="true"
+            android:background="@drawable/widget_kw_cover"
+            android:contentDescription="@string/widget_cover"
+            android:padding="2dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_cover_kw" />
+
+        <TextView
+            android:id="@+id/w_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/pixelify_sans"
+            android:gravity="center"
+            android:singleLine="true"
+            android:text="@string/widget_idle"
+            android:textColor="@color/widget_kw_text"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/w_prev"
+                android:layout_width="44dp"
+                android:layout_height="30dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/widget_kw_button"
+                android:contentDescription="@string/widget_prev"
+                android:padding="8dp"
+                android:src="@drawable/widget_ic_prev"
+                android:tint="@color/widget_kw_border" />
+
+            <ImageView
+                android:id="@+id/w_play"
+                android:layout_width="44dp"
+                android:layout_height="30dp"
+                android:background="@drawable/widget_kw_button"
+                android:contentDescription="@string/widget_toggle"
+                android:padding="7dp"
+                android:src="@drawable/widget_ic_play"
+                android:tint="@color/widget_kw_border" />
+
+            <ImageView
+                android:id="@+id/w_next"
+                android:layout_width="44dp"
+                android:layout_height="30dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_kw_button"
+                android:contentDescription="@string/widget_next"
+                android:padding="8dp"
+                android:src="@drawable/widget_ic_next"
+                android:tint="@color/widget_kw_border" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

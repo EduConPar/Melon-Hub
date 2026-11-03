@@ -1,5 +1,6 @@
 package es.melonhub.MelonHub;
 
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
@@ -17,16 +18,44 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
 
+    /* La abrió el widget para poner una canción (WidgetPlayActivity). */
+    static final String EXTRA_FROM_WIDGET = "fromWidget";
+
     /* Último color de barras de la página (null hasta que cargue). */
     private Integer barsColor = null;
+
+    /* Abierta desde el widget: al empezar a sonar se va al fondo. */
+    private boolean sendToBack = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         /* Los plugins propios se registran antes de crear el puente. */
         registerPlugin(MelonMusicPlugin.class);
         registerPlugin(MelonUpdaterPlugin.class);
+        sendToBack = getIntent().getBooleanExtra(EXTRA_FROM_WIDGET, false);
         super.onCreate(savedInstanceState);
         fitInsideSystemBars();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.getBooleanExtra(EXTRA_FROM_WIDGET, false)) sendToBack = true;
+    }
+
+    /* Una sola vez: si luego el usuario la abre, se queda delante. */
+    boolean takeSendToBack() {
+        boolean b = sendToBack;
+        sendToBack = false;
+        return b;
+    }
+
+    /* Al salir de la app el widget se repinta: así coge la interfaz
+       (Win98 / Kawaii) si se ha cambiado. */
+    @Override
+    public void onPause() {
+        super.onPause();
+        MusicWidget.refresh(this);
     }
 
     /* La web va DENTRO de la barra de notificaciones y la de navegación,

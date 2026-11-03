@@ -2125,7 +2125,7 @@ window.MuShell = (function(){
            canciones (0, -1, 3) no se avisa: si se soltara, la música se
            cortaría al pasar de canción con la app en segundo plano. */
         if (e.data === 1) nativeMusicPlaying(true, QUEUE[CUR_IDX]);
-        else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false);
+        else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
         if (e.data === 0) next();
         broadcast({ type: 'mushell:state', state: e.data, idx: CUR_IDX });
         publishNowPlaying(playing, true);
@@ -2180,10 +2180,28 @@ window.MuShell = (function(){
             cap.nativePromise('MelonMusic', 'setPlaying', {
                 playing: !!playing,
                 title:   (tr && tr.title)  || '',
-                artist:  (tr && tr.artist) || ''
+                artist:  (tr && tr.artist) || '',
+                /* Para la carátula del widget de la app. */
+                videoId: (tr && tr.videoId) || ''
             }).catch(function(){});
         } catch (_) {}
     }
+
+    /* Botones del widget de la app (MusicWidget). Con una app vieja el
+       evento no llega nunca y no pasa nada. */
+    (function setupNativeWidget(){
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.addListener !== 'function') return;
+        try {
+            cap.addListener('MelonMusic', 'widgetCommand', function(cmd){
+                if (!cmd) return;
+                if (cmd.action === 'toggle') togglePlay();
+                else if (cmd.action === 'next') next();
+                else if (cmd.action === 'prev') prev();
+                else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
+            });
+        } catch (_) {}
+    })();
 
     /* ── Media Session ── */
     function updateMediaSession(tr) {

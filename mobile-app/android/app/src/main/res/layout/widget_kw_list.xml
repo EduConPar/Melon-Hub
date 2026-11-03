@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget de música, pantallas de lista (Kawaii): "Mis playlists" y las
+     canciones de una playlist (esta con el botón "Reproducir" arriba). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_kw_window"
+    android:orientation="vertical"
+    android:padding="2dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:background="@drawable/widget_kw_box"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:layout_marginStart="4dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="4dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="8dp">
+
+        <ImageView
+            android:id="@+id/w_btn_back"
+            android:layout_width="20dp"
+            android:layout_height="18dp"
+            android:background="@drawable/widget_kw_button"
+            android:contentDescription="@string/widget_back"
+            android:padding="4dp"
+            android:src="@drawable/widget_ic_back"
+            android:tint="@color/widget_kw_border" />
+
+        <TextView
+            android:id="@+id/w_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="@font/pixelify_sans"
+            android:singleLine="true"
+            android:text="@string/widget_my_playlists"
+            android:textColor="@color/widget_kw_text"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_margin="4dp"
+        android:background="@drawable/widget_kw_box"
+        android:padding="6dp">
+
+        <LinearLayout
+            android:id="@+id/w_btn_playall"
+            android:layout_width="wrap_content"
+            android:layout_height="28dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/widget_kw_button"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="10dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_ic_play"
+                android:tint="@color/widget_kw_border" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:fontFamily="@font/pixelify_sans"
+                android:text="@string/widget_play_all"
+                android:textColor="@color/widget_kw_text"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ListView
+                android:id="@+id/w_list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:divider="@null"
+                android:dividerHeight="0dp" />
+
+            <TextView
+                android:id="@+id/w_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fontFamily="@font/pixelify_sans"
+                android:gravity="center"
+                android:padding="8dp"
+                android:textColor="@color/widget_kw_muted"
+                android:textSize="13sp" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texto de fila Win98: blanco sobre el azul de selección. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="#FFFFFF" />
+    <item android:color="@color/widget_w98_text" />
+</selector>
