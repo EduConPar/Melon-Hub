@@ -849,6 +849,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             padding: 4px 6px;
         }
         .pf-form-row textarea { resize: vertical; min-height: 60px; }
+        /* Cumpleaños: 98.css no estiliza <input type="date">; igual que
+           los de texto (Kawaii pone su borde con !important). */
+        .pf-form-row input[type="date"] { border: none; border-radius: 0; height: 21px; }
         .pf-form-hint {
             font-size: 10px; color: var(--text-faint, #666);
             font-style: italic; margin-top: 2px;
@@ -1705,6 +1708,15 @@ function fetchFollowers() {
 
 /* Pinta la sección "About" con bio, meta y conexiones — mismo
    conjunto de campos que `renderProfileInfo` del escritorio. */
+/* Cumpleaños 'AAAA-MM-DD' → "3 de noviembre" (sin año: la edad ya va
+   al lado). '' si la fecha no vale. */
+function cumpleLegible(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+    var meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                 'agosto','septiembre','octubre','noviembre','diciembre'];
+    return m ? (+m[3]) + ' de ' + meses[+m[2] - 1] : '';
+}
+
 function renderAbout(d) {
     var bioEl     = document.getElementById('pf-about-bio');
     var metaEl    = document.getElementById('pf-about-meta');
@@ -1721,10 +1733,12 @@ function renderAbout(d) {
         bioEl.classList.add('is-empty');
     }
 
-    /* Meta: pronombres · edad · país */
+    /* Meta: pronombres · edad · cumpleaños · país. Con cumpleaños la
+       edad viene ya calculada del servidor (get-profile / view-user). */
     var parts = [];
     if (d && d.pronouns) parts.push(esc(d.pronouns));
     if (d && d.age)      parts.push(esc(d.age) + ' años');
+    if (d && d.birthday) parts.push('🎂 ' + esc(cumpleLegible(d.birthday)));
     if (d && d.country)  parts.push('📍 ' + esc(d.country));
     metaEl.innerHTML = parts.length
         ? parts.join('<span class="pf-meta-sep">·</span>')
@@ -3342,10 +3356,15 @@ function toggleFeatured(origIdx) {
 })();
 
 /* ─── Editar perfil ──────────────────────────────────────────────
-   Modal con form para bio, pronouns, age, country + 4 conexiones.
+   Modal con form para bio, pronouns, birthday, country + 4 conexiones
+   (la edad sale del cumpleaños).
    Guarda vía save-info y refresca la sección About con renderAbout. */
 function openEditProfileDialog() {
     var p = STATE.profile || {};
+    function hoyISO() {
+        var h = new Date();
+        return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0') + '-' + String(h.getDate()).padStart(2, '0');
+    }
     function v(k){ return (p && p[k] != null) ? String(p[k]) : ''; }
     var bd = document.createElement('div');
     bd.className = 'pf-modal-backdrop';
@@ -3368,8 +3387,8 @@ function openEditProfileDialog() {
                     '<input type="text" id="ep-pronouns" maxlength="30" value="' + esc(v('pronouns')) + '" placeholder="él/ella/elle...">' +
                 '</div>' +
                 '<div class="pf-form-row">' +
-                    '<label for="ep-age">Edad</label>' +
-                    '<input type="number" id="ep-age" min="0" max="999" value="' + esc(v('age')) + '" placeholder="25">' +
+                    '<label for="ep-birthday">Cumpleaños</label>' +
+                    '<input type="date" id="ep-birthday" min="1900-01-01" max="' + hoyISO() + '" value="' + esc(v('birthday')) + '">' +
                 '</div>' +
                 '<div class="pf-form-row">' +
                     '<label for="ep-country">País</label>' +
@@ -3407,7 +3426,7 @@ function openEditProfileDialog() {
         var payload = {
             bio:       bd.querySelector('#ep-bio').value,
             pronouns:  bd.querySelector('#ep-pronouns').value,
-            age:       bd.querySelector('#ep-age').value,
+            birthday:  bd.querySelector('#ep-birthday').value,
             country:   bd.querySelector('#ep-country').value,
             steam:     bd.querySelector('#ep-steam').value,
             discord:   bd.querySelector('#ep-discord').value,

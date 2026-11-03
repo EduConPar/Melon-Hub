@@ -160,11 +160,8 @@ function expandirRecordatorios(lista) {
    app y tras crear/eliminar elementos. La navegación mes-a-mes usa
    recalcAndRender() (síncrono) porque los datos ya están en memoria. */
 async function cargarTodo() {
-    if (!parejaId) {
-        renderAllGrids();
-        renderSidebar([]);
-        return;
-    }
+    /* Sin pareja también carga (como el escritorio): pareja_id=0 trae los
+       momentos y recordatorios personales y los cumpleaños de los amigos. */
     const [mResp, rResp] = await Promise.all([
         apiFetch(API_BASE + '?action=get-momentos&pareja_id=' + parejaId),
         apiFetch(API_BASE + '?action=get-recordatorios&pareja_id=' + parejaId),
@@ -309,10 +306,11 @@ function renderSidebar(expandidos) {
             '</div>' +
             '<div class="cm-rec-item-btns">' +
                 '<button class="button" data-act="ver" type="button">👁</button>' +
-                '<button class="button" data-act="del" type="button">✕</button>' +
+                /* Cumpleaños de amigos: salen solos del perfil, sin ✕. */
+                (r.cumple ? '' : '<button class="button" data-act="del" type="button">✕</button>') +
             '</div>';
         item.querySelector('[data-act="ver"]').addEventListener('click', () => abrirCountdown(r));
-        item.querySelector('[data-act="del"]').addEventListener('click', () => eliminarRecordatorio(r.id));
+        if (!r.cumple) item.querySelector('[data-act="del"]').addEventListener('click', () => eliminarRecordatorio(r.id));
         div.appendChild(item);
     });
 }
@@ -409,10 +407,10 @@ function buildRecRow(r) {
         '</div>' +
         '<div class="cm-rec-btns">' +
             '<button class="button" data-ver type="button">👁</button>' +
-            '<button class="button" data-del type="button">✕</button>' +
+            (r.cumple ? '' : '<button class="button" data-del type="button">✕</button>') +
         '</div>';
     row.querySelector('[data-ver]').addEventListener('click', () => { cerrarSheet(); abrirCountdown(r); });
-    row.querySelector('[data-del]').addEventListener('click', () => eliminarRecordatorio(r.id));
+    if (!r.cumple) row.querySelector('[data-del]').addEventListener('click', () => eliminarRecordatorio(r.id));
     return row;
 }
 

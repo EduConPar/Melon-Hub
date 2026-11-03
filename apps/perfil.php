@@ -2586,6 +2586,27 @@ var PROFILE_USERS = <?php
         textEl.style.fontSize = best + 'px';
     }
 
+    /* Cumpleaños 'AAAA-MM-DD' → "3 de noviembre" (sin año: la edad ya
+       va en su línea) y → años cumplidos. '' si la fecha no vale. */
+    function partesCumple(s) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+        return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+    }
+    function cumpleLegible(s) {
+        var p = partesCumple(s);
+        var meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                     'agosto','septiembre','octubre','noviembre','diciembre'];
+        return p ? p.d + ' de ' + meses[p.m - 1] : '';
+    }
+    function edadDesdeCumple(s) {
+        var p = partesCumple(s);
+        if (!p) return '';
+        var hoy = new Date();
+        var edad = hoy.getFullYear() - p.y;
+        if (hoy.getMonth() + 1 < p.m || (hoy.getMonth() + 1 === p.m && hoy.getDate() < p.d)) edad--;
+        return edad >= 0 ? String(edad) : '';
+    }
+
     function renderProfileInfo(data) {
         var bioEl   = document.getElementById('profile-info-bio');
         var metaEl  = document.getElementById('profile-info-meta');
@@ -2604,8 +2625,12 @@ var PROFILE_USERS = <?php
 
         metaEl.innerHTML = '';
         function line(txt) { var s = document.createElement('div'); s.className = 'pinfo-line'; s.textContent = txt; return s; }
+        /* Con cumpleaños la edad se calcula aquí también (al guardar se
+           pinta el borrador, sin volver a pedir el perfil). */
+        var age = data.birthday ? edadDesdeCumple(data.birthday) : data.age;
         if (data.pronouns) metaEl.appendChild(line(data.pronouns));
-        if (data.age)      metaEl.appendChild(line(data.age + ' años'));
+        if (age !== '' && age != null) metaEl.appendChild(line(age + ' años'));
+        if (data.birthday) metaEl.appendChild(line('🎂 ' + cumpleLegible(data.birthday)));
         if (data.country)  metaEl.appendChild(line('📍 ' + data.country));
 
         linksEl.innerHTML = '';
@@ -6920,7 +6945,7 @@ var PROFILE_USERS = <?php
         var addPlat   = document.getElementById('profile-social-add-platform');
         var addVal    = document.getElementById('profile-social-add-value');
 
-        var FIELDS = ['bio', 'pronouns', 'age', 'country'];
+        var FIELDS = ['bio', 'pronouns', 'birthday', 'country'];
         var SOCIALS = ['steam', 'discord', 'twitter', 'instagram'];
         /* Iconos PNG dedicados para cada red social. */
         var SOCIAL_ICONS = {
@@ -6961,7 +6986,21 @@ var PROFILE_USERS = <?php
                 return inp;
             }
             row('pronouns', 'pronombres (él/ella/elle...)', 'text',   30);
-            row('age',      'edad',                          'number', 3);
+            /* Cumpleaños (la edad sale de aquí). Un <input type="date">
+               vacío no enseña el placeholder, así que vacío va como texto
+               ("🎂 cumpleaños", igual que "📍 país") y pasa a fecha al
+               entrar. No vuelve a texto al salir: el selector de fecha
+               puede quitar el foco y se cerraría. */
+            var hoyD = new Date();
+            var bdInp = row('birthday', '🎂 cumpleaños', d.birthday ? 'date' : 'text');
+            bdInp.title = 'Cumpleaños';
+            bdInp.min = '1900-01-01';
+            bdInp.max = hoyD.getFullYear() + '-' + String(hoyD.getMonth() + 1).padStart(2, '0') + '-' + String(hoyD.getDate()).padStart(2, '0');
+            bdInp.addEventListener('focus', function() {
+                if (this.type === 'date') return;
+                this.type = 'date';
+                try { this.showPicker(); } catch (e) {}
+            });
             row('country',  '📍 país',                        'text',   50);
         }
 
@@ -7060,6 +7099,9 @@ var PROFILE_USERS = <?php
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     draft = Object.assign({}, data || {});
+                    /* Con cumpleaños, `age` es la calculada: si lo borra,
+                       se queda sin edad (como en el servidor). */
+                    if (draft.birthday) draft.age = '';
                     newPhotoFile = null;
                     editing = true;
                     editBtn.style.display    = 'none';

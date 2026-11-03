@@ -1521,6 +1521,16 @@
     min-width: 70px;
 }
 
+/* Cumpleaños en el editor: 98.css no estiliza <input type="date">;
+   lo igualamos a los de texto de al lado (Kawaii pone su borde con
+   !important y sigue mandando). */
+#profile-info-meta input[type="date"] {
+    border: none;
+    border-radius: 0;
+    height: 21px;
+    padding: 3px 4px;
+}
+
 .pinfo-line {
     font-size: 10px;
     color: var(--text);

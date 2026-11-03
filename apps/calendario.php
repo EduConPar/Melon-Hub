@@ -1069,12 +1069,15 @@ function renderRecordatorios(lista) {
         btnVer.textContent = '👁';
         btnVer.title = 'Ver cuenta atrás';
         btnVer.addEventListener('click', () => abrirCountdown(r));
-        const btnDel = document.createElement('button');
-        btnDel.className = 'button btn-icon-sm';
-        btnDel.textContent = '✕';
-        btnDel.addEventListener('click', () => eliminarRecordatorio(r.id));
         btns.appendChild(btnVer);
-        btns.appendChild(btnDel);
+        /* Los cumpleaños de amigos salen solos del perfil: sin ✕. */
+        if (!r.cumple) {
+            const btnDel = document.createElement('button');
+            btnDel.className = 'button btn-icon-sm';
+            btnDel.textContent = '✕';
+            btnDel.addEventListener('click', () => eliminarRecordatorio(r.id));
+            btns.appendChild(btnDel);
+        }
         item.appendChild(texto);
         item.appendChild(btns);
         div.appendChild(item);
@@ -1456,12 +1459,6 @@ function _buildRecordatorioRow(r) {
         abrirCountdown(r);
     });
 
-    const btnDel = document.createElement('button');
-    btnDel.className = 'button btn-del-row';
-    btnDel.textContent = '✕';
-    btnDel.title = 'Eliminar recordatorio';
-    btnDel.addEventListener('click', () => eliminarRecordatorio(r.id));
-
     /* Wrap de los dos botones — la .rec-row usa justify-content:
        space-between que separaría los 3 hijos en columnas. Con el
        wrap, son 2 hijos: texto a la izquierda, grupo de botones a la
@@ -1469,7 +1466,16 @@ function _buildRecordatorioRow(r) {
     const btnsWrap = document.createElement('div');
     btnsWrap.className = 'rec-row-btns';
     btnsWrap.appendChild(btnVer);
-    btnsWrap.appendChild(btnDel);
+
+    /* Cumpleaños de amigos: salen solos del perfil, sin ✕. */
+    if (!r.cumple) {
+        const btnDel = document.createElement('button');
+        btnDel.className = 'button btn-del-row';
+        btnDel.textContent = '✕';
+        btnDel.title = 'Eliminar recordatorio';
+        btnDel.addEventListener('click', () => eliminarRecordatorio(r.id));
+        btnsWrap.appendChild(btnDel);
+    }
 
     div.appendChild(texto);
     div.appendChild(btnsWrap);

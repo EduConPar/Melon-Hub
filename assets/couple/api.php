@@ -36,6 +36,47 @@ function getCurrentUserId(PDO $pdo, string $userKey): ?int {
     return $cache[$userKey] = $id ? (int)$id : null;
 }
 
+/* Cumpleaños de los amigos (seguimiento mutuo) que lo tienen puesto en el
+   perfil, con la forma de un recordatorio anual. No se guardan en
+   `recordatorios`: se calculan en cada petición, así salen en cuanto os
+   seguís los dos, desaparecen si uno deja de seguir y siguen al día si
+   alguien cambia la fecha. `cumple: true` hace que los calendarios no
+   pongan la ✕ (borrarlo no serviría: volvería a salir). `amigo_id` lo usa
+   upcoming-reminders para no repetir avisos. El propio cumpleaños no sale:
+   es para acordarse del de los demás. */
+function cumplesDeAmigos(PDO $pdo, int $uid): array {
+    require_once dirname(__DIR__) . '/social-helpers.php';
+    $ids = mutualFollowerIds($pdo, $uid);
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    try {
+        $st = $pdo->prepare("SELECT u.id, u.user_key, u.label, u.username, p.birthday
+                               FROM usuarios u JOIN profile p ON p.user_id = u.id
+                              WHERE u.id IN ($ph) AND p.birthday IS NOT NULL");
+        $st->execute($ids);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return []; /* la columna la crea el API del perfil; aún no ha pasado */
+    }
+    $out = [];
+    foreach ($rows as $r) {
+        $fecha = (string)$r['birthday'];
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || $fecha < '1900-01-01') continue;
+        $nombre = $r['label'] ?: $r['username'];
+        $out[] = [
+            'id'           => 'cumple-' . $r['user_key'],
+            'titulo'       => '🎂 Cumpleaños de ' . $nombre,
+            'fecha'        => $fecha,
+            'descripcion'  => '',
+            'periodicidad' => 'anual',
+            'autor'        => '',
+            'cumple'       => true,
+            'amigo_id'     => (int)$r['id'],
+        ];
+    }
+    return $out;
+}
+
 /* Auto-migración: tabla que registra qué recordatorios YA se notificaron
    para cada threshold (7/2/1 días) y fecha de ocurrencia, evitando
    reenviar la misma notificación. */
@@ -180,7 +221,8 @@ case 'get-recordatorios': {
                                ORDER BY r.fecha ASC");
         $stmt->execute([$userId]);
     }
-    jsonResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
+    /* + cumpleaños de MIS amigos (no los de los amigos de la pareja). */
+    jsonResponse(array_merge($stmt->fetchAll(PDO::FETCH_ASSOC), cumplesDeAmigos($pdo, $userId)));
 }
 
 case 'save-recordatorio': {
@@ -295,30 +337,45 @@ case 'get-partner-invites': {
    concurrentes no duplican notificaciones. Manda push best-effort. */
 /* Widgets de calendario de la app de Android (CalendarWidget): lo mismo que
    carga el calendario del móvil (momentos y recordatorios de la pareja,
-   más los recordatorios personales, como los de los eventos), sin tener
-   que saber el pareja_id. Sin pareja el calendario del móvil no carga
-   nada, y esto tampoco. Las repeticiones las expande el widget. */
+   más los recordatorios personales, como los de los eventos, y los
+   cumpleaños de los amigos), sin tener que saber el pareja_id. Sin pareja,
+   como el calendario: los momentos y recordatorios personales y los
+   cumpleaños. Las repeticiones las expande el widget. */
 case 'widget-calendar': {
     $userId = getCurrentUserId($pdo, $userKey);
     if (!$userId) jsonResponse(['ok' => true, 'pareja' => false, 'momentos' => [], 'recordatorios' => []]);
     $stPair = $pdo->prepare("SELECT id FROM parejas WHERE usuario1_id = ? OR usuario2_id = ? LIMIT 1");
     $stPair->execute([$userId, $userId]);
     $parejaId = (int)($stPair->fetchColumn() ?: 0);
-    if (!$parejaId) jsonResponse(['ok' => true, 'pareja' => false, 'momentos' => [], 'recordatorios' => []]);
 
-    $stM = $pdo->prepare("SELECT fecha, foto FROM momentos WHERE pareja_id = ? ORDER BY fecha ASC");
-    $stM->execute([$parejaId]);
-    $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
-                          FROM recordatorios r
-                          WHERE r.pareja_id = ?
-                             OR (r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL))
-                          ORDER BY r.fecha ASC");
-    $stR->execute([$parejaId, $userId]);
+    if ($parejaId) {
+        $stM = $pdo->prepare("SELECT fecha, foto FROM momentos WHERE pareja_id = ? ORDER BY fecha ASC");
+        $stM->execute([$parejaId]);
+        $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
+                              FROM recordatorios r
+                              WHERE r.pareja_id = ?
+                                 OR (r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL))
+                              ORDER BY r.fecha ASC");
+        $stR->execute([$parejaId, $userId]);
+    } else {
+        $stM = $pdo->prepare("SELECT fecha, foto FROM momentos
+                              WHERE usuario_id = ? AND pareja_id IS NULL ORDER BY fecha ASC");
+        $stM->execute([$userId]);
+        $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
+                              FROM recordatorios r
+                              WHERE r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL)
+                              ORDER BY r.fecha ASC");
+        $stR->execute([$userId]);
+    }
+    $recs = $stR->fetchAll(PDO::FETCH_ASSOC);
+    foreach (cumplesDeAmigos($pdo, $userId) as $c) {
+        $recs[] = ['titulo' => $c['titulo'], 'fecha' => $c['fecha'], 'periodicidad' => 'anual'];
+    }
     jsonResponse([
         'ok'            => true,
-        'pareja'        => true,
+        'pareja'        => (bool)$parejaId,
         'momentos'      => $stM->fetchAll(PDO::FETCH_ASSOC),
-        'recordatorios' => $stR->fetchAll(PDO::FETCH_ASSOC),
+        'recordatorios' => $recs,
     ]);
 }
 
@@ -351,7 +408,7 @@ case 'upcoming-reminders': {
         ");
         $stR->execute([$userId]);
     }
-    $rows = $stR->fetchAll(PDO::FETCH_ASSOC);
+    $rows = array_merge($stR->fetchAll(PDO::FETCH_ASSOC), cumplesDeAmigos($pdo, (int)$userId));
 
     $today = new DateTimeImmutable('today');
     $matches = [];
@@ -416,17 +473,20 @@ case 'upcoming-reminders': {
 
         /* INSERT IGNORE: si ya enviamos esta notif (recordatorio + user
            + threshold + occurrence_date) la query no devuelve nada
-           nuevo. rowCount = 0 → ya estaba notificado. */
+           nuevo. rowCount = 0 → ya estaba notificado. Los cumpleaños no
+           tienen fila en `recordatorios`: van con el id del amigo en
+           negativo (los de recordatorios son AUTO_INCREMENT, positivos). */
+        $notifId = isset($r['amigo_id']) ? -(int)$r['amigo_id'] : (int)$r['id'];
         $stIns = $pdo->prepare("
             INSERT IGNORE INTO reminder_notifs_sent
                 (recordatorio_id, user_id, threshold, occurrence_date)
             VALUES (?, ?, ?, ?)
         ");
-        $stIns->execute([(int)$r['id'], (int)$userId, $diffDays, $next->format('Y-m-d')]);
+        $stIns->execute([$notifId, (int)$userId, $diffDays, $next->format('Y-m-d')]);
         if ($stIns->rowCount() === 0) continue;
 
         $matches[] = [
-            'id'          => (int)$r['id'],
+            'id'          => isset($r['amigo_id']) ? $r['id'] : (int)$r['id'],
             'titulo'      => $r['titulo'],
             'descripcion' => $r['descripcion'] ?? '',
             'fecha'       => $next->format('Y-m-d'),

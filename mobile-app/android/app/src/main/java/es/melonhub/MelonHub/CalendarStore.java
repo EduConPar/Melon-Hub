@@ -120,11 +120,6 @@ final class CalendarStore {
         }
     }
 
-    /* Sin pareja el calendario no tiene nada (como en la app). */
-    static boolean hasCouple(Context ctx) {
-        return data(ctx).optBoolean("pareja", false);
-    }
-
     /* Un día del mes: si tiene momento (y la foto del primero que la
        tenga) y si tiene recordatorio. */
     static final class Day {

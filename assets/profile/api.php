@@ -18,7 +18,7 @@
    POST  ?action=add-post              { text }
    POST  ?action=delete-post           { id }
    POST  ?action=save-quote            { quote }
-   POST  ?action=save-info             { bio, pronouns, age, country, steam, ... }
+   POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
    POST  ?action=toggle-follow         { targetUser }
    POST  ?action=toggle-post-like      { targetUser, postId }
@@ -111,6 +111,12 @@ catch (Throwable $e) { /* ya existe */ }
    del mismo título (varios usuarios) es la que se muestra en reseñas. */
 try { $pdo->exec("ALTER TABLE list_items ADD COLUMN runtime INT NULL DEFAULT NULL"); }
 catch (Throwable $e) { /* ya existe */ }
+/* Cumpleaños del perfil (fecha completa). La edad sale de aquí; la
+   columna `age` (edad escrita a mano) solo queda para quien aún no ha
+   puesto el cumpleaños. Los amigos mutuos lo ven como recordatorio
+   anual en el calendario (assets/couple/api.php, cumplesDeAmigos). */
+try { $pdo->exec("ALTER TABLE profile ADD COLUMN birthday DATE NULL DEFAULT NULL"); }
+catch (Throwable $e) { /* ya existe */ }
 /* Capítulos de series — COMPARTIDOS por título (series_key = título en
    minúsculas). Cualquier usuario añade/quita capítulos. La duración va
    en minutos. El estado (visto + reseña) es POR USUARIO. */
@@ -167,14 +173,14 @@ function pf_uid(PDO $pdo, string $userKey): ?int {
 
 /* Plantillas para mantener compat con el contrato JSON original */
 function pf_emptyProfile(): array {
-    return ['quote'=>'','posts'=>[],'bio'=>'','pronouns'=>'','age'=>'','country'=>'',
+    return ['quote'=>'','posts'=>[],'bio'=>'','pronouns'=>'','age'=>'','birthday'=>'','country'=>'',
             'steam'=>'','discord'=>'','twitter'=>'','instagram'=>'','following'=>[]];
 }
 function pf_emptyLists(): array { return ['movies'=>[],'series'=>[],'books'=>[],'games'=>[],'music'=>[]]; }
 
 /* Lee la fila de profile o devuelve plantilla vacía. */
 function pf_loadProfileRow(PDO $pdo, int $uid): array {
-    $stmt = $pdo->prepare("SELECT quote, bio, pronouns, age, country,
+    $stmt = $pdo->prepare("SELECT quote, bio, pronouns, age, birthday, country,
                                    steam, discord, twitter, instagram
                            FROM profile WHERE user_id = ?");
     $stmt->execute([$uid]);
@@ -249,7 +255,22 @@ function pf_buildFullProfile(PDO $pdo, int $uid): array {
     $p['following'] = pf_loadFollowing($pdo, $uid);
     /* age viene como int en BD, el frontend lo trataba como string */
     $p['age'] = ($p['age'] === '' || $p['age'] === null) ? '' : (string)$p['age'];
+    /* Con cumpleaños, la edad se calcula (la escrita a mano ya no se
+       edita). Fechas raras de filas viejas ('0000-00-00') = sin cumpleaños. */
+    $bd = pf_birthdayOrNull((string)$p['birthday']);
+    $p['birthday'] = $bd ?? '';
+    if ($bd !== null) {
+        $p['age'] = (string)(new DateTimeImmutable($bd))->diff(new DateTimeImmutable('today'))->y;
+    }
     return $p;
+}
+
+/* 'AAAA-MM-DD' válida, desde 1900 y no en el futuro; si no, null. */
+function pf_birthdayOrNull(string $s): ?string {
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) return null;
+    if (!checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return null;
+    if ((int)$m[1] < 1900 || $s > date('Y-m-d')) return null;
+    return $s;
 }
 
 /* Devuelve un item de lista (sin id, sin owner) en formato API.
@@ -879,14 +900,27 @@ case 'save-info': {
     $discord   = mb_substr(trim($b['discord']   ?? ''), 0, 100);
     $twitter   = mb_substr(trim($b['twitter']   ?? ''), 0, 100);
     $instagram = mb_substr(trim($b['instagram'] ?? ''), 0, 100);
-    $pdo->prepare("INSERT INTO profile
-        (user_id, bio, pronouns, age, country, steam, discord, twitter, instagram)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            bio=VALUES(bio), pronouns=VALUES(pronouns), age=VALUES(age),
-            country=VALUES(country), steam=VALUES(steam), discord=VALUES(discord),
-            twitter=VALUES(twitter), instagram=VALUES(instagram)")
-        ->execute([$uid, $bio, $pronouns, $age, $country, $steam, $discord, $twitter, $instagram]);
+    $cols = ['bio' => $bio, 'pronouns' => $pronouns, 'country' => $country,
+             'steam' => $steam, 'discord' => $discord, 'twitter' => $twitter,
+             'instagram' => $instagram];
+    /* Los editores nuevos ya no mandan `age` (sale del cumpleaños): sin
+       la clave no se toca, para no borrar la edad de quien aún no ha
+       puesto el cumpleaños. Las páginas viejas en caché sí la mandan. */
+    if (array_key_exists('age', $b)) $cols['age'] = $age;
+    if (array_key_exists('birthday', $b)) {
+        $bdIn = trim((string)$b['birthday']);
+        $bd   = pf_birthdayOrNull($bdIn);
+        if ($bdIn !== '' && $bd === null) jsonError('La fecha de cumpleaños no es válida');
+        $cols['birthday'] = $bd;
+        /* Con cumpleaños la edad escrita a mano sobra. */
+        if ($bd !== null) $cols['age'] = null;
+    }
+    $names = array_keys($cols);
+    $pdo->prepare("INSERT INTO profile (user_id, " . implode(', ', $names) . ")
+        VALUES (?" . str_repeat(', ?', count($names)) . ")
+        ON DUPLICATE KEY UPDATE " .
+        implode(', ', array_map(fn($c) => "$c=VALUES($c)", $names)))
+        ->execute(array_merge([$uid], array_values($cols)));
     jsonResponse(['ok' => true]);
 }
 

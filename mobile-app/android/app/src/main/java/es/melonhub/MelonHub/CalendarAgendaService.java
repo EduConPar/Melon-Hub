@@ -10,7 +10,9 @@ import java.util.List;
 
 /* Filas de "Próximos" (CalendarAgendaWidget): los recordatorios de hoy en
    adelante (un año como mucho, 30 filas), con los repetidos expandidos.
-   Con nada que enseñar, una fila con el aviso (sin sesión, sin pareja…). */
+   Con nada que enseñar, una fila con el aviso (sin sesión, nada próximo).
+   Sin pareja también hay filas (recordatorios personales y cumpleaños de
+   los amigos), así que ya no hay aviso de "sin pareja". */
 public class CalendarAgendaService extends RemoteViewsService {
 
     @Override
@@ -50,7 +52,6 @@ public class CalendarAgendaService extends RemoteViewsService {
             if (rows.isEmpty()) {
                 String status = CalendarStore.status(ctx);
                 if (status.equals(CalendarStore.STATUS_LOGIN)) message = ctx.getString(R.string.widget_login);
-                else if (!CalendarStore.hasCouple(ctx) && status.equals(CalendarStore.STATUS_OK)) message = ctx.getString(R.string.cal_no_couple);
                 else message = ctx.getString(R.string.cal_nothing);
             }
         }
