@@ -1,0 +1,13 @@
+{
+  "appId": "es.melonhub.MelonHub",
+  "appName": "Melon Hub",
+  "webDir": "www",
+  "server": {
+    "url": "https://melonhubdev.melonhub.es/mobile.php",
+    "allowNavigation": ["melonhubdev.melonhub.es", "melonhub.es"],
+    "errorPath": "index.html"
+  },
+  "android": {
+    "appendUserAgent": "MelonHubApp"
+  }
+}
