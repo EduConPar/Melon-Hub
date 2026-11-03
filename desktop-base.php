@@ -322,11 +322,12 @@ $_isTablet = isTabletDevice();
     <!-- Swap de packs de iconos (lee localStorage.iconPack). DEBE cargar
          antes de cualquier render que dependa de iconos. -->
     <script src="assets/js/icon-pack.js"></script>
+    <!-- "🔗 Copiar enlace" (melonCopyLink) de los menús y del perfil. -->
+    <script src="assets/js/melon-links.js?v=<?php echo @filemtime(__DIR__ . '/assets/js/melon-links.js'); ?>"></script>
     <?php if ($_isTablet): ?>
     <!-- En tablet, los iconos del escritorio y mascota usan long-press
          para abrir su menú contextual (sustituto del click derecho). -->
     <script src="assets/js/longpress.js"></script>
-    <script src="assets/js/melon-links.js"></script>
     <?php endif; ?>
     <link rel="stylesheet" href="assets/css/reproductor.css?v=<?php echo filemtime(__DIR__ . '/assets/css/reproductor.css'); ?>">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/perfil.css'); ?>">
