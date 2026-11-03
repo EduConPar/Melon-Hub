@@ -29,6 +29,12 @@ finish-args:
   # Guardar descargas (imagen del Wrapped…). Para subir fotos se usa el
   # selector de archivos del sistema (portal), que no necesita permisos.
   - --filesystem=xdg-download
+  # Presencia en Discord (discord.js): el socket discord-ipc-0 de Discord o
+  # Vesktop (un enlace en XDG_RUNTIME_DIR) y la carpeta del Discord de
+  # Flathub. Permiso añadido en la 0.3.3: esa versión no se actualiza con el
+  # botón del haro, hay que hacer `flatpak update` una vez.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
 modules:
   - name: melonhub
     buildsystem: simple

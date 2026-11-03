@@ -74,6 +74,8 @@
                         inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2);
             outline: none;
         }
+        /* Sin el surco de 98.css por el medio: solo el relleno del color de acento. */
+        #mp-progress::-webkit-slider-runnable-track { background: none; border: 0; box-shadow: none; }
         #mp-progress::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 11px;
@@ -141,6 +143,29 @@
         .mp-lyric.active { color: var(--accent); font-weight: bold; }
         .mp-lyrics-plain { padding: 4px 6px; text-align: center; white-space: pre-line; }
 
+        /* ── Paneles de Corregir y Escuchar juntos (los diálogos del
+           reproductor del escritorio) ── */
+        .mp-form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .mp-form input[type=text] { width: 100%; box-sizing: border-box; flex-shrink: 0; }
+        .mp-label { flex-shrink: 0; margin: 6px 0 2px; font-weight: bold; color: var(--text); }
+        .mp-hint { flex-shrink: 0; margin: 0 0 4px; font-size: 10px; line-height: 1.4; color: var(--text); opacity: 0.85; }
+        .mp-form .mp-box { min-height: 48px; margin-top: 4px; }
+        #mp-fix-chosen:not(:empty) { flex-shrink: 0; margin-top: 4px; }
+        .mp-form-msg { flex-shrink: 0; min-height: 14px; margin-top: 4px; font-size: 10px; color: var(--text); }
+        .mp-form-buttons { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+        .mp-form-buttons .button { height: 23px; padding: 0 10px; }
+        .mp-lt-status { flex-shrink: 0; color: var(--text); line-height: 1.4; }
+        .mp-row .button.mp-wide { width: auto; padding: 0 8px; }
+
+        /* Invitación a escuchar juntos: encima de la carátula, sin cambiar
+           el tamaño de la ventana. */
+        #mp-invites { position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
+        .mp-invite { margin-bottom: 4px; padding: 6px; background: var(--win-bg); color: var(--text);
+            box-shadow: inset -1px -1px var(--bezel-dark-2), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-1), inset 2px 2px var(--bezel-light-2); }
+        .mp-invite-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mp-invite .mp-form-buttons { margin-top: 4px; }
+
         /* ── Menú del clic derecho ── */
         #mp-menu {
             position: fixed;
@@ -169,6 +194,7 @@
     </div>
     <div class="window-body" id="mp-body">
         <div class="mp-views">
+            <div id="mp-invites"></div>
             <!-- Reproductor -->
             <div class="mp-view active" id="mp-player">
                 <div class="mp-cover"><img id="mp-cover" src="" alt=""></div>
@@ -209,6 +235,47 @@
                 </div>
                 <div class="mp-box" id="mp-lyrics-box"></div>
             </div>
+            <!-- Corregir canción (reportWrongAlbum del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-fix">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-fix-back">◄ Volver</button>
+                    <span class="mp-panel-title">Corregir canción</span>
+                </div>
+                <div class="mp-form">
+                    <p class="mp-hint">Corrige los datos de esta canción. Se guardan para siempre: cuando la añadas a otra playlist o la importes, se usarán estos valores.</p>
+                    <label class="mp-label" for="mp-fix-title">Título</label>
+                    <input type="text" id="mp-fix-title" autocomplete="off" placeholder="Título de la canción">
+                    <label class="mp-label" for="mp-fix-artist">Artista</label>
+                    <input type="text" id="mp-fix-artist" autocomplete="off" placeholder="Nombre del artista">
+                    <label class="mp-label" for="mp-fix-link">Link de YouTube</label>
+                    <input type="text" id="mp-fix-link" autocomplete="off" placeholder="Pega un enlace de YouTube (opcional)">
+                    <label class="mp-label" for="mp-fix-album">Álbum</label>
+                    <input type="text" id="mp-fix-album" autocomplete="off" placeholder="Escribe el nombre del álbum (opcional)…">
+                    <div id="mp-fix-chosen"></div>
+                    <div class="mp-box" id="mp-fix-results"></div>
+                    <div class="mp-form-msg" id="mp-fix-msg">Para el álbum, escribe y elige un resultado de la lista.</div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-fix-cancel">Cancelar</button>
+                        <button class="button" id="mp-fix-save">Guardar</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Escuchar juntos (el modal lt-modal del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-lt">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lt-back">◄ Volver</button>
+                    <span class="mp-panel-title">🎧 Escuchar juntos</span>
+                </div>
+                <div class="mp-form">
+                    <div class="mp-label">Estado</div>
+                    <div class="mp-lt-status" id="mp-lt-status"></div>
+                    <div class="mp-label">Invitar a:</div>
+                    <div class="mp-box" id="mp-lt-users"></div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-lt-end">Cerrar sesión</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -234,10 +301,12 @@
     var view = 'player';
     function show(name) {
         view = name;
-        ['player', 'lists', 'lyrics'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
+        ['player', 'lists', 'lyrics', 'fix', 'lt'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
         $('mp-lyrics-btn').classList.toggle('btn-active', name === 'lyrics');
         if (name === 'lists') openPlaylists();
         if (name === 'lyrics') loadLyrics();
+        if (name === 'fix') openFix();
+        if (name === 'lt') openListenTogether();
     }
 
     /* ── La ventana se ajusta a la ventana Win98 dibujada. Se mide sin
@@ -317,6 +386,8 @@
             if (view === 'lists') markCurrent();
         }
         if (view === 'lyrics') highlightLyric();
+        if (view === 'lt') renderListenTogether();
+        renderInvites();
     }
     function setProgress(p) {
         $('mp-progress').value = p;
@@ -851,6 +922,202 @@
         }
     }
 
+    /* ── Corregir canción: el mismo formulario que el reproductor del
+       escritorio (título, artista, link de YouTube y álbum). Se guarda
+       aquí (report-album) y la ventana principal aplica el resultado
+       (melonTrackAction 'fixed'). ── */
+    var fixTrack = null, fixAlbum = null, fixTimer = null, fixQ = null;
+    function openFix() {
+        fixTrack = { videoId: state.videoId, title: state.title || '', artist: state.artist || '' };
+        fixAlbum = null;
+        fixQ = null;
+        $('mp-fix-title').value = fixTrack.title;
+        $('mp-fix-artist').value = fixTrack.artist;
+        $('mp-fix-link').value = '';
+        $('mp-fix-album').value = '';
+        $('mp-fix-results').innerHTML = '';
+        $('mp-fix-msg').textContent = 'Para el álbum, escribe y elige un resultado de la lista.';
+        $('mp-fix-save').disabled = false;
+        renderFixAlbum();
+        $('mp-fix-title').focus();
+        $('mp-fix-title').select();
+    }
+    function renderFixAlbum() {
+        var box = $('mp-fix-chosen');
+        box.innerHTML = '';
+        if (!fixAlbum) return;
+        var r = document.createElement('div');
+        r.className = 'mp-row';
+        r.innerHTML = '<img class="mp-thumb" alt=""><span class="mp-row-info"><span></span><span class="mp-row-sub"></span></span>';
+        r.querySelector('img').src = fixAlbum.image || '';
+        r.querySelector('img').onerror = function() { this.style.visibility = 'hidden'; };
+        r.querySelector('.mp-row-info > span').textContent = fixAlbum.name;
+        r.querySelector('.mp-row-sub').textContent = fixAlbum.artist;
+        var rm = document.createElement('button');
+        rm.className = 'button mp-wide';
+        rm.textContent = 'Quitar';
+        rm.addEventListener('click', function() { fixAlbum = null; renderFixAlbum(); });
+        r.appendChild(rm);
+        box.appendChild(r);
+    }
+    function searchFixAlbum() {
+        var q = $('mp-fix-album').value.trim(), box = $('mp-fix-results');
+        if (q === fixQ) return;
+        fixQ = q;
+        if (q.length < 2) { box.innerHTML = ''; return; }
+        api('search-albums&q=' + encodeURIComponent(q) + '&artist=' + encodeURIComponent($('mp-fix-artist').value.trim() || fixTrack.artist || ''))
+            .then(function(d) {
+                if ($('mp-fix-album').value.trim() !== q) return;   /* respuesta obsoleta */
+                box.innerHTML = '';
+                ((d && d.ok && d.results) || []).forEach(function(a) {
+                    var r = document.createElement('div');
+                    r.className = 'mp-row';
+                    r.innerHTML = '<img class="mp-thumb" alt=""><span class="mp-row-info"><span></span><span class="mp-row-sub"></span></span>';
+                    r.querySelector('img').src = a.image || '';
+                    r.querySelector('img').onerror = function() { this.style.visibility = 'hidden'; };
+                    r.querySelector('.mp-row-info > span').textContent = a.name || '';
+                    r.querySelector('.mp-row-sub').textContent = a.artist || '';
+                    /* Se elige; se manda con el resto al pulsar Guardar. */
+                    r.addEventListener('click', function() {
+                        fixAlbum = { albumKey: a.albumKey, name: a.name || '', artist: a.artist || '', image: a.image || '' };
+                        renderFixAlbum();
+                        $('mp-fix-album').value = '';
+                        box.innerHTML = '';
+                        fixQ = null;
+                    });
+                    box.appendChild(r);
+                });
+                if (!box.firstChild) box.innerHTML = note('Sin resultados.');
+            });
+    }
+    $('mp-fix-album').addEventListener('input', function() { clearTimeout(fixTimer); fixTimer = setTimeout(searchFixAlbum, 300); });
+    $('mp-fix-album').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(fixTimer); searchFixAlbum(); }
+    });
+    $('mp-fix-back').addEventListener('click', function() { show('player'); });
+    $('mp-fix-cancel').addEventListener('click', function() { show('player'); });
+    $('mp-fix-save').addEventListener('click', function() {
+        var t = fixTrack, btn = this;
+        if (!t || !t.videoId) return;
+        var payload = { videoId: t.videoId, title: $('mp-fix-title').value.trim(), artist: $('mp-fix-artist').value.trim(), videoLink: $('mp-fix-link').value.trim() };
+        if (fixAlbum) {
+            payload.albumKey = fixAlbum.albumKey || '';
+            payload.albumName = fixAlbum.name;
+            payload.albumArtist = fixAlbum.artist;
+            payload.albumImage = fixAlbum.image;
+        }
+        btn.disabled = true;
+        $('mp-fix-msg').textContent = 'Guardando…';
+        fetch('assets/music/api.php?action=report-album', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+            .then(function(r) { return r.json(); })
+            .catch(function() { return { error: 'Error de red: no se pudo guardar la corrección' }; })
+            .then(function(d) {
+                btn.disabled = false;
+                if (!d || !d.ok) { $('mp-fix-msg').textContent = '✕ ' + ((d && d.error) || 'No se pudo guardar la corrección'); return; }
+                cmd('fixed', { videoId: t.videoId, title: t.title, artist: t.artist, result: d });
+                $('mp-fix-msg').textContent = '✓ Canción corregida' + (d.album && d.album.albumName ? ' · Álbum: ' + d.album.albumName : '');
+                setTimeout(function() { if (view === 'fix') show('player'); }, 1200);
+            });
+    });
+
+    /* ── Escuchar juntos: estado de la sesión, invitar a tus amigos y
+       cerrarla, como el modal del escritorio. Invitar lo hace la ventana
+       principal (crea la sesión si hace falta) y el resultado vuelve con
+       el estado (ltInvited). ── */
+    var LT_API = 'assets/listen/api.php';
+    var ltUsers = null, ltAsked = {};
+    function openListenTogether() {
+        ltUsers = null;
+        ltAsked = {};
+        renderListenTogether();
+        fetch(LT_API + '?action=users', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .catch(function() { return null; })
+            .then(function(d) {
+                ltUsers = d && d.ok && d.users ? d.users : [];
+                renderListenTogether();
+            });
+    }
+    var LT_STATUS = {
+        host: '🎤 <strong>Hosteando</strong> una sesión. Invita usuarios para que se unan.',
+        guest: '🎧 Estás escuchando como invitado.',
+    };
+    var ltShown = '';
+    function renderListenTogether() {
+        $('mp-lt-status').innerHTML = LT_STATUS[state.ltRole] || 'No estás en ninguna sesión. Invita a alguien para empezar una.';
+        $('mp-lt-end').style.display = state.ltRole ? '' : 'none';
+        var invited = state.ltInvited || {};
+        /* Solo se repinta la lista si cambia algo (llega el estado cada 500 ms). */
+        var key = JSON.stringify([ltUsers, invited, ltAsked]);
+        if (key === ltShown) return;
+        ltShown = key;
+        var box = $('mp-lt-users');
+        if (ltUsers === null) { box.innerHTML = note('Cargando usuarios…'); return; }
+        if (!ltUsers.length) {
+            box.innerHTML = '<div class="mp-msg">Aún no tienes amigos que invitar.<br><span class="mp-row-sub">Seguíos entre vosotros para haceros amigos.</span></div>';
+            return;
+        }
+        box.innerHTML = '';
+        ltUsers.forEach(function(u) {
+            var res = invited[u.user_key];
+            var r = document.createElement('div');
+            r.className = 'mp-row';
+            r.innerHTML = '<span class="mp-row-info"><span></span>' +
+                (res && res !== 'ok' && ltAsked[u.user_key] ? '<span class="mp-row-sub"></span>' : '') + '</span>';
+            r.querySelector('.mp-row-info > span').textContent = u.label || u.user_key;
+            if (r.querySelector('.mp-row-sub')) r.querySelector('.mp-row-sub').textContent = '✕ ' + res;
+            var b = document.createElement('button');
+            b.className = 'button mp-wide';
+            var waiting = ltAsked[u.user_key] && !res;
+            b.textContent = res === 'ok' ? '✓ Invitado' : waiting ? '…' : 'Invitar';
+            b.disabled = res === 'ok' || waiting;
+            b.addEventListener('click', function() {
+                ltAsked[u.user_key] = true;
+                cmd('lt-invite', u.user_key);
+                renderListenTogether();
+            });
+            r.appendChild(b);
+            box.appendChild(r);
+        });
+    }
+    $('mp-lt-back').addEventListener('click', function() { show('player'); });
+    $('mp-lt-end').addEventListener('click', function() { cmd('leave-session'); show('player'); });
+
+    /* Invitaciones recibidas mientras la ventana principal está escondida:
+       un aviso encima de la carátula con Aceptar / Rechazar. */
+    var invitesShown = '', answered = {};
+    function renderInvites() {
+        var list = (state.ltInvites || []).filter(function(i) { return !answered[i.id]; });
+        var key = JSON.stringify(list);
+        if (key === invitesShown) return;
+        invitesShown = key;
+        var box = $('mp-invites');
+        box.innerHTML = '';
+        list.forEach(function(inv) {
+            var el = document.createElement('div');
+            el.className = 'mp-invite';
+            el.innerHTML = '<div class="mp-invite-text">🎧 <strong></strong> te invita</div>' +
+                '<div class="mp-invite-text mp-row-sub"></div>' +
+                '<div class="mp-form-buttons"><button class="button">Rechazar</button><button class="button">Aceptar</button></div>';
+            el.querySelector('strong').textContent = inv.from;
+            el.querySelector('.mp-row-sub').textContent = 'Escuchar juntos: ' + (inv.track || 'una canción');
+            var btns = el.querySelectorAll('button');
+            [false, true].forEach(function(accept, i) {
+                btns[i].addEventListener('click', function() {
+                    answered[inv.id] = true;
+                    cmd('lt-answer', { id: inv.id, accept: accept });
+                    renderInvites();
+                });
+            });
+            box.appendChild(el);
+        });
+    }
+
     /* ── Clic derecho: las mismas opciones que el reproductor del
        escritorio (showTrackCtxMenu de apps/reproductor.php). ── */
     var menu = $('mp-menu');
@@ -868,12 +1135,12 @@
         var noTrack = !state.hasTrack;
         menuItem('➕ Añadir', function() { show('lists'); }, noTrack);
         menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
-                 function() { cmd('fix'); }, noTrack);
+                 function() { show('fix'); }, noTrack);
         menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
         var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
                : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
                : '🎧 Escuchar juntos…';
-        menuItem(lt, function() { cmd('listen-together'); });
+        menuItem(lt, function() { show('lt'); });
         if (state.ltRole) menuItem('✕ Salir de la sesión', function() { cmd('leave-session'); });
         menu.style.display = 'block';
         var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 2);

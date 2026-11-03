@@ -760,6 +760,9 @@ foreach ($loginUsers as $_k => $_u) {
 echo json_encode($_usersInfoArr);
 ?>;
 var spotifyClientId   = '<?php echo SPOTIFY_CLIENT_ID; ?>';
+/* Application ID de Discord (público): la app de escritorio lo usa para la
+   presencia en Discord con lo que suena (electron/discord.js). */
+var discordClientId   = <?php echo json_encode((string)env('DISCORD_CLIENT_ID', '')); ?>;
 
 /* Estado del reproductor persistido en SQL (user_settings.key='player').
    Reemplaza la antigua copia en localStorage['melonOS_player']. La lectura
@@ -1286,7 +1289,10 @@ function syncSystemMedia(isPlaying) {
             duration:   dur,
             shuffle:    autoplayRandom,
             ltRole:     LT_ROLE,
-            volume:     vol ? parseInt(vol.value, 10) : 100
+            volume:     vol ? parseInt(vol.value, 10) : 100,
+            ltInvites:  Object.values(LT_PENDING),
+            ltInvited:  LT_INVITED,
+            discordClientId: discordClientId
         });
     }
 }
@@ -1427,6 +1433,13 @@ let LT_HOST_BCAST_T = null;
 let LT_INVITES_POLL_T = null;
 let LT_LAST_HOST_VID = null;    /* host: último videoId enviado */
 let LT_SHOWN_INVITES = new Set(); /* IDs de invites ya mostrados como notif */
+/* Para el reproductor flotante de la app de escritorio, que enseña
+   "Escuchar juntos" mientras esta ventana está escondida (van en
+   syncSystemMedia → apps/mini-player.html):
+   - LT_PENDING: invitaciones recibidas sin contestar (id → invitación);
+   - LT_INVITED: resultado de cada "Invitar" (user_key → 'ok' | error). */
+let LT_PENDING = {};
+let LT_INVITED = {};
 
 function ltFetch(action, opts) {
     opts = opts || {};
@@ -1665,7 +1678,9 @@ function ltLeaveLocal(msg) {
     ltBanner(null);
     ltUpdateLiveDot(null);   /* oculta el punto LIVE */
     LT_KNOWN_PARTICIPANTS = new Set();
+    LT_INVITED = {};
     ltRefreshModalState();
+    syncSystemMedia();
     if (msg && window.notifSystem) window.notifSystem.show({ type: 'info', title: 'Sesión cerrada', message: msg });
 }
 
@@ -1688,10 +1703,7 @@ async function ltOpenModal() {
     }).join('');
     list.querySelectorAll('button[data-userkey]').forEach(function(b){
         b.addEventListener('click', async function(){
-            /* Si no soy host aún, crearme como host primero. */
-            if (LT_ROLE !== 'host') await ltStartAsHost();
-            const k = b.getAttribute('data-userkey');
-            const inv = await ltFetch('invite', { body: { toUser: k } });
+            const inv = await ltInviteUser(b.getAttribute('data-userkey'));
             if (inv && inv.ok) {
                 b.textContent = '✓ Invitado';
                 b.classList.add('invited');
@@ -1701,6 +1713,23 @@ async function ltOpenModal() {
             }
         });
     });
+}
+/* Invita a un usuario; si no soy host aún, primero crea la sesión. Lo usan
+   el modal y el reproductor flotante. */
+async function ltInviteUser(userKey) {
+    if (LT_ROLE !== 'host') await ltStartAsHost();
+    const inv = await ltFetch('invite', { body: { toUser: userKey } });
+    LT_INVITED[userKey] = (inv && inv.ok) ? 'ok' : ((inv && inv.error) || 'No se pudo invitar.');
+    syncSystemMedia();
+    return inv;
+}
+/* Contesta una invitación (desde su notificación o desde el flotante). */
+function ltAnswerInvite(id, accept) {
+    delete LT_PENDING[id];
+    if (window.notifSystem && notifSystem.dismiss) notifSystem.dismiss('lt-invite-' + id);
+    if (accept) ltJoinAsGuest(id);
+    else ltFetch('decline', { body: { inviteId: id } });
+    syncSystemMedia();
 }
 function ltCloseModal() {
     document.getElementById('lt-modal').style.display = 'none';
@@ -1729,6 +1758,8 @@ async function ltPollInvites() {
     r.invites.forEach(function(inv){
         if (LT_SHOWN_INVITES.has(inv.id)) return;
         LT_SHOWN_INVITES.add(inv.id);
+        LT_PENDING[inv.id] = { id: inv.id, from: inv.from_label || '?', track: inv.track_title || '' };
+        syncSystemMedia();
         if (!window.notifSystem) return;
         /* type: 'action' añade botones Aceptar/Rechazar y NO auto-dismissa
            — el usuario decide. */
@@ -1737,11 +1768,9 @@ async function ltPollInvites() {
             type:    'action',
             title:   (inv.from_label || '?') + ' te invita',
             message: 'Escuchar juntos: ' + (inv.track_title || 'una canción'),
-            onAccept: function(){ ltJoinAsGuest(inv.id); },
-            onReject: function(){
-                /* Marcar el invite como declinado en el backend. */
-                ltFetch('decline', { body: { inviteId: inv.id } });
-            },
+            onAccept: function(){ ltAnswerInvite(inv.id, true); },
+            /* Marca el invite como declinado en el backend. */
+            onReject: function(){ ltAnswerInvite(inv.id, false); },
         });
     });
 }
@@ -4386,6 +4415,41 @@ var addTrackCallback = null;
        El álbum se busca en vivo (iTunes + Deezer) mientras se escribe; al
        elegir un resultado queda "seleccionado" y se envía con el resto al
        pulsar Guardar (ya no auto-envía). */
+    /* Tras guardar una corrección (report-album): aplica los datos nuevos
+       en memoria y repinta el reproductor y las filas. También la usa el
+       reproductor flotante, que guarda la corrección por su cuenta
+       (melonTrackAction 'fixed'). */
+    function applyAlbumFix(track, d) {
+        /* Si cambió el link de YouTube, el videoId vigente de la
+           canción pasa a ser el nuevo: aplicamos in-memory para que
+           el resto de la UI (mini-player, filas) use el id correcto. */
+        var effectiveVid = (d.newVideoId && d.newVideoId.length === 11) ? d.newVideoId : track.videoId;
+        if (d.title)  track.title  = d.title;
+        if (d.artist) track.artist = d.artist;
+        /* Guarda la corrección de álbum en la cache local por videoId
+           (autoritativa) para repintar al instante sin re-fetch. */
+        if (d.album) { try { _albumCacheSet(effectiveVid, d.album); _albumCacheSet(track.videoId, d.album); } catch (_) {} }
+        else { try { var c = _loadAlbumCache(); delete c[track.videoId]; _saveAlbumCache(); } catch (_) {} }
+        /* Mini-player. */
+        var cur = (typeof playlist !== 'undefined' && playlist[currentTrack]) || null;
+        if (cur && cur.videoId === track.videoId && typeof resolveAndShowAlbum === 'function') {
+            resolveAndShowAlbum(cur);
+        }
+        /* Filas del editor con ese videoId → actualiza el nombre del
+           álbum que aparece en la lista. */
+        if (typeof plList !== 'undefined' && plList && typeof _resolveAlbumForRow === 'function') {
+            plList.querySelectorAll('.pl-item-album-text').forEach(function(span){
+                if (span.dataset.videoId !== track.videoId) return;
+                var row = span.closest('.pl-item');
+                var th  = row ? row.querySelector('.pl-item-thumb-wrap img') : null;
+                _resolveAlbumForRow(track, span, th);
+            });
+        }
+        /* Si la ventana del artista está abierta, refréscala para que
+           muestre la carátula/datos corregidos al instante. */
+        if (typeof window.refreshArtistWindowIfOpen === 'function') window.refreshArtistWindowIfOpen();
+    }
+
     function reportWrongAlbum(track) {
         if (!track || !track.videoId) return;
 
@@ -4485,34 +4549,7 @@ var addTrackCallback = null;
                     else alert(msg);
                     return;
                 }
-                /* Si cambió el link de YouTube, el videoId vigente de la
-                   canción pasa a ser el nuevo: aplicamos in-memory para que
-                   el resto de la UI (mini-player, filas) use el id correcto. */
-                var effectiveVid = (d.newVideoId && d.newVideoId.length === 11) ? d.newVideoId : track.videoId;
-                if (d.title)  track.title  = d.title;
-                if (d.artist) track.artist = d.artist;
-                /* Guarda la corrección de álbum en la cache local por videoId
-                   (autoritativa) para repintar al instante sin re-fetch. */
-                if (d.album) { try { _albumCacheSet(effectiveVid, d.album); _albumCacheSet(track.videoId, d.album); } catch (_) {} }
-                else { try { var c = _loadAlbumCache(); delete c[track.videoId]; _saveAlbumCache(); } catch (_) {} }
-                /* Mini-player. */
-                var cur = (typeof playlist !== 'undefined' && playlist[currentTrack]) || null;
-                if (cur && cur.videoId === track.videoId && typeof resolveAndShowAlbum === 'function') {
-                    resolveAndShowAlbum(cur);
-                }
-                /* Filas del editor con ese videoId → actualiza el nombre del
-                   álbum que aparece en la lista. */
-                if (typeof plList !== 'undefined' && plList && typeof _resolveAlbumForRow === 'function') {
-                    plList.querySelectorAll('.pl-item-album-text').forEach(function(span){
-                        if (span.dataset.videoId !== track.videoId) return;
-                        var row = span.closest('.pl-item');
-                        var th  = row ? row.querySelector('.pl-item-thumb-wrap img') : null;
-                        _resolveAlbumForRow(track, span, th);
-                    });
-                }
-                /* Si la ventana del artista está abierta, refréscala para que
-                   muestre la carátula/datos corregidos al instante. */
-                if (typeof window.refreshArtistWindowIfOpen === 'function') window.refreshArtistWindowIfOpen();
+                applyAlbumFix(track, d);
                 if (window.notifSystem) {
                     notifSystem.show({ type: 'success', title: 'Canción corregida',
                         message: (d.album && d.album.albumName) ? ('Álbum: ' + d.album.albumName) : 'Guardado correctamente' });
@@ -4619,12 +4656,25 @@ var addTrackCallback = null;
             case 'fix':
                 if (track && track.videoId) reportWrongAlbum(track);
                 break;
+            case 'fixed':              /* value: { videoId, title, artist, result } — corregida en el flotante */
+                if (!value || !value.result) break;
+                applyAlbumFix(track && track.videoId === value.videoId ? track
+                    : { videoId: value.videoId, title: value.title, artist: value.artist }, value.result);
+                syncSystemMedia();
+                break;
             case 'add-profile':
                 if (typeof window.__closeFullscreenPlayer === 'function') window.__closeFullscreenPlayer();
                 if (track && typeof window.profileAddTrackAndReview === 'function') window.profileAddTrackAndReview(track);
                 break;
             case 'listen-together':
                 if (typeof ltOpenModal === 'function') ltOpenModal();
+                break;
+            /* "Escuchar juntos" del flotante. */
+            case 'lt-invite':          /* value: user_key */
+                ltInviteUser(value);
+                break;
+            case 'lt-answer':          /* value: { id, accept } */
+                ltAnswerInvite(value.id, !!value.accept);
                 break;
             case 'leave-session':
                 if (typeof window.ltLeave === 'function') window.ltLeave();

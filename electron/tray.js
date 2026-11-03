@@ -3,7 +3,8 @@
    ──────────────────────────────────────────────────────────────────────
    Cerrar la ventana de Melon Hub no cierra la app: se esconde y queda el
    icono en la bandeja de la barra de tareas. Con el clic derecho:
-     Abrir Melon Hub · Reproductor flotante (activable) · Reiniciar · Cerrar
+     Abrir Melon Hub · Reproductor flotante · Presencia en Discord
+     (las dos activables) · Reiniciar · Cerrar
    (el clic normal también la abre).
    Al cerrar la ventana:
      - con música sonando y "Reproductor flotante" activo (lo está por
@@ -16,11 +17,13 @@ const path = require('path');
 const settings = require('./settings');
 const mini = require('./mini-player');
 const flatpak = require('./flatpak-update');
+const discord = require('./discord');
 
 let tray = null;
 let mainWin = null;
 let quitting = false;
 let playing = false;
+let lastState = null;
 
 function openMain() {
     mini.hide();
@@ -66,6 +69,16 @@ function menuTemplate() {
                 refreshMenu();
             },
         },
+        {
+            label: 'Presencia en Discord',
+            type: 'checkbox',
+            checked: settings.get('discordPresence'),
+            click: (item) => {
+                settings.set('discordPresence', item.checked);
+                discord.update(lastState);
+                refreshMenu();
+            },
+        },
         { type: 'separator' },
         { label: 'Reiniciar', click: restart },
         { label: 'Cerrar', click: () => app.quit() },
@@ -88,7 +101,9 @@ function start(mainWindow, startUrl) {
 
     ipcMain.on('melon:now-playing', (_e, s) => {
         playing = !!(s && s.playing);
+        lastState = s;
         mini.setState(s);
+        discord.update(s);
     });
 
     mainWin.on('close', (e) => {

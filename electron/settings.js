@@ -8,6 +8,7 @@ const FILE = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULTS = {
     floatingPlayer: true,   /* reproductor flotante al cerrar con música */
     miniPosition: null,     /* { x, y } del reproductor flotante */
+    discordPresence: true,  /* presencia en Discord con lo que suena (discord.js) */
 };
 
 let data = null;

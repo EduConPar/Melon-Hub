@@ -17,7 +17,9 @@ const settings = require('./settings');
 
 const MARGIN = 20;   /* separación del borde, como el reproductor del escritorio */
 /* Opciones del clic derecho que abren un diálogo de la ventana principal:
-   antes de mandarlas se enseña Melon Hub (y se esconde el flotante). */
+   antes de mandarlas se enseña Melon Hub (y se esconde el flotante).
+   Corregir y Escuchar juntos ya van dentro del flotante; 'fix' y
+   'listen-together' quedan por si una página vieja aún los manda. */
 const NEEDS_MAIN = ['fix', 'add-profile', 'listen-together'];
 
 let win = null;
