@@ -25,8 +25,11 @@ public class MusicWebView extends CapacitorWebView {
         if (keepVisible == keep) return;
         keepVisible = keep;
         /* Al soltar, la página recibe la visibilidad de verdad (si la
-           app está en segundo plano, ahora sí pasa a hidden). */
-        if (!keep) super.onWindowVisibilityChanged(getWindowVisibility());
+           app está en segundo plano, ahora sí pasa a hidden). Al coger,
+           pasa a visible ya: si se reanuda desde el widget con la app en
+           segundo plano, la página estaba hidden y Chromium no dejaría
+           arrancar el vídeo. */
+        super.onWindowVisibilityChanged(keep ? View.VISIBLE : getWindowVisibility());
     }
 
     @Override

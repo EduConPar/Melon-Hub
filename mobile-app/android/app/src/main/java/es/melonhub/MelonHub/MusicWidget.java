@@ -70,8 +70,7 @@ public class MusicWidget extends AppWidgetProvider {
             try {
                 if (MelonMusicPlugin.sendWidgetCommand(new JSONObject().put("action", command))) return;
             } catch (Exception ignored) {}
-            /* Sin app en marcha: 🔀 se apunta para cuando se abra; ⏮⏭ no
-               tienen música que mover. */
+            /* Sin app en marcha: 🔀 se apunta para cuando se abra. */
             if ("shuffle".equals(command)) WidgetStore.toggleShuffleOffline(ctx);
             refresh(ctx);
         }
@@ -160,13 +159,18 @@ public class MusicWidget extends AppWidgetProvider {
 
         rv.setOnClickPendingIntent(R.id.w_menu_1, show(ctx, REQ_TO_PLAYLISTS, WidgetStore.SCREEN_PLAYLISTS, null));
         rv.setOnClickPendingIntent(R.id.w_shuf_1, command(ctx, REQ_SHUFFLE, "shuffle"));
-        rv.setOnClickPendingIntent(R.id.w_prev_1, command(ctx, REQ_PREV, "prev"));
-        rv.setOnClickPendingIntent(R.id.w_next_1, command(ctx, REQ_NEXT, "next"));
-        /* ⏯ puede tener que abrir la app (si está cerrada): actividad. */
-        rv.setOnClickPendingIntent(R.id.w_play_1,
-            PendingIntent.getActivity(ctx, REQ_TOGGLE, playIntent(ctx).putExtra(EXTRA_COMMAND, "toggle"),
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        /* ⏮⏯⏭ pasan por una actividad (WidgetPlayActivity): ⏯ puede tener
+           que abrir la app, y los tres pueden poner música desde una pausa,
+           que necesita arrancar el servicio de música desde ahí. */
+        rv.setOnClickPendingIntent(R.id.w_prev_1, control(ctx, REQ_PREV, "prev"));
+        rv.setOnClickPendingIntent(R.id.w_play_1, control(ctx, REQ_TOGGLE, "toggle"));
+        rv.setOnClickPendingIntent(R.id.w_next_1, control(ctx, REQ_NEXT, "next"));
         return rv;
+    }
+
+    private static PendingIntent control(Context ctx, int req, String command) {
+        return PendingIntent.getActivity(ctx, req, playIntent(ctx).putExtra(EXTRA_COMMAND, command),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     private static RemoteViews listViews(Context ctx, WidgetTheme t, String screen, int widgetId, float w) {

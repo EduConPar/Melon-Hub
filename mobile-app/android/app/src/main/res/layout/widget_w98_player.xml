@@ -64,7 +64,8 @@
                                 android:layout_weight="1"
                                 android:paddingLeft="2dp"
                                 android:contentDescription="@null"
-                                android:scaleType="fitStart" />
+                                android:scaleType="fitStart"
+                                android:src="@drawable/widget_preview_title" />
                             <FrameLayout
                                 android:id="@+id/w_shuf_1"
                                 android:layout_width="18dp"
@@ -235,7 +236,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:contentDescription="@null"
-                            android:scaleType="centerInside" />
+                            android:scaleType="centerInside"
+                            android:src="@drawable/widget_preview_idle" />
                         <FrameLayout
                             android:id="@+id/w_prog_1"
                             android:layout_width="match_parent"

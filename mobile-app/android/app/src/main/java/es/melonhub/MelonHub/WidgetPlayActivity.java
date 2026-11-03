@@ -3,41 +3,80 @@ package es.melonhub.MelonHub;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/* Al tocar ⏯, una canción o "Reproducir" en el widget. Es una actividad
+/* Al tocar ⏮⏯⏭, una canción o "Reproducir" en el widget. Es una actividad
    invisible que se cierra al momento: si la app está en marcha, le pasa
-   la orden y no se ve nada; si no, abre la app, que empieza a sonar y se
-   manda sola al fondo (MelonMusicPlugin.setPlaying). Con ⏯ y la app
-   cerrada sigue la última canción donde iba (la web la tiene guardada).
+   la orden y no se ve nada; si no, ⏯ y las canciones abren la app, que
+   empieza a sonar y se manda sola al fondo (MelonMusicPlugin.setPlaying).
+   Con ⏯ y la app cerrada sigue la última canción donde iba (la web la
+   tiene guardada).
    Tiene que ser una actividad y no un broadcast: Android no deja abrir la
    app desde un broadcast, pero sí desde una actividad que acaba de abrir
-   el usuario. */
+   el usuario. Por lo mismo, si la orden pone música, el servicio de
+   música se arranca aquí: con la app en segundo plano y en pausa, Android
+   (y más aún Xiaomi) no deja arrancarlo cuando la web avisa de que ya
+   suena, y sin él la app se congela y la música se corta al acabar la
+   canción. */
 public class WidgetPlayActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        JSObject cmd = "toggle".equals(getIntent().getStringExtra(MusicWidget.EXTRA_COMMAND))
-            ? toggleCommand()
-            : playlistCommand();
-        if (cmd != null && !MelonMusicPlugin.sendWidgetCommand(cmd)) {
-            MelonMusicPlugin.pendingWidgetCommand = cmd;
-            startActivity(new Intent(this, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(MainActivity.EXTRA_FROM_WIDGET, true));
+        String command = getIntent().getStringExtra(MusicWidget.EXTRA_COMMAND);
+        JSObject cmd = command != null ? controlCommand(command) : playlistCommand();
+        if (cmd != null) {
+            if (MelonMusicPlugin.isAlive()) {
+                if (startsMusic(cmd)) startMusicService(cmd);
+                MelonMusicPlugin.sendWidgetCommand(cmd);
+            } else if (!"prev".equals(command) && !"next".equals(command)) {
+                MelonMusicPlugin.pendingWidgetCommand = cmd;
+                startActivity(new Intent(this, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(MainActivity.EXTRA_FROM_WIDGET, true));
+            }
         }
         finish();
     }
 
-    /* ⏯: con la app cerrada solo tiene sentido si hay una última canción. */
-    private JSObject toggleCommand() {
-        if (!MelonMusicPlugin.isAlive() && WidgetStore.title(this).isEmpty()) return null;
+    /* ⏮⏯⏭. Con la app cerrada, ⏯ solo tiene sentido si hay una última
+       canción, y ⏮⏭ no hacen nada (no hay cola que mover). */
+    private JSObject controlCommand(String command) {
+        boolean alive = MelonMusicPlugin.isAlive();
+        if (!alive && ("prev".equals(command) || "next".equals(command))) return null;
+        if (!alive && WidgetStore.title(this).isEmpty()) return null;
         JSObject cmd = new JSObject();
-        cmd.put("action", "toggle");
+        cmd.put("action", command);
         return cmd;
+    }
+
+    /* Todo pone música salvo ⏯ cuando ya suena (eso pausa). Si ya suena,
+       el servicio ya está en marcha. */
+    private boolean startsMusic(JSObject cmd) {
+        return "play-playlist".equals(cmd.optString("action")) || !WidgetStore.playing(this);
+    }
+
+    private void startMusicService(JSObject cmd) {
+        String title = WidgetStore.title(this);
+        String artist = WidgetStore.artist(this);
+        JSONArray tracks = cmd.optJSONArray("tracks");
+        JSONObject tr = tracks != null ? tracks.optJSONObject(cmd.optInt("index", 0)) : null;
+        if (tr != null) {
+            title = tr.optString("title");
+            artist = tr.optString("artist");
+        }
+        Intent svc = new Intent(this, MusicService.class)
+            .putExtra(MusicService.EXTRA_TITLE, title)
+            .putExtra(MusicService.EXTRA_ARTIST, artist);
+        try {
+            ContextCompat.startForegroundService(this, svc);
+        } catch (Exception e) {
+            Log.w("MelonWidget", "No se pudo arrancar el servicio de música", e);
+        }
     }
 
     private JSObject playlistCommand() {
