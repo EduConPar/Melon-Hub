@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.SystemClock;
 import android.util.Log;
 import android.webkit.CookieManager;
 import java.io.ByteArrayOutputStream;
@@ -83,6 +84,8 @@ final class WidgetStore {
 
     /* ── Lo que suena ── */
 
+    /* La última canción se queda guardada aunque la app se cierre: el
+       widget la sigue enseñando (en pausa) y ⏯ la retoma. */
     static void setNowPlaying(Context ctx, boolean playing, String title, String artist, String videoId) {
         SharedPreferences.Editor e = prefs(ctx).edit().putBoolean("playing", playing);
         /* Las webs viejas no mandan la canción al pausar: se queda la de antes. */
@@ -92,6 +95,20 @@ final class WidgetStore {
         }
         e.apply();
         if (videoId != null && !videoId.isEmpty()) loadCover(ctx, videoId);
+    }
+
+    /* Estado completo (setWidgetState de la web): además, por dónde va y
+       si está en aleatorio. La posición se apunta con la hora para ir
+       avanzándola sin que la web tenga que mandarla cada segundo. */
+    static void setState(Context ctx, boolean playing, String title, String artist, String videoId,
+                         double position, double duration, boolean shuffle) {
+        setNowPlaying(ctx, playing, title, artist, videoId);
+        prefs(ctx).edit()
+            .putFloat("position", (float) position)
+            .putLong("positionAt", SystemClock.elapsedRealtime())
+            .putFloat("duration", (float) duration)
+            .putBoolean("shuffle", shuffle)
+            .apply();
     }
 
     static boolean playing(Context ctx) {
@@ -110,11 +127,69 @@ final class WidgetStore {
         return prefs(ctx).getString("videoId", "");
     }
 
-    /* ── Interfaz ── */
+    static double duration(Context ctx) {
+        return prefs(ctx).getFloat("duration", 0);
+    }
 
-    /* La misma cookie que usa la web (activeInterface); la pone mobile.php
-       en cada carga. Todo lo que no sea Kawaii se pinta como Win98. */
-    static boolean isKawaii(Context ctx) {
+    /* Por dónde va: si suena (y la app sigue viva), lo apuntado más el
+       tiempo pasado desde entonces. */
+    static double position(Context ctx) {
+        SharedPreferences p = prefs(ctx);
+        double pos = p.getFloat("position", 0);
+        if (p.getBoolean("playing", false) && MelonMusicPlugin.isAlive()) {
+            pos += (SystemClock.elapsedRealtime() - p.getLong("positionAt", SystemClock.elapsedRealtime())) / 1000.0;
+        }
+        double dur = duration(ctx);
+        return dur > 0 ? Math.min(pos, dur) : pos;
+    }
+
+    /* Cada vez que avanza la barra se apunta la posición: si Android
+       cierra la app, el widget se queda donde iba. */
+    static void savePosition(Context ctx) {
+        prefs(ctx).edit()
+            .putFloat("position", (float) position(ctx))
+            .putLong("positionAt", SystemClock.elapsedRealtime())
+            .apply();
+    }
+
+    static boolean shuffle(Context ctx) {
+        return prefs(ctx).getBoolean("shuffle", false);
+    }
+
+    /* 🔀 con la app cerrada: se cambia aquí y se le pasa a la web cuando
+       se vuelva a abrir (MelonMusicPlugin.load). */
+    static void toggleShuffleOffline(Context ctx) {
+        boolean on = !shuffle(ctx);
+        prefs(ctx).edit().putBoolean("shuffle", on).putBoolean("pendingShuffle", true).apply();
+    }
+
+    /* null si no hay cambio pendiente. */
+    static Boolean takePendingShuffle(Context ctx) {
+        SharedPreferences p = prefs(ctx);
+        if (!p.getBoolean("pendingShuffle", false)) return null;
+        p.edit().remove("pendingShuffle").apply();
+        return p.getBoolean("shuffle", false);
+    }
+
+    /* ── Interfaz y tema ── */
+
+    /* { interface: 'win98'|'kawaii', colors: { 'win-bg': '#…', … } } */
+    static void setTheme(Context ctx, JSONObject theme) {
+        prefs(ctx).edit().putString("theme", theme.toString()).apply();
+    }
+
+    static JSONObject theme(Context ctx) {
+        try {
+            String t = prefs(ctx).getString("theme", null);
+            return t != null ? new JSONObject(t) : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /* Antes de que la web mande el tema: la cookie activeInterface (la
+       pone mobile.php en cada carga). */
+    static boolean cookieKawaii(Context ctx) {
         String cookies = cookies(ctx);
         if (cookies == null) return false;
         for (String c : cookies.split(";")) {

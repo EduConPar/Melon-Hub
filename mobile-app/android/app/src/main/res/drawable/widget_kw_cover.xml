@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Marco de la carátula en Kawaii: blanco con borde de 2 px. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#FFFFFF" />
-    <stroke android:width="2dp" android:color="#49388B" />
-</shape>

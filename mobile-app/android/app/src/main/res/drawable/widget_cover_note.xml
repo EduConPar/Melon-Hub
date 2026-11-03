@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carátula cuando aún no hay canción o no ha bajado su miniatura: una
+     nota sobre el fondo del marco. Cuadrada, para que el marco salga
+     cuadrado (adjustViewBounds). El color lo pone MusicWidget. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M17,8h2v11.5A3,3 0,1 1,17 16.6ZM19,8h3v3h-3z" />
+</vector>

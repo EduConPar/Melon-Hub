@@ -811,6 +811,63 @@ let currentTrack      = 0;
 let currentPlaylistId = null;
 var currentPlaylistHasCollabs = false;
 
+/* Última canción en este ordenador (app de escritorio y navegador): la
+   cola entera y por dónde iba, para que al volver el reproductor salga
+   con ella en pausa donde se quedó. MelonPlayerState (en el servidor)
+   solo recuerda playlists guardadas y no la posición; esto vale también
+   para álbumes, búsquedas y artistas. La posición va aparte porque se
+   guarda cada pocos segundos y la cola puede ser larga. */
+var MelonLastTrack = (function(){
+    var KEY = 'reproductor:last:' + currentUserKey;
+    var POS_KEY = KEY + ':pos';
+    var title = '';
+    function read() {
+        try {
+            var d = JSON.parse(localStorage.getItem(KEY) || 'null');
+            return d && Array.isArray(d.queue) && d.queue.length ? d : null;
+        } catch (_) { return null; }
+    }
+    function saveQueue(index) {
+        if (!playlist.length || !playlist[index]) return;
+        try {
+            localStorage.setItem(KEY, JSON.stringify({
+                queue: playlist.slice(), idx: index, title: title,
+                playlistId: currentPlaylistId, hasCollabs: currentPlaylistHasCollabs
+            }));
+        } catch (_) { /* localStorage lleno: sin recordar */ }
+    }
+    function setTitle(name) {
+        title = name || '';
+        var d = read();
+        if (!d) return;
+        d.title = title;
+        try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (_) {}
+    }
+    function savePos() {
+        var tr = playlist[currentTrack];
+        if (!tr || !ytPlayer || !ytPlayer.getCurrentTime) return;
+        /* Solo sonando o en pausa: recién recuperada (cued) YouTube dice
+           0 y se perdería por dónde iba. */
+        var st = -1;
+        try { st = ytPlayer.getPlayerState(); } catch (_) {}
+        if (st !== 1 && st !== 2) return;
+        var cur = 0;
+        try { cur = ytPlayer.getCurrentTime() || 0; } catch (_) {}
+        try { localStorage.setItem(POS_KEY, JSON.stringify({ videoId: tr.videoId, pos: Math.floor(cur) })); } catch (_) {}
+    }
+    /* Segundo en que se quedó esa canción (0 si era otra). */
+    function position(videoId) {
+        try {
+            var p = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+            return p && p.videoId === videoId ? (p.pos || 0) : 0;
+        } catch (_) { return 0; }
+    }
+    /* Cerrar la app o la pestaña con música: que no se pierdan los
+       últimos segundos. */
+    window.addEventListener('pagehide', savePos);
+    return { read: read, saveQueue: saveQueue, setTitle: setTitle, savePos: savePos, position: position };
+})();
+
 /* ── Escuchas recientes ──────────────────────────────────────────────
    Registra una escucha (canción / álbum / playlist) en el backend para
    la sección "Escuchas recientes" del menú. Best-effort, silencioso. */
@@ -2333,6 +2390,7 @@ function updatePlayerTitle(name) {
        del title-bar), así que aquí solo escribimos el nombre del
        playlist — sin prefijo ♪ que duplicaría el icono. */
     el.textContent = name;
+    MelonLastTrack.setTitle(name);
     if (stopPlNameMarquee) { stopPlNameMarquee(); stopPlNameMarquee = null; }
     setTimeout(function() {
         stopPlNameMarquee = marqueeScroll(el, parent, 40, 1500);
@@ -2468,6 +2526,7 @@ function updateTrackUI(index)
     }, 50);
 
     MelonPlayerState.setTrack(index);
+    MelonLastTrack.saveQueue(index);
 
     if (typeof window.updatePlaylistPlayingHighlight === 'function') {
         window.updatePlaylistPlayingHighlight(currentPlaylistId, index);
@@ -3645,11 +3704,16 @@ function resolveAndShowAlbum(track) {
         });
 }
 
+var _lastPosSavedAt = 0;
 function startProgress()
 {
     clearInterval(progressInterval);
     progressInterval = setInterval(() => {
         if (!ytPlayer || !ytPlayer.getDuration) return;
+        if (Date.now() - _lastPosSavedAt > 5000) {
+            _lastPosSavedAt = Date.now();
+            MelonLastTrack.savePos();
+        }
         const dur = ytPlayer.getDuration();
         const cur = ytPlayer.getCurrentTime();
         if (dur) {
@@ -3691,8 +3755,32 @@ function onYouTubeIframeAPIReady()
                     var globalF = (typeof window.getGlobalVolumeFactor === 'function')
                         ? window.getGlobalVolumeFactor() : 1;
                     ytPlayer.setVolume(Math.round(baseVol * globalF));
-                    restorePlaylist(saved);
+                    var last = MelonLastTrack.read();
+                    if (last) restoreLast(last);
+                    else restorePlaylist(saved);
                 });
+
+                /* La última canción de este ordenador, en pausa donde iba. */
+                function restoreLast(last) {
+                    currentPlaylistId = last.playlistId || null;
+                    currentPlaylistHasCollabs = !!last.hasCollabs;
+                    playlist.length = 0;
+                    last.queue.forEach(function(t) { playlist.push(t); });
+                    var idx = Math.max(0, Math.min(last.idx | 0, playlist.length - 1));
+                    currentTrack = idx;
+                    updateTrackUI(idx);
+                    if (last.title) updatePlayerTitle(last.title);
+                    var pos = MelonLastTrack.position(playlist[idx].videoId);
+                    ytPlayer.cueVideoById({ videoId: playlist[idx].videoId, startSeconds: pos });
+                    var dur = playlist[idx].duration || 0;
+                    if (pos) {
+                        playerCurrent.textContent = formatTime(pos);
+                        if (dur) {
+                            playerProg.value = (pos / dur) * 100;
+                            playerDur.textContent = formatTime(dur);
+                        }
+                    }
+                }
 
                 function restoreDefault() {
                     if (playlist.length) { updateTrackUI(0); ytPlayer.cueVideoById(playlist[0].videoId); }
@@ -3733,6 +3821,7 @@ function onYouTubeIframeAPIReady()
                 } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
                     btnPlay.textContent = '►';
                     clearInterval(progressInterval);
+                    if (e.data === YT.PlayerState.PAUSED) MelonLastTrack.savePos();
                     publishNowPlaying(false, true);
                 }
                 /* Si soy host de una sesión conjunta, propago play/pausa al

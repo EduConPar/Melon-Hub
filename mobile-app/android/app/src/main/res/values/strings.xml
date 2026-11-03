@@ -17,6 +17,7 @@
     <string name="widget_prev">Anterior</string>
     <string name="widget_toggle">Reproducir / pausar</string>
     <string name="widget_next">Siguiente</string>
+    <string name="widget_shuffle">Aleatorio</string>
     <string name="widget_loading">Cargando…</string>
     <string name="widget_login">Abre Melon Hub e inicia sesión</string>
     <string name="widget_offline">No se pudieron cargar las playlists</string>

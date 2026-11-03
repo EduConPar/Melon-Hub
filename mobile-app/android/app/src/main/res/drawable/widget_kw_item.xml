@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Fila de lista Kawaii: hover-bg al pulsarla. -->
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_pressed="true" android:drawable="@color/widget_kw_select" />
-    <item android:drawable="@android:color/transparent" />
-</selector>

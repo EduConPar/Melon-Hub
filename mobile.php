@@ -2046,6 +2046,14 @@ window.MuShell = (function(){
     var YT_PLAYER = null;
     var YT_READY  = false;
     var pendingLoadId = null;
+    /* Última canción (solo la app de Android): al abrirla queda preparada
+       en pausa donde iba (pendingCue/restorePos) y el widget la enseña. */
+    var IS_ANDROID_APP = /MelonHubApp/.test(navigator.userAgent);
+    var LAST_QUEUE_KEY = 'melonApp:lastQueue';
+    var LAST_POS_KEY   = 'melonApp:lastPos';
+    var pendingCue = null;
+    var restorePos = 0;
+    var playWhenReady = false;
     var subscribers = [];
     var progressTimer = null;
     /* Label del usuario actual — usado al añadir tracks a playlists
@@ -2090,6 +2098,13 @@ window.MuShell = (function(){
                        en cada video cargado. Best-effort, errores callados. */
                     try { YT_PLAYER.setPlaybackQuality && YT_PLAYER.setPlaybackQuality('small'); } catch (_) {}
                     if (pendingLoadId) { YT_PLAYER.loadVideoById(pendingLoadId); pendingLoadId = null; }
+                    else if (pendingCue) {
+                        /* Última canción: cargada en pausa donde iba. Si
+                           ya se pidió ▶ (⏯ del widget), arranca. */
+                        YT_PLAYER.cueVideoById({ videoId: pendingCue, startSeconds: restorePos });
+                        pendingCue = null;
+                        if (playWhenReady) { playWhenReady = false; YT_PLAYER.playVideo(); }
+                    }
                 },
                 'onStateChange': function(e){
                     /* Re-aplicar calidad 'small' cuando un video nuevo
@@ -2126,6 +2141,9 @@ window.MuShell = (function(){
            cortaría al pasar de canción con la app en segundo plano. */
         if (e.data === 1) nativeMusicPlaying(true, QUEUE[CUR_IDX]);
         else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
+        if (e.data === 1) restorePos = 0;
+        if (e.data === 1 || e.data === 2 || e.data === 5) nativeWidgetState(e.data === 1);
+        if (e.data === 2) saveLastPos();
         if (e.data === 0) next();
         broadcast({ type: 'mushell:state', state: e.data, idx: CUR_IDX });
         publishNowPlaying(playing, true);
@@ -2187,6 +2205,36 @@ window.MuShell = (function(){
         } catch (_) {}
     }
 
+    /* Lo que pinta el widget de la app: canción, por dónde va (la app la
+       va avanzando sola mientras suena) y si está en aleatorio. */
+    function nativeWidgetState(playing) {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        var tr = QUEUE[CUR_IDX];
+        if (!tr) return;
+        var cur = 0, tot = 0;
+        try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
+        /* Recién recuperada y sin tocar, YouTube aún dice 0. */
+        if (!cur && restorePos) cur = restorePos;
+        if (!tot) tot = tr.duration || 0;
+        try {
+            cap.nativePromise('MelonMusic', 'setWidgetState', {
+                playing:  !!playing,
+                title:    tr.title  || '',
+                artist:   tr.artist || '',
+                videoId:  tr.videoId || '',
+                position: cur,
+                duration: tot,
+                shuffle:  SHUFFLE_ON
+            }).catch(function(){});
+        } catch (_) {}
+    }
+    function nativeWidgetStateNow() {
+        var playing = false;
+        try { playing = YT_PLAYER.getPlayerState() === 1; } catch (_) {}
+        nativeWidgetState(playing);
+    }
+
     /* Botones del widget de la app (MusicWidget). Con una app vieja el
        evento no llega nunca y no pasa nada. */
     (function setupNativeWidget(){
@@ -2198,10 +2246,30 @@ window.MuShell = (function(){
                 if (cmd.action === 'toggle') togglePlay();
                 else if (cmd.action === 'next') next();
                 else if (cmd.action === 'prev') prev();
+                else if (cmd.action === 'shuffle') setShuffle(!SHUFFLE_ON);
+                else if (cmd.action === 'set-shuffle') setShuffle(!!cmd.on);
                 else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
             });
         } catch (_) {}
     })();
+
+    /* ── Última canción (app de Android) ──
+       La cola se guarda al cambiar de canción y la posición cada pocos
+       segundos (por separado: la cola puede ser larga). */
+    function saveLastQueue() {
+        if (!IS_ANDROID_APP || CUR_IDX < 0) return;
+        try {
+            localStorage.setItem(LAST_QUEUE_KEY, JSON.stringify({ queue: QUEUE, idx: CUR_IDX, plName: CUR_PL_NAME }));
+            localStorage.setItem(LAST_POS_KEY, '0');
+        } catch (_) {}
+    }
+    function saveLastPos() {
+        if (!IS_ANDROID_APP || CUR_IDX < 0) return;
+        var cur = 0;
+        try { cur = YT_PLAYER.getCurrentTime() || 0; } catch (_) {}
+        if (!cur && restorePos) return;   /* aún sin cargar: no pisar la guardada */
+        try { localStorage.setItem(LAST_POS_KEY, String(Math.floor(cur))); } catch (_) {}
+    }
 
     /* ── Media Session ── */
     function updateMediaSession(tr) {
@@ -2707,6 +2775,9 @@ window.MuShell = (function(){
         document.getElementById('mu-widget').classList.add('visible');
         updateMediaSession(tr);
         startProgressTimer();
+        restorePos = 0;
+        pendingCue = null;
+        saveLastQueue();
         if (!YT_READY || !YT_PLAYER) { pendingLoadId = tr.videoId; return; }
         YT_PLAYER.loadVideoById(tr.videoId);
         broadcast({ type: 'mushell:track', idx: CUR_IDX, total: QUEUE.length, track: tr, plName: CUR_PL_NAME });
@@ -2731,7 +2802,10 @@ window.MuShell = (function(){
         playCurrent();
     }
     function togglePlay() {
-        if (!YT_READY || !YT_PLAYER || CUR_IDX < 0) return;
+        if (CUR_IDX < 0) return;
+        /* Última canción recuperada y YouTube aún cargando: suena en
+           cuanto esté (⏯ del widget con la app recién abierta). */
+        if (!YT_READY || !YT_PLAYER) { if (pendingCue) playWhenReady = true; return; }
         var st = YT_PLAYER.getPlayerState();
         if (st === 1) YT_PLAYER.pauseVideo();
         else          YT_PLAYER.playVideo();
@@ -2762,6 +2836,7 @@ window.MuShell = (function(){
         startProgressTimer();
     }
     var __NP_TICK = 0;
+    var __LAST_POS_TICK = 0;
     var _muScrub = false;   /* true mientras el usuario arrastra la barra */
     function tickProgress() {
         if (!YT_READY || !YT_PLAYER) return;
@@ -2797,6 +2872,12 @@ window.MuShell = (function(){
         }
         /* Sync periódico con la TV cada ~2s visible, ~10s oculto.
            publishNowPlaying tiene su propio throttle. */
+        if (Date.now() - __LAST_POS_TICK > 5000) {
+            __LAST_POS_TICK = Date.now();
+            var isPlaying = false;
+            try { isPlaying = YT_PLAYER.getPlayerState() === 1; } catch (_) {}
+            if (isPlaying) saveLastPos();
+        }
         var npGap = hidden ? 10000 : 2000;
         if (Date.now() - __NP_TICK > npGap) {
             __NP_TICK = Date.now();
@@ -2828,6 +2909,9 @@ window.MuShell = (function(){
             var tot = YT_PLAYER.getDuration() || 0;
             if (tot <= 0) return;
             try { YT_PLAYER.seekTo(r * tot, true); } catch (_) {}
+            restorePos = 0;
+            saveLastPos();
+            nativeWidgetStateNow();
         }
         bar.addEventListener('pointerdown', function(e){
             _muScrub = true;
@@ -2977,10 +3061,15 @@ window.MuShell = (function(){
     document.getElementById('mu-full-lock').addEventListener('click', openLock);
 
     /* Shuffle: toggle visual + comportamiento. */
+    function setShuffle(on) {
+        SHUFFLE_ON = on;
+        var btn = document.getElementById('mu-full-shuffle');
+        btn.classList.toggle('is-on', SHUFFLE_ON);
+        btn.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
+        nativeWidgetStateNow();
+    }
     document.getElementById('mu-full-shuffle').addEventListener('click', function(){
-        SHUFFLE_ON = !SHUFFLE_ON;
-        this.classList.toggle('is-on', SHUFFLE_ON);
-        this.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
+        setShuffle(!SHUFFLE_ON);
     });
 
     /* Letra: 1 tap → abre panel sobre el player; doble-tap rápido (<400ms)
@@ -3925,6 +4014,64 @@ window.MuShell = (function(){
         try { return (YT_PLAYER && YT_PLAYER.getDuration) ? (YT_PLAYER.getDuration() || 0) : 0; }
         catch(_) { return 0; }
     }
+
+    /* Al abrir la app: la última canción preparada en pausa donde iba. */
+    (function restoreLast(){
+        if (!IS_ANDROID_APP) return;
+        var d = null;
+        try { d = JSON.parse(localStorage.getItem(LAST_QUEUE_KEY) || 'null'); } catch (_) {}
+        if (!d || !Array.isArray(d.queue) || !d.queue.length) return;
+        QUEUE = d.queue;
+        CUR_IDX = Math.max(0, Math.min(d.idx | 0, QUEUE.length - 1));
+        CUR_PL_NAME = d.plName || '';
+        var tr = QUEUE[CUR_IDX];
+        if (!tr || !tr.videoId) { QUEUE = []; CUR_IDX = -1; return; }
+        try { restorePos = parseFloat(localStorage.getItem(LAST_POS_KEY)) || 0; } catch (_) {}
+        renderTrack(tr);
+        document.getElementById('mu-widget').classList.add('visible');
+        ['mu-vinyl', 'mu-widget-disc', 'mu-lock-vinyl'].forEach(function(id){
+            var el = document.getElementById(id);
+            if (el) el.classList.add('paused');
+        });
+        updateMediaSession(tr);
+        if (YT_READY && YT_PLAYER) YT_PLAYER.cueVideoById({ videoId: tr.videoId, startSeconds: restorePos });
+        else pendingCue = tr.videoId;
+        /* Para que al darle a ▶ avance la barra y se vaya guardando. */
+        startProgressTimer();
+        nativeWidgetState(false);
+    })();
+
+    /* Colores del widget de la app: los del tema activo (variables CSS). */
+    (function sendWidgetTheme(){
+        var cap = window.Capacitor;
+        if (!IS_ANDROID_APP || !cap || typeof cap.nativePromise !== 'function') return;
+        var KEYS = ['win-bg', 'win-body-bg', 'titlebar-start', 'titlebar-end', 'titlebar-text', 'text',
+                    'text-muted', 'btn-bg', 'btn-text', 'accent', 'accent-text', 'input-bg',
+                    'bezel-light-1', 'bezel-light-2', 'bezel-dark-1', 'bezel-dark-2', 'border',
+                    'hover-bg', 'active-rose'];
+        /* El navegador pasa cualquier color CSS (nombres, rgb…) a rgb(). */
+        var probe = document.createElement('span');
+        probe.style.display = 'none';
+        document.body.appendChild(probe);
+        var cs = getComputedStyle(document.body);
+        var colors = {};
+        KEYS.forEach(function(k){
+            var v = cs.getPropertyValue('--' + k).trim();
+            if (!v) return;
+            probe.style.color = '';
+            probe.style.color = v;
+            var m = getComputedStyle(probe).color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!m) return;
+            colors[k] = '#' + [m[1], m[2], m[3]].map(function(n){ return ('0' + (+n).toString(16)).slice(-2); }).join('');
+        });
+        probe.remove();
+        try {
+            cap.nativePromise('MelonMusic', 'setWidgetTheme', {
+                interface: <?= json_encode($_activeInterface) ?>,
+                colors: colors
+            }).catch(function(){});
+        } catch (_) {}
+    })();
 
     return {
         loadQueue: loadQueue, next: next, prev: prev, toggle: togglePlay,

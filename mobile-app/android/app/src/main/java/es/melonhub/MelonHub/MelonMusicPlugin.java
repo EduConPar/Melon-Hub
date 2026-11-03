@@ -2,6 +2,8 @@ package es.melonhub.MelonHub;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
@@ -18,9 +20,12 @@ import org.json.JSONObject;
 
    También es el camino de vuelta del widget (MusicWidget): sus botones
    llegan a la web como el evento "widgetCommand"
-     { action: 'toggle' | 'prev' | 'next' }
+     { action: 'toggle' | 'prev' | 'next' | 'shuffle' }
+     { action: 'set-shuffle', on }   (🔀 tocado con la app cerrada)
      { action: 'play-playlist', name, tracks, index }
-   y lo que suena se le pasa al widget para que lo pinte. */
+   y la web le cuenta al widget qué suena y con qué colores pintarse:
+     setWidgetState({ playing, title, artist, videoId, position, duration, shuffle })
+     setWidgetTheme({ interface, colors: { 'win-bg': '#…', … } }) */
 @CapacitorPlugin(name = "MelonMusic")
 public class MelonMusicPlugin extends Plugin {
 
@@ -31,9 +36,30 @@ public class MelonMusicPlugin extends Plugin {
     /* Orden del widget que abrió la app: se entrega al cargar el plugin. */
     static JSONObject pendingWidgetCommand;
 
+    /* Avanza la barra de progreso del widget mientras suena. */
+    private static final long PROGRESS_EVERY_MS = 5000;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable progressTick = new Runnable() {
+        @Override
+        public void run() {
+            WidgetStore.savePosition(getContext());
+            MusicWidget.refreshProgress(getContext());
+            handler.postDelayed(this, PROGRESS_EVERY_MS);
+        }
+    };
+
     @Override
     public void load() {
         instance = this;
+        /* Primero el 🔀 tocado con la app cerrada, luego la orden que la
+           abrió (si fue ⏯, tiene que sonar ya con el aleatorio puesto). */
+        Boolean shuffle = WidgetStore.takePendingShuffle(getContext());
+        if (shuffle != null) {
+            JSObject cmd = new JSObject();
+            cmd.put("action", "set-shuffle");
+            cmd.put("on", shuffle);
+            deliver(cmd);
+        }
         if (pendingWidgetCommand != null) {
             deliver(pendingWidgetCommand);
             pendingWidgetCommand = null;
@@ -43,6 +69,8 @@ public class MelonMusicPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         if (instance == this) instance = null;
+        handler.removeCallbacks(progressTick);
+        WidgetStore.savePosition(getContext());
         MusicWidget.refresh(getContext());
     }
 
@@ -62,11 +90,14 @@ public class MelonMusicPlugin extends Plugin {
         /* Con la app en segundo plano y la música en pausa, la página está
            "oculta" y Chromium no deja arrancar el vídeo: se pone visible
            antes, como cuando suena. Al pausar, setPlaying(false) lo suelta. */
-        getActivity().runOnUiThread(() -> {
-            if (getBridge().getWebView() instanceof MusicWebView) {
-                ((MusicWebView) getBridge().getWebView()).setKeepVisible(true);
-            }
-        });
+        String action = cmd.optString("action");
+        if (!action.equals("shuffle") && !action.equals("set-shuffle")) {
+            getActivity().runOnUiThread(() -> {
+                if (getBridge().getWebView() instanceof MusicWebView) {
+                    ((MusicWebView) getBridge().getWebView()).setKeepVisible(true);
+                }
+            });
+        }
         try {
             /* Se guarda hasta que la página ponga el listener (si la app
                se acaba de abrir, aún está cargando). */
@@ -109,6 +140,25 @@ public class MelonMusicPlugin extends Plugin {
                 a.moveTaskToBack(true);
             }
         });
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setWidgetState(PluginCall call) {
+        boolean playing = call.getBoolean("playing", false);
+        WidgetStore.setState(getContext(), playing,
+            call.getString("title", ""), call.getString("artist", ""), call.getString("videoId", ""),
+            call.getDouble("position", 0.0), call.getDouble("duration", 0.0), call.getBoolean("shuffle", false));
+        MusicWidget.refresh(getContext());
+        handler.removeCallbacks(progressTick);
+        if (playing) handler.postDelayed(progressTick, PROGRESS_EVERY_MS);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setWidgetTheme(PluginCall call) {
+        WidgetStore.setTheme(getContext(), call.getData());
+        MusicWidget.refresh(getContext());
         call.resolve();
     }
 }
