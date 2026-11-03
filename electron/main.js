@@ -186,6 +186,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
     app.on('second-instance', (_e, argv) => {
         tray.openMain();
+        links.ackArgv(argv, START_URL);
         const link = links.fromArgv(argv);
         if (link) links.open(link);
     });
@@ -203,6 +204,7 @@ if (!app.requestSingleInstanceLock()) {
         download.init();
         extras.start(mainWindow, tray.getTray(), { openMain: tray.openMain });
         links.start(mainWindow, START_URL, { openMain: tray.openMain });
+        links.ackArgv(process.argv, START_URL);
     });
 
     app.on('window-all-closed', () => app.quit());

@@ -664,40 +664,13 @@ case 'add-track': {
 
 /* ─── YouTube helpers ────────────────────────────────────── */
 
-/* Datos de una canción para abrirla desde un enlace (enlace.php?cancion=…):
-   como se ve en Melon Hub, no el título crudo de YouTube ("Artista - Canción
-   (Official Video)" y el canal como artista, con lo que find-album sacaba
-   otro álbum). Por orden: la corrección guardada ("Corregir…", que además
-   puede cambiar el vídeo), una playlist, las canciones añadidas, las
-   escuchas recientes de cualquiera y, si no está en ningún sitio, YouTube. */
+/* Datos de una canción para abrirla desde un enlace (enlace.php?cancion=…),
+   como se ve en Melon Hub: ver assets/music/song-info.php. */
 case 'song-info': {
     $videoId = preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['id'] ?? '');
     if (strlen($videoId) !== 11) jsonError('ID inválido');
-    $title = ''; $artist = ''; $duration = 0;
-    $one = function (string $sql) use ($pdo, $videoId) {
-        try {
-            $st = $pdo->prepare($sql);
-            $st->execute([$videoId]);
-            return $st->fetch(PDO::FETCH_ASSOC) ?: null;
-        } catch (Throwable $e) { return null; }
-    };
-    $r = $one("SELECT title, artist, duration FROM playlist_tracks WHERE video_id = ? AND title <> '' ORDER BY playlist_id DESC LIMIT 1")
-      ?: $one("SELECT title, artist, 0 AS duration FROM music_extras WHERE video_id = ? AND title <> '' LIMIT 1")
-      ?: $one("SELECT name AS title, artist, 0 AS duration FROM music_recent WHERE item_type = 'song' AND item_key = ? AND name <> '' ORDER BY played_at DESC LIMIT 1");
-    if ($r) { $title = (string)$r['title']; $artist = (string)$r['artist']; $duration = (int)$r['duration']; }
-    $ov = _fetchSongOverrideMap($pdo, [$videoId])[$videoId] ?? null;
-    if ($ov) {
-        if ($ov['title']  !== '') $title  = $ov['title'];
-        if ($ov['artist'] !== '') $artist = $ov['artist'];
-        if (strlen($ov['newVideoId']) === 11) $videoId = $ov['newVideoId'];
-    }
-    if ($title === '') {
-        $ctx = stream_context_create(['http' => ['timeout' => 8, 'ignore_errors' => true]]);
-        $raw = @file_get_contents('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' . $videoId . '&format=json', false, $ctx);
-        $data = $raw ? json_decode($raw, true) : null;
-        if (isset($data['title'])) { $title = (string)$data['title']; $artist = (string)($data['author_name'] ?? ''); }
-    }
-    jsonResponse(['ok' => true, 'videoId' => $videoId, 'title' => $title, 'artist' => $artist, 'duration' => $duration]);
+    require_once __DIR__ . '/song-info.php';
+    jsonResponse(['ok' => true] + melonSongInfo($pdo, $videoId));
 }
 
 case 'yt-title': {

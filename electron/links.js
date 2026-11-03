@@ -16,8 +16,12 @@
    index.php?abrir=… y el escritorio lo abre al entrar.
    Los enlaces de la web pulsados dentro de la app (chat, posts…) se
    cortan aquí y se abren igual, sin pasar por enlace.php.
+   enlace.php añade ?n=<código>&s=<web>: se avisa a <web>/assets/
+   link-ack.php con el código para que la pestaña del navegador sepa que
+   la app lo ha abierto y no siga también a la web. Solo a webs de Melon
+   Hub (o la de la app), por si alguien manda un melonhub:// con otra.
    ────────────────────────────────────────────────────────────────────── */
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, net } = require('electron');
 
 const SCHEME = 'melonhub';
 
@@ -61,6 +65,30 @@ function fromWebUrl(url, origin) {
         if (/\/(index\.php)?$/.test(u.pathname) && p.has('escuchar')) return check('escuchar', p.get('escuchar'));
     } catch (_) { /* no es un enlace */ }
     return null;
+}
+
+const ACK_HOSTS = ['melonhub.es', 'melonhubdev.melonhub.es'];
+
+/* Avisa a la web del enlace (link-ack.php) de que la app lo ha recibido. */
+function ack(url, base) {
+    try {
+        const u = new URL(url);
+        const n = u.searchParams.get('n') || '';
+        const host = u.searchParams.get('s') || '';
+        if (!/^[a-f0-9]{24}$/.test(n)) return;
+        const own = new URL(base);
+        const target = host === own.host ? own.origin
+            : ACK_HOSTS.includes(host) ? 'https://' + host : null;
+        if (!target) return;
+        net.fetch(target + '/assets/link-ack.php?n=' + n, { method: 'POST' }).catch(() => {});
+    } catch (_) { /* sin aviso: la pestaña seguirá a la web */ }
+}
+
+/* Avisa de todos los melonhub:// que traiga la línea de órdenes. */
+function ackArgv(argv, base) {
+    for (const a of argv || []) {
+        if (typeof a === 'string' && a.toLowerCase().startsWith(SCHEME + '://')) ack(a, base);
+    }
 }
 
 function fromArgv(argv) {
@@ -108,4 +136,4 @@ function start(mainWindow, startUrlBase, opts) {
     });
 }
 
-module.exports = { start, open, fromArgv, fromWebUrl, startUrl };
+module.exports = { start, open, fromArgv, fromWebUrl, startUrl, ackArgv };
