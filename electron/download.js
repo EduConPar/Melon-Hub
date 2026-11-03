@@ -264,7 +264,7 @@ async function download(info, progress) {
     const format = FORMATS[info.format] ? info.format : 'mp3';
     const kbps = BITRATES.includes(Number(info.kbps)) ? Number(info.kbps) : 192;
     if (!/^[\w-]{11}$/.test(info.videoId || '')) throw new Error('Canción no válida');
-    const job = { cancelled: false, child: null };
+    const job = { videoId: info.videoId, cancelled: false, child: null };
     running.set(info.id, job);
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'melonhub-dl-'));
     try {

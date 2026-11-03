@@ -926,9 +926,9 @@ function openDownloadDialog(track) {
                 '</div>' +
             '</div>' +
             '<div class="field-row" style="margin-bottom:6px;"><label style="width:56px;">Formato:</label>' +
-                '<select data-dl="format" style="flex:1;"></select></div>' +
+                '<select data-dl="format" style="flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;"></select></div>' +
             '<div class="field-row" style="margin-bottom:8px;"><label style="width:56px;">Calidad:</label>' +
-                '<select data-dl="kbps" style="flex:1;"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
+                '<select data-dl="kbps" style="flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
             '<div style="font-size:10px;line-height:1.4;">Se guarda en Descargas como</div>' +
             '<div data-dl="name" style="font-size:10px;line-height:1.4;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;"></div>' +
             '<div class="progress-indicator" data-dl="bar" style="height:20px;padding:3px;display:none;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent,navy);"></span></div>' +
