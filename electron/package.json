@@ -1,7 +1,7 @@
 {
   "name": "melonhub-desktop",
   "productName": "Melon Hub",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Melon Hub como aplicación de escritorio",
   "author": "Melon Hub",
   "main": "main.js",

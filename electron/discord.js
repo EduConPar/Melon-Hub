@@ -32,6 +32,11 @@ let sock = null, ready = false, connecting = false, retryTimer = null;
 let wanted = null;      /* actividad que debería verse (null = ninguna) */
 let sentKey = null;     /* lo último mandado, para no repetir */
 let lastSend = 0, sendTimer = null, nonce = 0;
+/* Al cambiar de canción el reproductor enseña primero la miniatura de
+   YouTube y, en cuanto la encuentra, la carátula del álbum: se espera un poco
+   antes de mandar la de YouTube para no publicar dos portadas seguidas. */
+const COVER_WAIT_MS = 2500;
+let trackVideo = null, trackSince = 0;
 
 function candidates() {
     if (process.platform === 'win32') {
@@ -110,7 +115,8 @@ function flush() {
     if (!ready) { if (wanted) connect(); return; }
     const key = JSON.stringify(wanted);
     if (key === sentKey) return;
-    const wait = lastSend + MIN_GAP_MS - Date.now();
+    let wait = lastSend + MIN_GAP_MS - Date.now();
+    if (isYoutubeCover(wanted)) wait = Math.max(wait, trackSince + COVER_WAIT_MS - Date.now());
     if (wait > 0) { sendTimer = setTimeout(flush, wait); return; }
     lastSend = Date.now();
     sentKey = key;
@@ -120,6 +126,19 @@ function flush() {
         nonce: String(++nonce),
     }));
 }
+
+/* La portada es la misma que enseña el reproductor: la del álbum cuando la
+   ha encontrado y, si no, la miniatura de YouTube. Esa se pide en mqdefault
+   (16:9 sin bordes): Discord recorta la imagen a cuadrado por el centro y la
+   hqdefault trae franjas negras arriba y abajo. */
+function coverOf(s) {
+    const c = String(s.cover || '');
+    const yt = c.match(/^https:\/\/(?:img\.youtube\.com|i\.ytimg\.com)\/vi\/([\w-]{11})\//);
+    if (/^https:\/\//.test(c) && !yt) return c;
+    const vid = yt ? yt[1] : s.videoId;
+    return vid ? 'https://i.ytimg.com/vi/' + vid + '/mqdefault.jpg' : null;
+}
+function isYoutubeCover(a) { return !!(a && a.assets && /^https:\/\/i\.ytimg\.com\//.test(a.assets.large_image)); }
 
 /* Discord pide entre 2 y 128 caracteres en los textos. */
 function text(s, fallback) {
@@ -137,6 +156,8 @@ function update(s) {
         reset();
     }
     let next = null;
+    if (s && s.videoId !== trackVideo) { trackVideo = s.videoId; trackSince = Date.now(); }
+    const cover = s ? coverOf(s) : null;
     if (settings.get('discordPresence') && s && s.hasTrack && s.playing && s.title) {
         const now = Date.now();
         let start = now - Math.max(0, s.position || 0) * 1000;
@@ -149,23 +170,16 @@ function update(s) {
             timestamps: s.duration > 0
                 ? { start: Math.round(start), end: Math.round(start + s.duration * 1000) }
                 : { start: Math.round(start) },
-            assets: s.cover && /^https:\/\//.test(s.cover)
-                ? { large_image: s.cover, large_text: text(s.playlist || s.title, 'Melon Hub') }
-                : undefined,
+            assets: cover ? { large_image: cover, large_text: text(s.playlist || s.title, 'Melon Hub') } : undefined,
             buttons: [{ label: 'Abrir Melon Hub', url: SITE_URL }],
         };
-        /* La imagen es la miniatura de YouTube de la canción: las carátulas
-           de iTunes/Deezer del reproductor no llegaban a verse en Discord
-           (salía el icono de la aplicación) y la de YouTube sí. Discord la
-           recorta a cuadrado por el centro: mqdefault es 16:9 sin bordes
-           (hqdefault es 4:3 con franjas negras arriba y abajo). */
-        if (s.videoId) next.assets = { large_image: 'https://i.ytimg.com/vi/' + s.videoId + '/mqdefault.jpg', large_text: next.assets ? next.assets.large_text : text(s.title, 'Melon Hub') };
         Object.defineProperty(next, '_video', { value: s.videoId, enumerable: false });
     }
     wanted = next;
     if (!clientId) return;
     if (!sock && wanted) connect();
-    else if (!sendTimer) flush();
+    /* Si se estaba esperando a la carátula del álbum y ya ha llegado, sale ya. */
+    else if (!sendTimer || !isYoutubeCover(wanted)) flush();
 }
 
 function clear() { update(null); }

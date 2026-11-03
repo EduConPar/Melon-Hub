@@ -903,11 +903,15 @@ function melonDownloadStep(p, format) {
 function openDownloadDialog(track) {
     var md = window.melonDesktop;
     if (!track || !track.videoId || !md || !md.download) return;
+    /* Carátula y álbum: los del reproductor si es la que suena; si es otra
+       fila (playlist, búsqueda), la miniatura de YouTube. */
+    var cur = nowPlayingTrack();
+    var playing = cur && cur.videoId === track.videoId;
     var cover = document.getElementById('player-cover');
     var info = {
         videoId: track.videoId, title: track.title || '', artist: track.artist || '',
-        album: (_currentAlbum && _currentAlbum.albumName) || '',
-        cover: cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/hqdefault.jpg',
+        album: playing && _currentAlbum ? (_currentAlbum.albumName || '') : '',
+        cover: playing && cover && cover.src ? cover.src : 'https://i.ytimg.com/vi/' + track.videoId + '/hqdefault.jpg',
     };
     var bd = document.createElement('div');
     bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
@@ -4548,6 +4552,20 @@ var addTrackCallback = null;
             }
         });
         ctxMenu.appendChild(addProfile);
+
+        /* Descargar: solo en la app de escritorio (la web no puede bajar el
+           audio de YouTube). Vale para la que suena y para las filas de las
+           playlists y la búsqueda; sin videoId no hay qué descargar. */
+        if (track && track.videoId && window.melonDesktop && window.melonDesktop.download) {
+            var dl = document.createElement('div');
+            dl.className = 'pl-menu-item';
+            dl.textContent = '⬇ Descargar…';
+            dl.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                openDownloadDialog(track);
+            });
+            ctxMenu.appendChild(dl);
+        }
 
         /* Item Listen Together — abre el modal de invitar (o gestiona
            la sesión actual si ya estás en una). */

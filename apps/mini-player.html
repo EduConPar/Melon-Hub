@@ -337,7 +337,7 @@
         if (name === 'lyrics') loadLyrics();
         if (name === 'fix') openFix();
         if (name === 'lt') openListenTogether();
-        if (name === 'dl') openDownload();
+        if (name === 'dl') openDownload(dlSong);
     }
 
     /* ── La ventana se ajusta a la ventana Win98 dibujada. Se mide sin
@@ -647,6 +647,7 @@
                 img: ytThumb(s.videoId), name: s.title, sub: s.artist, time: s.duration ? fmt(s.duration) : '',
                 onClick: function() { play('play-song', { videoId: s.videoId, title: s.title || '', artist: s.artist || '', duration: parseInt(s.duration, 10) || 0 }); },
             });
+            r.song = { videoId: s.videoId, title: s.title || '', artist: s.artist || '' };
             songCover(r.thumb, s);
         });
         if (!res.artists.length && !res.albums.length && !res.songs.length) setBox(note('Sin resultados.'));
@@ -670,6 +671,7 @@
                 current: samePl && i === state.trackIndex,
                 onClick: function() { play('play-playlist', { playlistId: pl.id, index: i }); },
             });
+            r.song = t.videoId ? { videoId: t.videoId, title: t.title || '', artist: t.artist || '' } : null;
             r.dataset.i = i;
             songCover(r.thumb, t);
         });
@@ -745,7 +747,7 @@
         if (!playable) btn.textContent = 'No disponible';
         $('mp-lists-box').querySelectorAll('.mp-row').forEach(function(r, i) {
             var t = p.resolved[i];
-            if (t && t.videoId) r.dataset.vid = t.videoId;
+            if (t && t.videoId) { r.dataset.vid = t.videoId; r.song = { videoId: t.videoId, title: t.title, artist: t.artist }; }
             else { r.classList.add('disabled'); r.title = 'Esta canción no se encontró en YouTube'; }
         });
         markCurrent();
@@ -1152,7 +1154,7 @@
     /* ── Descargar la canción: formato (MP3 con su calidad, M4A original o
        WAV) y progreso, como la ventana del escritorio. La descarga la hace
        la app (electron/download.js) y se guarda en Descargas. ── */
-    var dlInfo = null, dlJob = null;
+    var dlInfo = null, dlJob = null, dlSong = null;
     function dlName(f) {
         var base = [dlInfo.artist, dlInfo.title].filter(Boolean).join(' - ')
             .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Canción';
@@ -1165,11 +1167,17 @@
         $('mp-dl-go').disabled = !!dlJob;
         $('mp-dl-name').textContent = dlName(f);
     }
-    function openDownload() {
+    /* song: una fila del panel (playlist, búsqueda, álbum); sin ella, la que
+       suena. Carátula y álbum solo se saben de la que suena. */
+    function openDownload(song) {
+        dlSong = null;
         if (dlJob) return;   /* hay una en marcha: se ve su progreso */
+        var playing = !song || song.videoId === state.videoId;
+        song = song || { videoId: state.videoId, title: state.title, artist: state.artist };
         dlInfo = {
-            videoId: state.videoId, title: state.title || '', artist: state.artist || '', album: state.album || '',
-            cover: state.cover || 'https://i.ytimg.com/vi/' + state.videoId + '/hqdefault.jpg',
+            videoId: song.videoId, title: song.title || '', artist: song.artist || '',
+            album: playing ? state.album || '' : '',
+            cover: (playing && state.cover) || 'https://i.ytimg.com/vi/' + song.videoId + '/hqdefault.jpg',
         };
         $('mp-dl-cover').src = dlInfo.cover;
         $('mp-dl-title').textContent = dlInfo.title;
@@ -1227,6 +1235,14 @@
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         menu.innerHTML = '';
+        /* Sobre una canción del panel (playlist, búsqueda, álbum): descargar
+           esa canción. */
+        var row = e.target.closest && e.target.closest('#mp-lists-box .mp-row');
+        if (row && row.song && md.download) {
+            menuItem('⬇ Descargar…', function() { dlSong = row.song; show('dl'); });
+            placeMenu(e);
+            return;
+        }
         var noTrack = !state.hasTrack;
         menuItem('➕ Añadir', function() { show('lists'); }, noTrack);
         menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
@@ -1239,12 +1255,15 @@
                : '🎧 Escuchar juntos…';
         menuItem(lt, function() { show('lt'); });
         if (state.ltRole) menuItem('✕ Salir de la sesión', function() { cmd('leave-session'); });
+        placeMenu(e);
+    });
+    function placeMenu(e) {
         menu.style.display = 'block';
         var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 2);
         var y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 2);
         menu.style.left = Math.max(2, x) + 'px';
         menu.style.top = Math.max(2, y) + 'px';
-    });
+    }
     document.addEventListener('click', function(e) { if (!menu.contains(e.target)) hideMenu(); });
     document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
