@@ -92,8 +92,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <!-- PWA GUARD: fuera de standalone → fuera de la app. -->
     <script>
     (function(){
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (!sa) window.location.replace('../../mobile-landing.php');
     })();
     /* --mh-vh sincronizado con window.innerHeight (sobrevive al bfcache). */

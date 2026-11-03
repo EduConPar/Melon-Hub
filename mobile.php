@@ -265,8 +265,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         /* Marca cosmética: añade `is-standalone` al <html> para que el
            CSS pueda esconder elementos redundantes cuando estamos en
            PWA (por ejemplo, el banner "instala la app"). Sin redirect. */
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (sa) document.documentElement.classList.add('is-standalone');
     })();
     /* --mh-vh: viewport height en px sincronizado con window.innerHeight.
