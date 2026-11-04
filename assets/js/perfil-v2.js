@@ -25,8 +25,10 @@
         shots:  { label: 'Capturas',         icon: 'galeriaIcon' },
         review: { label: 'Reseña destacada', icon: 'bestOfTheYearIcon' },
         music:  { label: 'Música favorita',  icon: 'musicaIcon' },
+        steam_rare: { label: 'Logros raros de Steam', icon: 'steamIcon' },
+        steam_ach:  { label: 'Logros de Steam',       icon: 'steamIcon' },
     };
-    var MAX = { games: 4, shots: 3, music: 5 };
+    var MAX = { games: 4, shots: 3, music: 5, steam_ach: 8 };
     var CAT_LABEL = { movies: 'Película', series: 'Serie', books: 'Libro', games: 'Juego', music: 'Música' };
     var TIERS = [
         null,
@@ -91,7 +93,7 @@
                 '<span class="pf2-edit-ctl pf2-handle" title="Arrastra para moverlo">⠿</span>' +
                 ic(t.icon) + esc(t.label) +
                 '<span class="pf2-sub">' + (sub || '') + '</span>' +
-                '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="edit">Editar</button>' +
+                (type === 'steam_rare' ? '' : '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="edit">Editar</button>') +
                 '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="del" title="Quitar expositor">✕</button>' +
             '</div><div class="pf2-panel-body"></div>';
         return p;
@@ -105,16 +107,17 @@
         box.innerHTML = '';
         var own = !!S.ctx.own;
         S.draft.forEach(function (sc, i) {
-            var empty = !sc.data || (Array.isArray(sc.data) ? !sc.data.length : !sc.data.title);
+            var empty = !sc.data || (Array.isArray(sc.data) ? !sc.data.length : (sc.type.indexOf('steam_') === 0 ? !(sc.data.items || []).length : !sc.data.title));
             if (empty && !own) return;            /* a los demás no se les enseña un expositor vacío */
             var sub = '';
             if (sc.type === 'games' && !own) sub = '';
             if (sc.type === 'shots' && S.v2.stats) sub = (sc.data || []).length + ' de ' + (S.v2.stats.counts.shots || 0);
             var p = panel(sc.type, sub, i);
             var body = p.querySelector('.pf2-panel-body');
-            if (empty) body.innerHTML = '<div class="pf2-empty">' + (S.editing ? 'Pulsa "Editar" para elegir qué enseñar.' : 'Vacío: elige qué enseñar en Personalizar.') + '</div>';
+            if (empty) body.innerHTML = '<div class="pf2-empty">' + emptyText(sc.type) + '</div>';
             else RENDER[sc.type](body, sc.data);
-            p.querySelector('[data-act="edit"]').addEventListener('click', function () { openPicker(i); });
+            var eb = p.querySelector('[data-act="edit"]');
+            if (eb) eb.addEventListener('click', function () { openPicker(i); });
             p.querySelector('[data-act="del"]').addEventListener('click', function () {
                 S.draft.splice(i, 1);
                 renderShowcases();
@@ -148,6 +151,17 @@
         }
     }
 
+    function emptyText(type) {
+        if (type.indexOf('steam_') === 0) {
+            var st = S.v2.steam || {};
+            if (!st.configured) return 'Steam no está configurado en la web.';
+            if (!st.linked) return 'Conecta tu Steam en Personalizar.';
+            if (st['private']) return 'Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.';
+            if (type === 'steam_rare') return 'Aún no hay logros que enseñar.';
+        }
+        return S.editing ? 'Pulsa "Editar" para elegir qué enseñar.' : 'Vacío: elige qué enseñar en Personalizar.';
+    }
+
     /* Arrastrar: la posición del ratón decide delante de qué expositor va. */
     document.addEventListener('dragover', function (e) {
         var box = $('pf2-showcases');
@@ -169,7 +183,36 @@
         renderShowcases();
     }
 
+    /* Horas y logros de Steam en la ventanita de un juego favorito. */
+    function steamRows(st) {
+        if (!st) return '';
+        if (!st.inSteam) return '<div class="pf2-tip-row" style="opacity:.8;">' + ic('steamIcon', 12, 3) + 'No está en su Steam</div>';
+        var pct = st.total ? Math.round(100 * st.achieved / st.total) : 0;
+        return '<div class="pf2-tip-row">' + ic('steamIcon', 12, 3) + 'Horas en Steam <b>' + st.hours.toLocaleString('es') + ' h</b></div>' +
+            (st.total ? '<div class="pf2-tip-row">' + ic('bestOfTheYearIcon', 12, 3) + 'Logros <b>' + st.achieved + ' / ' + st.total + '</b></div>' +
+                        '<div class="pf2-bar"><i style="width:' + pct + '%"></i></div>' : '');
+    }
+    /* Fila de logros (iconos) con su ventanita y el resumen de Steam. */
+    function renderAch(body, data, rare) {
+        var items = data.items || [], tot = data.totals || {};
+        body.innerHTML = '<div class="pf2-ach"><div class="pf2-ach-list"></div>' +
+            '<div class="pf2-ach-sum"><b>' + (tot.games || 0) + '</b> juegos en Steam<br><b>' + (tot.hours || 0).toLocaleString('es') + '</b> h jugadas</div></div>';
+        var list = body.querySelector('.pf2-ach-list');
+        items.forEach(function (a, i) {
+            var d = document.createElement('div');
+            d.className = 'pf2-ach-it' + (i % 8 >= 4 ? ' flip' : '');
+            d.innerHTML = '<img src="' + esc(a.icon) + '" alt="">' +
+                (rare && a.percent != null ? '<div>' + String(a.percent).replace('.', ',') + ' %</div>' : '') +
+                '<div class="pf2-mtip"><b>' + esc(a.name) + '</b>' + (a.desc ? '<br>' + esc(a.desc) : '') +
+                '<br><i>' + esc(a.game || '') + '</i>' +
+                (a.percent != null ? '<br>Lo tiene el ' + String(a.percent).replace('.', ',') + ' % de los jugadores' : '') + '</div>';
+            list.appendChild(d);
+        });
+    }
+
     var RENDER = {
+        steam_rare: function (body, data) { renderAch(body, data, true); },
+        steam_ach:  function (body, data) { renderAch(body, data, false); },
         games: function (body, data) {
             body.innerHTML = '<div class="pf2-games"></div>';
             var g = body.firstChild;
@@ -178,8 +221,7 @@
                 d.className = 'pf2-game' + (i % 4 >= 2 ? ' flip' : '');
                 d.innerHTML = (it.image ? '<img src="' + esc(it.image) + '" alt="" loading="lazy">' : '<div class="pf2-game-noimg">' + esc(it.title) + '</div>') +
                     '<div class="window pf2-tip"><div class="title-bar"><div class="title-bar-text">' + esc(it.title) + '</div></div>' +
-                    '<div class="window-body">' +
-                        /* Horas y logros de Steam: fase 2. */
+                    '<div class="window-body">' + steamRows(it.steam) +
                         '<div class="pf2-tip-row">Reseña ' + (it.stars != null ? '<b class="pf2-stars">' + stars(it.stars) + '</b>' : '<b>Sin reseña</b>') + '</div>' +
                     '</div></div>';
                 g.appendChild(d);
@@ -381,11 +423,62 @@
     /* ════════════════════ Personalizar ════════════════════ */
     function setEditing(on, fresh) {
         S.editing = !!on;
-        if (on && fresh) { S.v2.slots = fresh.slots; S.v2.maxSlots = fresh.maxSlots; S.draft = copy(fresh.showcases || []); }
+        if (on && fresh) { S.v2.slots = fresh.slots; S.v2.maxSlots = fresh.maxSlots; S.v2.steam = fresh.steam; S.draft = copy(fresh.showcases || []); }
         if (!on && S.v2) S.draft = copy(S.v2.showcases || []);
         closePicker();
         renderShowcases();
+        renderSteamCtl();
     }
+
+    /* "Conectar Steam" (solo en Personalizar, debajo de las redes): inicio
+       de sesión de Steam en una ventana (steam-login.php), que avisa al
+       terminar con postMessage 'steam-linked'. */
+    function renderSteamCtl() {
+        var old = $('pf2-steam-ctl');
+        if (old) old.remove();
+        if (!S.editing || !S.v2) return;
+        var head = $('pf2-head');
+        if (!head) return;
+        var st = S.v2.steam || {};
+        var box = document.createElement('div');
+        box.id = 'pf2-steam-ctl';
+        if (!st.configured) {
+            box.innerHTML = ic('steamIcon', 12, 3) + 'Steam no está configurado en la web';
+        } else if (st.linked) {
+            box.innerHTML = '<span>' + ic('steamIcon', 12, 3) + esc(st.persona || 'Steam vinculado') + '</span>' +
+                '<button type="button" class="button" data-a="off">Desconectar</button>' +
+                (st['private'] ? '<div class="pf2-steam-warn">Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.</div>' : '');
+            box.querySelector('[data-a="off"]').addEventListener('click', function () {
+                if (!confirm('¿Desconectar tu cuenta de Steam?')) return;
+                api('steam-disconnect', {}).then(function (d) {
+                    if (!d || !d.ok) { alert((d && d.error) || 'No se pudo desconectar'); return; }
+                    S.v2.steam = d.steam;
+                    if (window.__pf2SetSocial) window.__pf2SetSocial('steam', '');
+                    renderSteamCtl(); renderShowcases();
+                });
+            });
+        } else {
+            box.innerHTML = '<button type="button" class="button" data-a="on">' + ic('steamIcon', 12, 3) + 'Conectar Steam</button>';
+            box.querySelector('[data-a="on"]').addEventListener('click', function () {
+                var w = window.open('assets/profile/steam-login.php', 'steam-openid', 'width=820,height=720');
+                if (!w) location.href = 'assets/profile/steam-login.php';
+            });
+        }
+        head.appendChild(box);
+    }
+    window.addEventListener('message', function (e) {
+        var d = e && e.data;
+        if (!d || d.type !== 'steam-linked') return;
+        if (d.status !== 'ok') { alert('No se pudo vincular Steam: ' + (d.detail || '')); return; }
+        api('get-profile').then(function (p) {
+            if (!p || !p.v2 || !S.v2) return;
+            S.v2.steam = p.v2.steam;
+            if (window.__pf2SetSocial && p.v2.steam && p.v2.steam.steamId) {
+                window.__pf2SetSocial('steam', 'https://steamcommunity.com/profiles/' + p.v2.steam.steamId);
+            }
+            renderSteamCtl(); renderShowcases();
+        });
+    });
 
     function save() {
         if (!S.v2) return Promise.resolve({ ok: true });
@@ -401,9 +494,12 @@
         var used = S.draft.map(function (s) { return s.type; });
         var items = Object.keys(TYPES).filter(function (t) { return used.indexOf(t) < 0; }).map(function (t) {
             return { label: TYPES[t].label, fn: function () {
-                S.draft.push({ type: t, config: t === 'review' ? { category: '', title: '' } : (t === 'games' ? { titles: [] } : { ids: [] }), data: t === 'review' ? {} : [] });
+                var cfg = t === 'review' ? { category: '', title: '' } : t === 'games' ? { titles: [] }
+                        : t === 'steam_rare' ? {} : t === 'steam_ach' ? { items: [] } : { ids: [] };
+                S.draft.push({ type: t, config: cfg, data: (t === 'review' || t.indexOf('steam_') === 0) ? {} : [] });
                 renderShowcases();
-                openPicker(S.draft.length - 1);
+                /* Los raros se calculan solos al guardar. */
+                if (t !== 'steam_rare') openPicker(S.draft.length - 1);
             } };
         });
         if (!items.length) items = [{ label: 'Ya tienes todos los tipos', fn: function () {} }];
@@ -747,6 +843,81 @@
                     alert((e && e.message) || 'No se pudo guardar');
                 });
             });
+        },
+
+        /* Logros de Steam a elegir: hasta 8 desbloqueados, de los juegos que
+           quieras (eliges juego a la izquierda y sus logros a la derecha). */
+        steam_ach: function (sc) {
+            var st = S.v2.steam || {};
+            var body = pickerWindow('Logros de Steam');
+            if (!st.linked) { body.innerHTML = '<div class="pf2-empty">' + emptyText('steam_ach') + '</div>'; pickerFoot(body, '', function () {}); return; }
+            var sel = ((sc.data && sc.data.items) || []).slice();
+            body.innerHTML =
+                '<div style="font-size:11px;">Elegidos (máx. ' + MAX.steam_ach + '):</div>' +
+                '<div class="pf2-pick-list" data-r="sel" style="max-height:80px;"><div class="pf2-ach-list"></div></div>' +
+                '<div style="display:flex;gap:6px;min-height:0;">' +
+                    '<div style="width:190px;display:flex;flex-direction:column;gap:4px;"><input type="text" placeholder="Buscar juego…"><div class="pf2-pick-list" data-r="games" style="height:240px;"></div></div>' +
+                    '<div class="pf2-pick-list" data-r="ach" style="flex:1;height:270px;"><div class="pf2-empty">Elige un juego.</div></div>' +
+                '</div>';
+            var selL = body.querySelector('[data-r="sel"] .pf2-ach-list'), gamesL = body.querySelector('[data-r="games"]'), achL = body.querySelector('[data-r="ach"]');
+            var input = body.querySelector('input');
+            var games = [], info, curGame = null;
+            var key = function (a) { return a.appid + '|' + a.apiname; };
+            var paintSel = function () {
+                selL.innerHTML = sel.length ? sel.map(function (a, i) {
+                    return '<div class="pf2-ach-it" data-k="' + esc(key(a)) + '" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div>' + (i + 1) + '</div></div>';
+                }).join('') : '<div class="pf2-empty">Ninguno todavía.</div>';
+                selL.querySelectorAll('.pf2-ach-it').forEach(function (el) {
+                    el.addEventListener('click', function () { sel = sel.filter(function (a) { return key(a) !== el.dataset.k; }); paintSel(); if (curGame) showGame(curGame); });
+                });
+                if (info) info.textContent = sel.length + ' de ' + MAX.steam_ach;
+            };
+            var paintGames = function () {
+                var q = input.value.trim().toLowerCase();
+                var r = games.filter(function (g) { return !q || g.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 300);
+                gamesL.innerHTML = r.map(function (g) {
+                    return '<div class="pf2-pick-row' + (curGame && curGame.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span style="flex:1;">' + esc(g.name) + '</span><small>' + g.hours + ' h</small></div>';
+                }).join('') || '<div class="pf2-empty">Sin juegos.</div>';
+                gamesL.querySelectorAll('.pf2-pick-row').forEach(function (el) {
+                    el.addEventListener('click', function () { curGame = games.find(function (g) { return g.appid === +el.dataset.app; }); paintGames(); showGame(curGame); });
+                });
+            };
+            var showGame = function (g) {
+                achL.innerHTML = '<div class="pf2-empty">Cargando logros…</div>';
+                api('steam-game-achievements&appid=' + g.appid).then(function (d) {
+                    if (!curGame || curGame.appid !== g.appid) return;
+                    var list = (d && d.achievements) || [];
+                    if (!list.length) { achL.innerHTML = '<div class="pf2-empty">' + ((d && d.total) ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>'; return; }
+                    achL.innerHTML = list.map(function (a) {
+                        var on = sel.some(function (x) { return x.appid === g.appid && x.apiname === a.apiname; });
+                        return '<div class="pf2-pick-row' + (on ? ' on' : '') + '" data-api="' + esc(a.apiname) + '">' +
+                            '<img src="' + esc(a.icon) + '" alt=""><span style="flex:1;"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc) + '</small></span>' +
+                            (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+                    }).join('');
+                    achL.querySelectorAll('.pf2-pick-row').forEach(function (el) {
+                        el.addEventListener('click', function () {
+                            var a = list.find(function (x) { return x.apiname === el.dataset.api; });
+                            var k = g.appid + '|' + a.apiname;
+                            var at = sel.findIndex(function (x) { return key(x) === k; });
+                            if (at >= 0) sel.splice(at, 1);
+                            else if (sel.length < MAX.steam_ach) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
+                            paintSel(); showGame(g);
+                        });
+                    });
+                });
+            };
+            input.addEventListener('input', paintGames);
+            info = pickerFoot(body, '', function () {
+                sc.config = { items: sel.map(function (a) { return { appid: a.appid, apiname: a.apiname }; }) };
+                sc.data = { items: sel.slice(), totals: { games: st.games || 0, hours: st.hours || 0 } };
+            });
+            paintSel();
+            gamesL.innerHTML = '<div class="pf2-empty">Cargando tu biblioteca…</div>';
+            api('steam-games').then(function (d) {
+                if (!d || !d.ok) { gamesL.innerHTML = '<div class="pf2-empty"></div>'; gamesL.firstChild.textContent = (d && d.error) || 'No se pudo leer tu Steam'; return; }
+                games = d.games; paintGames();
+            });
+            input.focus();
         },
 
         /* Reseña destacada: una de mis reseñas (cualquier lista). */

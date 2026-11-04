@@ -2812,3 +2812,17 @@
    (.profile-post-img), pero sin su marco ni su altura máxima. */
 .pf2-shots .profile-post-img { margin: 0; padding: 0; background: none; box-shadow: none; }
 .pf2-shots .profile-post-img img { max-height: none; max-width: none; object-fit: cover; }
+
+/* ── Steam (fase 2) ── */
+#pf2-steam-ctl { position: absolute; right: 8px; top: 34px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end;
+    max-width: 240px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000; }
+#pf2-steam-ctl .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; text-shadow: none; }
+.pf2-steam-warn { width: 100%; text-align: right; color: #ffd34d; }
+.pf2-ach { display: flex; gap: 8px; align-items: flex-start; }
+.pf2-ach-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.pf2-ach-it { position: relative; width: 52px; text-align: center; font-size: 9px; }
+.pf2-ach-it img { width: 48px; height: 48px; display: block; margin: 0 auto 2px; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-ach-it .pf2-mtip { left: 0; right: auto; width: 180px; }
+.pf2-ach-it.flip .pf2-mtip { left: auto; right: 0; }
+.pf2-ach-it:hover .pf2-mtip { display: block; }
+.pf2-ach-sum { text-align: right; font-size: 10px; flex-shrink: 0; }

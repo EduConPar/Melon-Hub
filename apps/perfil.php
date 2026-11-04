@@ -7069,6 +7069,15 @@ var PROFILE_USERS = <?php
             row('country',  'país',                           'text',   50);
         }
 
+        /* Vincular / desvincular Steam (perfil-v2.js) cambia el enlace de
+           Steam en el servidor: también en lo que se está editando, o
+           Guardar lo volvería a pisar. */
+        window.__pf2SetSocial = function (key, val) {
+            if (!editing || !draft) return;
+            if (val) draft[key] = val; else delete draft[key];
+            buildSocialEditable(draft);
+        };
+
         function buildBioTextarea(d) {
             var bioEl = document.getElementById('profile-info-bio');
             if (!bioEl) return;

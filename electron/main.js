@@ -38,8 +38,10 @@ const APP_ORIGIN = new URL(START_URL).origin;
 
 /* Webs que pueden ocupar la ventana de la app además de la propia.
    Discord: el OAuth de vincular cuenta (discord-oauth/start.php) pasa
-   por discord.com y vuelve a discord-oauth/callback.php. */
-const INTERNAL_HOSTS = ['discord.com'];
+   por discord.com y vuelve a discord-oauth/callback.php. Steam: igual con
+   el inicio de sesión de Steam del perfil (profile/steam-login.php →
+   steamcommunity.com → profile/steam-callback.php). */
+const INTERNAL_HOSTS = ['discord.com', 'steamcommunity.com'];
 
 /* Orígenes a los que se conceden permisos (notificaciones, portapapeles,
    pantalla completa…). YouTube va dentro del reproductor. */

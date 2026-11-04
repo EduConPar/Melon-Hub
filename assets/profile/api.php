@@ -24,6 +24,9 @@
    GET   ?action=game-catalog&q=…
    GET   ?action=my-screenshots
    POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
+   POST  ?action=steam-disconnect      {}                    (Steam: steam.php)
+   GET   ?action=steam-games
+   GET   ?action=steam-game-achievements&appid=N
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
    POST  ?action=toggle-follow         { targetUser }
@@ -2354,6 +2357,47 @@ case 'gallery-screenshots': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     jsonResponse(['ok' => true, 'shots' => pf2_saveGalleryShots($pdo, $uid, (array)(jsonBody()['items'] ?? []))]);
+}
+
+/* ─── Steam (perfil nuevo, fase 2: steam.php) ─────────────────────
+   Vincular: steam-login.php (inicio de sesión de Steam). */
+case 'steam-disconnect': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    $pdo->prepare("UPDATE usuarios SET steam_id = NULL WHERE id = ?")->execute([$uid]);
+    /* El icono de Steam que puso el vincular, fuera (uno escrito a mano se queda). */
+    if ($sid !== '') {
+        $pdo->prepare("UPDATE profile SET steam = '' WHERE user_id = ? AND steam = ?")
+            ->execute([$uid, 'https://steamcommunity.com/profiles/' . $sid]);
+    }
+    jsonResponse(['ok' => true, 'steam' => steam_state($pdo, $uid)]);
+}
+
+/* Mi biblioteca de Steam (para elegir logros), de más a menos jugado. */
+case 'steam-games': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '') jsonError('No tienes Steam vinculado');
+    $owned = steam_owned($sid);
+    if ($owned === null) jsonError('Tu perfil de Steam (o "Detalles del juego") es privado');
+    usort($owned, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
+    jsonResponse(['ok' => true, 'games' => array_map(fn($g) => [
+        'appid' => $g['appid'], 'name' => $g['name'], 'hours' => round($g['minutes'] / 60, 1),
+    ], array_values($owned))]);
+}
+
+/* Logros que tengo de un juego (los desbloqueados). */
+case 'steam-game-achievements': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '') jsonError('No tienes Steam vinculado');
+    $app = (int)($_GET['appid'] ?? 0);
+    $all = steam_achievements($sid, $app);
+    jsonResponse(['ok' => true, 'total' => count($all),
+        'achievements' => array_values(array_filter($all, fn($a) => $a['achieved']))]);
 }
 
 

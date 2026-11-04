@@ -23,10 +23,12 @@
    ────────────────────────────────────────────────────────────────────── */
 
 require_once dirname(__DIR__) . '/cache-helpers.php';   /* portadas de álbum en caché (find-album) */
+require_once __DIR__ . '/steam.php';                     /* fase 2: horas y logros de Steam */
 
 const PF2_BASE_SLOTS   = 2;
 const PF2_SLOT_SLUGS   = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-const PF2_TYPES        = ['games', 'shots', 'review', 'music'];
+const PF2_TYPES        = ['games', 'shots', 'review', 'music', 'steam_rare', 'steam_ach'];
+const PF2_MAX_STEAM_ACH = 8;
 const PF2_MAX_GAMES    = 4;
 const PF2_MAX_SHOTS    = 3;
 const PF2_MAX_MUSIC    = 5;
@@ -302,6 +304,16 @@ function pf2_cleanConfig(string $type, $cfg): array {
             return ['category' => $cat, 'title' => mb_substr(trim((string)($cfg['title'] ?? '')), 0, 200)];
         case 'music':
             return ['ids' => array_slice(array_values(array_unique(array_map('intval', (array)($cfg['ids'] ?? [])))), 0, PF2_MAX_MUSIC)];
+        case 'steam_rare':
+            return [];
+        case 'steam_ach':
+            $items = [];
+            foreach ((array)($cfg['items'] ?? []) as $it) {
+                $app = (int)($it['appid'] ?? 0);
+                $api = mb_substr(trim((string)($it['apiname'] ?? '')), 0, 120);
+                if ($app > 0 && $api !== '') $items[$app . '|' . $api] = ['appid' => $app, 'apiname' => $api];
+            }
+            return ['items' => array_slice(array_values($items), 0, PF2_MAX_STEAM_ACH)];
     }
     return [];
 }
@@ -346,7 +358,13 @@ function pf2_saveShowcases(PDO $pdo, int $uid, array $list): array {
 /* Expositores con sus datos ya listos para pintar. */
 function pf2_showcases(PDO $pdo, int $uid): array {
     $out = [];
-    foreach (pf2_rawShowcases($pdo, $uid) as $s) {
+    $raw = pf2_rawShowcases($pdo, $uid);
+    /* Steam (fase 2): solo si está vinculado y hay clave. */
+    $sid = steam_key() !== '' ? steam_idOf($pdo, $uid) : '';
+    $owned = $sid !== '' ? steam_owned($sid) : null;
+    $favTitles = [];
+    foreach ($raw as $s) if ($s['type'] === 'games') $favTitles = $s['config']['titles'];
+    foreach ($raw as $s) {
         $cfg = $s['config'];
         $data = [];
         switch ($s['type']) {
@@ -357,6 +375,8 @@ function pf2_showcases(PDO $pdo, int $uid): array {
                         'title' => $t,
                         'image' => pf2_gameImage($pdo, $uid, $t),
                         'stars' => $rev ? (float)$rev['stars'] : null,
+                        /* null = sin Steam; inSteam false = no está en su biblioteca. */
+                        'steam' => $sid !== '' ? steam_gameStats($sid, $owned, $t) : null,
                     ];
                 }
                 break;
@@ -414,6 +434,12 @@ function pf2_showcases(PDO $pdo, int $uid): array {
                     }
                 }
                 break;
+            case 'steam_rare':
+                $data = $sid !== '' ? ['items' => steam_rarest($sid, $owned, $favTitles), 'totals' => steam_totals($owned)] : [];
+                break;
+            case 'steam_ach':
+                $data = $sid !== '' ? ['items' => steam_picked($sid, $owned, $cfg['items']), 'totals' => steam_totals($owned)] : [];
+                break;
         }
         $out[] = ['type' => $s['type'], 'config' => $cfg, 'data' => $data];
     }
@@ -470,5 +496,6 @@ function pf2_profile(PDO $pdo, int $uid, int $viewerUid): array {
         'comments'  => pf2_comments($pdo, $uid, $viewerUid),
         'stats'     => pf2_stats($pdo, $uid),
         'friends'   => pf2_friends($pdo, $uid),
+        'steam'     => steam_state($pdo, $uid),
     ];
 }
