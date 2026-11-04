@@ -953,6 +953,11 @@ if ($_perfilStandalone) {
 </div>
 
 <!-- Perfil nuevo (expositores, comentarios, columna lateral): window.PerfilV2. -->
+<script>
+/* Cliente de Google de la Galería: las capturas del perfil salen de su
+   Google Drive (perfil-v2.js). */
+window.__GOOGLE_CLIENT_ID = <?php echo json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : ''); ?>;
+</script>
 <script src="assets/js/perfil-v2.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/perfil-v2.js'); ?>"></script>
 <script>
 /* =========================

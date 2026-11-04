@@ -100,6 +100,22 @@ case 'state': {
     exit;
 }
 
+/* SOLO DEV (MELON_DEV_BUILD, assets/dev-build.php): darse puntos para
+   probar la tienda. En main la constante vale false y esto responde 403
+   aunque alguien llame a la acción a mano. */
+case 'dev-grant': {
+    require_once dirname(__DIR__) . '/dev-build.php';
+    if (!defined('MELON_DEV_BUILD') || !MELON_DEV_BUILD) jsonError('Solo en la build de desarrollo', 403);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $amount = (int)(getBody()['amount'] ?? 0);
+    if ($amount < 1 || $amount > 100000) jsonError('Cantidad entre 1 y 100000');
+    $pdo->prepare('UPDATE usuarios SET autismo = autismo + ? WHERE id = ?')->execute([$amount, $userId]);
+    $st = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ?');
+    $st->execute([$userId]);
+    echo json_encode(['ok' => true, 'autismo' => (int)$st->fetchColumn()]);
+    exit;
+}
+
 /* Endpoint ligero para polling — devuelve solo el balance actual. Lo usa
    la tienda para refrescar el widget en vivo sin pedir items + compras +
    discord_role_name cada 15 s. */

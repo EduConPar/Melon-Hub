@@ -12,10 +12,12 @@
    - Expositores (profile_showcases): cada usuario elige cuáles y en qué
      orden. Huecos: 2 de serie + los comprados en la tienda (hueco 3, 4
      y 5, en orden). Tipos: games, shots, review, music.
-   - Capturas (profile_screenshots): subidas por el usuario. Se guardan en
-     uploads/screenshots/ y una copia en la BD (como las fotos de perfil:
-     un despliegue de Hostinger ya vació uploads/ alguna vez);
-     screenshot.php las sirve y rehace el archivo si falta.
+   - Capturas (profile_screenshots): imágenes de la Galería del usuario
+     (su Google Drive). El navegador las hace públicas en Drive y aquí solo
+     se guarda el enlace (drive_id + url), su pie de foto y el juego. Las
+     primeras versiones guardaban la imagen subida (file/mime/data, en
+     uploads/screenshots/ con copia en la BD); screenshot.php sigue
+     sirviendo esas.
    - Medallas (bronce / plata / oro) y nivel con lo que ya se guarda:
      nivel = 1 + XP/100; bronce 100 XP, plata +200, oro +300.
    ────────────────────────────────────────────────────────────────────── */
@@ -70,15 +72,25 @@ function pf2_ensure(PDO $pdo): void {
         $pdo->exec("CREATE TABLE IF NOT EXISTS profile_screenshots (
             id          INT AUTO_INCREMENT PRIMARY KEY,
             user_id     INT NOT NULL,
-            file        VARCHAR(80) NOT NULL,
-            mime        VARCHAR(30) NOT NULL,
+            file        VARCHAR(80) NULL,
+            mime        VARCHAR(30) NULL,
             data        MEDIUMBLOB NULL,
+            drive_id    VARCHAR(80) NULL,
+            url         VARCHAR(500) NULL,
             caption     VARCHAR(200) NOT NULL DEFAULT '',
             game_title  VARCHAR(200) NOT NULL DEFAULT '',
             created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_user (user_id, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
+    /* Tablas de la primera versión (capturas subidas): columnas de Drive. */
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM profile_screenshots LIKE 'drive_id'")->fetch()) {
+            $pdo->exec("ALTER TABLE profile_screenshots
+                          MODIFY file VARCHAR(80) NULL, MODIFY mime VARCHAR(30) NULL,
+                          ADD COLUMN drive_id VARCHAR(80) NULL, ADD COLUMN url VARCHAR(500) NULL");
+        }
+    } catch (Throwable $e) { /* ya estaba */ }
     pf2_ensureStoreItems($pdo);
 }
 
@@ -351,13 +363,13 @@ function pf2_showcases(PDO $pdo, int $uid): array {
             case 'shots':
                 if ($cfg['ids']) {
                     $ph = implode(',', array_fill(0, count($cfg['ids']), '?'));
-                    $st = $pdo->prepare("SELECT id, caption, game_title FROM profile_screenshots WHERE user_id = ? AND id IN ($ph)");
+                    $st = $pdo->prepare("SELECT id, caption, game_title, url FROM profile_screenshots WHERE user_id = ? AND id IN ($ph)");
                     $st->execute(array_merge([$uid], $cfg['ids']));
                     $byId = [];
                     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $byId[(int)$r['id']] = $r;
                     foreach ($cfg['ids'] as $id) {
                         if (!isset($byId[$id])) continue;
-                        $data[] = ['id' => $id, 'url' => 'assets/profile/screenshot.php?id=' . $id,
+                        $data[] = ['id' => $id, 'url' => pf2_shotUrl($byId[$id]),
                                    'caption' => $byId[$id]['caption'], 'game' => $byId[$id]['game_title']];
                     }
                 }
@@ -404,6 +416,34 @@ function pf2_showcases(PDO $pdo, int $uid): array {
                 break;
         }
         $out[] = ['type' => $s['type'], 'config' => $cfg, 'data' => $data];
+    }
+    return $out;
+}
+
+/* URL de una captura: la de Drive (Galería) o, si es de las subidas de
+   la primera versión, screenshot.php. */
+function pf2_shotUrl(array $r): string {
+    return !empty($r['url']) ? (string)$r['url'] : 'assets/profile/screenshot.php?id=' . (int)$r['id'];
+}
+
+/* Registra (o actualiza el pie y el juego de) capturas de la Galería, en
+   el orden recibido. Devuelve las capturas con su id. */
+function pf2_saveGalleryShots(PDO $pdo, int $uid, array $items): array {
+    $out = [];
+    $sel = $pdo->prepare("SELECT id FROM profile_screenshots WHERE user_id = ? AND drive_id = ? LIMIT 1");
+    $upd = $pdo->prepare("UPDATE profile_screenshots SET caption = ?, game_title = ? WHERE id = ?");
+    $ins = $pdo->prepare("INSERT INTO profile_screenshots (user_id, drive_id, url, caption, game_title) VALUES (?, ?, ?, ?, ?)");
+    foreach (array_slice($items, 0, 20) as $it) {
+        $drive = (string)($it['driveId'] ?? '');
+        if (!preg_match('/^[A-Za-z0-9_-]{10,80}$/', $drive)) continue;
+        $caption = mb_substr(trim((string)($it['caption'] ?? '')), 0, 200);
+        $game    = mb_substr(trim((string)($it['game'] ?? '')), 0, 200);
+        $url = 'https://drive.google.com/thumbnail?id=' . $drive . '&sz=w1920';
+        $sel->execute([$uid, $drive]);
+        $id = (int)$sel->fetchColumn();
+        if ($id) $upd->execute([$caption, $game, $id]);
+        else { $ins->execute([$uid, $drive, $url, $caption, $game]); $id = (int)$pdo->lastInsertId(); }
+        $out[] = ['id' => $id, 'driveId' => $drive, 'url' => $url, 'caption' => $caption, 'game' => $game];
     }
     return $out;
 }

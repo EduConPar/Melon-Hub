@@ -5,6 +5,7 @@ header('Expires: 0');
 
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
+require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: cajita "DEV" de darse puntos */
 require_once dirname(__DIR__) . '/assets/themes/theme-helpers.php';
 
 $userKey = $_SESSION['user'] ?? null;
@@ -535,6 +536,14 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                 <span id="tienda-balance-v">—</span>
             </div>
             <div id="tienda-wallet-unit">puntos de Autismo</div>
+            <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
+            <!-- Solo en la build de dev: darse puntos para probar la tienda. -->
+            <div id="tienda-dev" style="margin-top:6px;padding:4px;border:1px dashed var(--error-text,#c00);font-size:10px;display:flex;gap:4px;align-items:center;">
+                <b style="color:var(--error-text,#c00);">DEV</b>
+                <input type="number" id="tienda-dev-amount" value="1000" min="1" max="100000" style="width:64px;">
+                <button type="button" class="button" id="tienda-dev-grant" style="min-width:0;padding:0 6px;font-size:10px;">+ Puntos</button>
+            </div>
+            <?php endif; ?>
         </div>
         <div id="tienda-discord">
             <div id="tienda-discord-label">Discord</div>
@@ -624,6 +633,25 @@ async function api(action, body){
 }
 
 var _balance = 0, _items = [], _owned = {}, _activeCat = 'discord';
+
+/* SOLO DEV: darse puntos para probar (assets/tienda/api.php dev-grant). */
+(function(){
+    var b = document.getElementById('tienda-dev-grant');
+    if (!b) return;
+    b.addEventListener('click', async function(){
+        var n = parseInt(document.getElementById('tienda-dev-amount').value, 10) || 0;
+        if (n < 1) return;
+        b.disabled = true;
+        try {
+            var r = await api('dev-grant', { amount: n });
+            if (r.error) throw new Error(r.error);
+            _balance = r.autismo|0;
+            renderBalance();
+            setStatus('DEV: +' + n + ' puntos', 'ok');
+        } catch (e) { setStatus('Error: ' + e.message, 'error'); }
+        b.disabled = false;
+    });
+})();
 
 async function loadState(){
     setStatus('Cargando…');

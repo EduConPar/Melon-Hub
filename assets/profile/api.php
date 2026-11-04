@@ -23,8 +23,7 @@
    POST  ?action=save-showcases        { showcases: [{type, config}] }
    GET   ?action=game-catalog&q=…
    GET   ?action=my-screenshots
-   POST  ?action=upload-screenshot     multipart { file, caption, game }
-   POST  ?action=delete-screenshot     { id }
+   POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
    POST  ?action=toggle-follow         { targetUser }
@@ -2339,67 +2338,24 @@ case 'my-screenshots': {
     require_once __DIR__ . '/perfil2.php';
     pf2_ensure($pdo);
     $uid = pf_uid($pdo, $userKey);
-    $st = $pdo->prepare("SELECT id, caption, game_title FROM profile_screenshots WHERE user_id = ? ORDER BY created_at DESC, id DESC");
+    $st = $pdo->prepare("SELECT id, caption, game_title, drive_id, url FROM profile_screenshots WHERE user_id = ? ORDER BY created_at DESC, id DESC");
     $st->execute([$uid]);
     jsonResponse(['ok' => true, 'shots' => array_map(fn($r) => [
-        'id' => (int)$r['id'], 'url' => 'assets/profile/screenshot.php?id=' . (int)$r['id'],
+        'id' => (int)$r['id'], 'url' => pf2_shotUrl($r), 'driveId' => (string)($r['drive_id'] ?? ''),
         'caption' => $r['caption'], 'game' => $r['game_title'],
     ], $st->fetchAll(PDO::FETCH_ASSOC))]);
 }
 
-/* Subir una captura (multipart: file, caption, game). Se reduce a 1920 px
-   de ancho como mucho (si el servidor tiene GD) y se guarda en
-   uploads/screenshots/ con copia en la BD. */
-case 'upload-screenshot': {
+/* Capturas elegidas de la Galería (Google Drive): el navegador ya las ha
+   hecho públicas; aquí se guardan el enlace, el pie y el juego. */
+case 'gallery-screenshots': {
     require_once __DIR__ . '/perfil2.php';
     pf2_ensure($pdo);
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
-    $f = $_FILES['file'] ?? null;
-    if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) jsonError('No llegó la imagen');
-    if ($f['size'] > 10 * 1024 * 1024) jsonError('La imagen pasa de 10 MB');
-    $info = @getimagesize($f['tmp_name']);
-    $mimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
-    if (!$info || !isset($mimes[$info['mime']])) jsonError('Formato no válido (JPG, PNG, WEBP o GIF)');
-    $mime = $info['mime'];
-    $bin  = file_get_contents($f['tmp_name']);
-    if ($mime !== 'image/gif' && function_exists('imagecreatefromstring') && $info[0] > 1920) {
-        $src = @imagecreatefromstring($bin);
-        if ($src) {
-            $w = 1920; $h = (int)round($info[1] * 1920 / $info[0]);
-            $dst = imagecreatetruecolor($w, $h);
-            imagecopyresampled($dst, $src, 0, 0, 0, 0, $w, $h, $info[0], $info[1]);
-            ob_start(); imagejpeg($dst, null, 86); $bin = ob_get_clean();
-            $mime = 'image/jpeg';
-        }
-    }
-    if (strlen($bin) > 6 * 1024 * 1024) jsonError('La imagen es demasiado grande');
-    $file = $uid . '_' . bin2hex(random_bytes(6)) . '.' . $mimes[$mime];
-    $dir = dirname(__DIR__, 2) . '/uploads/screenshots';
-    if (!is_dir($dir)) @mkdir($dir, 0775, true);
-    @file_put_contents($dir . '/' . $file, $bin);
-    $pdo->prepare("INSERT INTO profile_screenshots (user_id, file, mime, data, caption, game_title) VALUES (?, ?, ?, ?, ?, ?)")
-        ->execute([$uid, $file, $mime, $bin,
-                   mb_substr(trim((string)($_POST['caption'] ?? '')), 0, 200),
-                   mb_substr(trim((string)($_POST['game'] ?? '')), 0, 200)]);
-    $id = (int)$pdo->lastInsertId();
-    jsonResponse(['ok' => true, 'shot' => ['id' => $id, 'url' => 'assets/profile/screenshot.php?id=' . $id,
-        'caption' => mb_substr(trim((string)($_POST['caption'] ?? '')), 0, 200), 'game' => mb_substr(trim((string)($_POST['game'] ?? '')), 0, 200)]]);
+    jsonResponse(['ok' => true, 'shots' => pf2_saveGalleryShots($pdo, $uid, (array)(jsonBody()['items'] ?? []))]);
 }
 
-case 'delete-screenshot': {
-    require_once __DIR__ . '/perfil2.php';
-    pf2_ensure($pdo);
-    $uid = pf_uid($pdo, $userKey);
-    $id  = (int)(jsonBody()['id'] ?? 0);
-    $st = $pdo->prepare("SELECT file FROM profile_screenshots WHERE id = ? AND user_id = ?");
-    $st->execute([$id, $uid]);
-    $file = $st->fetchColumn();
-    if (!$file) jsonError('Captura no encontrada', 404);
-    $pdo->prepare("DELETE FROM profile_screenshots WHERE id = ?")->execute([$id]);
-    @unlink(dirname(__DIR__, 2) . '/uploads/screenshots/' . basename($file));
-    jsonResponse(['ok' => true]);
-}
 
 /* ─── Capítulos de series (compartidos por título) ─────────────── */
 

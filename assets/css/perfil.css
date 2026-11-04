@@ -2633,7 +2633,9 @@
    comentarios del muro. Lo pinta assets/js/perfil-v2.js. Todo con las
    variables del tema; sin emojis de interfaz (iconos del pack).
    ════════════════════════════════════════════════════════════════════ */
-#profile-view-default { background: var(--win-bg); }
+/* Todo el texto del perfil nuevo con el color del tema (si no, hereda el
+   casi negro de 98.css y en temas oscuros no se ve). */
+#profile-view-default { background: var(--win-bg); color: var(--text); }
 #pf2-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .pf2-ic { image-rendering: pixelated; object-fit: contain; }
 
@@ -2669,9 +2671,15 @@
 #pf2-head #profile-info-bio:empty { display: none; }
 #pf2-head .pinfo-bio-text { font-size: 11px !important; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 #pf2-head #profile-info-bio textarea { color: var(--input-text); }
-/* Redes en fila, abajo a la derecha (en columna estiraban la cabecera y
-   se metían debajo de los botones). */
-#pf2-head #profile-info-links { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; align-self: flex-end; align-items: center; justify-content: flex-end; grid-template-columns: none; flex-shrink: 0; }
+/* Redes: todas en un recuadro Win98 cuadrado, cuadrícula 2×2, abajo a
+   la derecha (en columna estiraban la cabecera y se metían debajo de los
+   botones). Sin redes no se pinta (al editar queda el "+"). */
+#pf2-head #profile-info-links { display: grid; grid-template-columns: repeat(2, 24px); grid-template-rows: repeat(2, 24px); gap: 4px; padding: 5px;
+    align-self: flex-end; place-items: center; flex-shrink: 0; background: var(--win-bg);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
+#pf2-head #profile-info-links:empty { display: none; }
+#pf2-head #profile-info-links .pinfo-social img { width: 20px !important; height: 20px !important; }
+#pf2-head #profile-info-links .pinfo-social-add { width: 22px; height: 22px; min-width: 0; min-height: 0; padding: 0; }
 .pf2-head-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; }
 .pf2-head-btns .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; }
 .pf2-head-btns #profile-notif-btn { width: 22px; height: 20px; }
@@ -2686,7 +2694,7 @@
 .pf2-panel-head { gap: 6px; padding: 3px 6px; }
 .pf2-panel-head .pf2-sub { margin-left: auto; font-weight: normal; font-size: 10px; opacity: .85; letter-spacing: 0; }
 .pf2-panel-body { padding: 6px; }
-.pf2-empty { font-size: 11px; color: var(--text-faint, #808080); padding: 6px; text-align: center; }
+.pf2-empty { font-size: 11px; color: var(--text); padding: 6px; text-align: center; }
 
 /* Juegos favoritos + ventanita al pasar el ratón. */
 .pf2-games { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -2726,7 +2734,8 @@
 .pf2-album div { font-size: 9px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf2-album:hover img { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pf2-menu { position: fixed; z-index: 3000; display: none; padding: 2px; min-width: 140px; }
-.pf2-menu div { padding: 4px 18px 4px 10px; font-size: 11px; cursor: default; }
+.pf2-menu { color: var(--text); }   /* si no, hereda el casi negro de 98.css */
+.pf2-menu div { padding: 4px 18px 4px 10px; font-size: 11px; cursor: default; color: var(--text); }
 .pf2-menu div:hover { background: var(--accent); color: var(--accent-text); }
 
 /* Comentarios del muro. */
@@ -2772,11 +2781,14 @@
 .pf2-hbtn { min-width: 0 !important; height: 15px !important; min-height: 0 !important; padding: 0 5px !important; font-size: 9px; align-items: center; justify-content: center; margin-left: 4px; }
 .pf2-slot { border: 1px dashed var(--border); padding: 10px; text-align: center; font-size: 11px; color: var(--text); }
 .pf2-slot.add { cursor: pointer; }
-.pf2-slot.add:hover { background: var(--input-bg, #fff); }
+/* Como los menús del reproductor (.pl-menu-item): acento al pasar el
+   ratón (con el fondo de los campos, el texto claro de algunos temas
+   no se veía). */
+.pf2-slot.add:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .pf2-slot b { color: var(--text); }
 
 /* Ventanas de elegir contenido (selectores). */
-.pf2-picker { position: fixed; z-index: 2500; width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 60px); display: flex; flex-direction: column; }
+.pf2-picker { color: var(--text); position: fixed; z-index: 2500; width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 60px); display: flex; flex-direction: column; }
 .pf2-picker .window-body { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; flex: 1; }
 .pf2-pick-list { overflow-y: auto; max-height: 340px; background: var(--input-bg, #fff); padding: 4px;
     box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1), inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2); }

@@ -3,8 +3,9 @@
    ──────────────────────────────────────────────────────────────────────
    Pinta lo que devuelve `v2` en get-profile / view-user
    (assets/profile/perfil2.php):
-     - expositores (Juegos favoritos, Capturas, Reseña destacada, Música
-       favorita) en el orden que elige el usuario;
+     - expositores (Juegos favoritos, Capturas —de la Galería, en Google
+       Drive—, Reseña destacada, Música favorita) en el orden que elige el
+       usuario;
      - comentarios del muro (sustituyen a los posts);
      - columna lateral: nivel, medallas, amigos y actividad;
      - estado (en línea / ausente / no molestar / desconectado).
@@ -450,6 +451,115 @@
         PICK[sc.type](sc);
     }
 
+    /* ── Google Drive de la Galería ──
+       Mismo cliente, permiso (drive.file), carpeta y token en localStorage
+       que apps/galeria.php: si la Galería ya está conectada, aquí también,
+       y conectar desde aquí la deja conectada allí. */
+    var GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+    var GDRIVE_FOLDER = 'Scrapbook Melon - Galería';
+    var DRIVE_TOKEN_KEY = 'galeria_drive_token', DRIVE_EVER_AUTH_KEY = 'galeria_drive_ever_auth';
+    var _thumbs = {};
+    function driveToken() {
+        try {
+            var t = JSON.parse(localStorage.getItem(DRIVE_TOKEN_KEY) || 'null');
+            if (t && t.expires_at > Date.now() + 30000) return t;
+        } catch (_) {}
+        return null;
+    }
+    function loadGis(cb) {
+        var ready = function () { return window.google && google.accounts && google.accounts.oauth2; };
+        if (ready()) { cb(); return; }
+        if (!document.querySelector('script[data-pf2-gis]')) {
+            var sc = document.createElement('script');
+            sc.src = 'https://accounts.google.com/gsi/client';
+            sc.async = true;
+            sc.setAttribute('data-pf2-gis', '1');
+            document.head.appendChild(sc);
+        }
+        var n = 0, iv = setInterval(function () {
+            if (ready()) { clearInterval(iv); cb(); }
+            else if (++n > 80) { clearInterval(iv); cb(new Error('no se pudo cargar el inicio de sesión de Google')); }
+        }, 250);
+    }
+    function connectDrive(cb) {
+        loadGis(function (err) {
+            if (err) { cb(err); return; }
+            if (!window.__GOOGLE_CLIENT_ID) { cb(new Error('Google no está configurado en la web')); return; }
+            var c = google.accounts.oauth2.initTokenClient({
+                client_id: window.__GOOGLE_CLIENT_ID,
+                scope: GDRIVE_SCOPE,
+                callback: function (resp) {
+                    if (resp.error) { cb(new Error(resp.error)); return; }
+                    var t = { access_token: resp.access_token, expires_at: Date.now() + resp.expires_in * 1000 - 60000 };
+                    try { localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify(t)); localStorage.setItem(DRIVE_EVER_AUTH_KEY, '1'); } catch (_) {}
+                    cb(null, t);
+                },
+            });
+            c.requestAccessToken({ prompt: '' });
+        });
+    }
+    function driveFetch(url, opts) {
+        var t = driveToken();
+        if (!t) return Promise.reject({ auth: true });
+        opts = opts || {};
+        opts.headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + t.access_token });
+        return fetch(url, opts).then(function (r) {
+            if (r.status === 401) { try { localStorage.removeItem(DRIVE_TOKEN_KEY); } catch (_) {} throw { auth: true }; }
+            if (!r.ok) return r.text().then(function (x) { throw new Error('Drive ' + r.status + ': ' + x.slice(0, 120)); });
+            return r;
+        });
+    }
+    /* Imágenes de la carpeta de la Galería (sin los WIP .psd/.kra…). */
+    function listGallery() {
+        var q = "mimeType='application/vnd.google-apps.folder' and name='" + GDRIVE_FOLDER.replace(/'/g, "\\'") + "' and trashed=false";
+        return driveFetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)&spaces=drive')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.files || !d.files.length) return [];
+                var q2 = "'" + d.files[0].id + "' in parents and trashed=false and mimeType contains 'image/'";
+                return driveFetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q2) +
+                    '&fields=files(id,name,mimeType,thumbnailLink)&orderBy=modifiedTime desc&pageSize=200')
+                    .then(function (r) { return r.json(); })
+                    .then(function (x) { return (x.files || []).filter(function (f) { return !/\.(psd|kra|ora|csp)$/i.test(f.name); }); });
+            });
+    }
+    /* Miniatura: thumbnailLink (sin referrer, como la Galería) y, si no
+       carga, la imagen descargada con el permiso de Drive. */
+    function driveThumb(f, ph) {
+        var put = function (url) {
+            var img = new Image();
+            img.alt = '';
+            img.referrerPolicy = 'no-referrer';
+            img.src = url;
+            img.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;display:block;';
+            if (ph.parentNode) ph.parentNode.replaceChild(img, ph);
+        };
+        if (_thumbs[f.id]) { put(_thumbs[f.id]); return; }
+        var blob = function () {
+            driveFetch('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media')
+                .then(function (r) { return r.blob(); })
+                .then(function (b) { _thumbs[f.id] = URL.createObjectURL(b); put(_thumbs[f.id]); })
+                .catch(function () {});
+        };
+        if (!f.thumbnailLink) { blob(); return; }
+        var probe = new Image();
+        probe.referrerPolicy = 'no-referrer';
+        probe.onload = function () { _thumbs[f.id] = f.thumbnailLink; put(f.thumbnailLink); };
+        probe.onerror = blob;
+        probe.src = f.thumbnailLink;
+    }
+    /* "Cualquiera con el enlace puede ver" (si ya lo era, Drive da error de
+       duplicado y no pasa nada), como al publicar en la Galería. */
+    function makePublic(id) {
+        return driveFetch('https://www.googleapis.com/drive/v3/files/' + id + '/permissions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+        }).catch(function (e) {
+            if (e && e.auth) throw new Error('Tu conexión con Google Drive ha caducado: vuelve a abrir Capturas.');
+            if (!/duplicate|alreadyExists|exists/i.test((e && e.message) || '')) throw e;
+        });
+    }
+
     var PICK = {
         /* Juegos: del catálogo de juegos de las reseñas/listas; "Crear juego"
            abre el mismo diálogo que añadir un juego pendiente. */
@@ -534,75 +644,109 @@
             input.focus();
         },
 
-        /* Capturas: subir, borrar y elegir hasta 3 (la 1.ª sale grande). */
+        /* Capturas: de la Galería (Google Drive). Sin Drive conectado, pide
+           conectarlo. Hasta 3 (la 1.ª sale grande), con pie y juego. Al
+           aceptar se hacen públicas en Drive (como "Publicar" de la
+           Galería) y el servidor guarda el enlace. */
         shots: function (sc) {
-            var sel = (sc.config.ids || []).slice();
             var body = pickerWindow('Capturas');
             body.innerHTML =
-                '<div class="pf2-upload"><input type="text" data-f="caption" maxlength="200" placeholder="Pie de foto (opcional)">' +
-                    '<input type="text" data-f="game" maxlength="200" placeholder="Juego (opcional)">' +
-                    '<button type="button" class="button" data-a="up">Subir captura…</button></div>' +
-                '<input type="file" accept="image/*" style="display:none;">' +
-                '<div style="font-size:11px;">Elige hasta ' + MAX.shots + ' (la primera sale grande):</div>' +
-                '<div class="pf2-pick-list"><div class="pf2-pick-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div></div>';
-            var grid = body.querySelector('.pf2-pick-grid'), file = body.querySelector('input[type="file"]');
-            var info;
-            var paint = function () {
-                var shots = S.myShots || [];
-                grid.innerHTML = shots.length ? shots.map(function (s) {
-                    var n = sel.indexOf(s.id) + 1;
-                    return '<div class="pf2-pick wide' + (n ? ' on' : '') + '" data-id="' + s.id + '"><img src="' + esc(s.url) + '" alt="" loading="lazy">' +
-                        (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
-                        '<button type="button" class="button pf2-pick-x" title="Borrar captura">✕</button>' +
-                        '<div class="pf2-pick-t">' + esc(s.caption || s.game || 'Sin pie de foto') + '</div></div>';
-                }).join('') : '<div class="pf2-empty">Aún no has subido capturas.</div>';
-                grid.querySelectorAll('.pf2-pick').forEach(function (el) {
-                    var id = +el.dataset.id;
-                    el.addEventListener('click', function () {
-                        var k = sel.indexOf(id);
-                        if (k >= 0) sel.splice(k, 1); else if (sel.length < MAX.shots) sel.push(id);
-                        paint();
-                    });
-                    el.querySelector('.pf2-pick-x').addEventListener('click', function (e) {
-                        e.stopPropagation();
-                        if (!confirm('¿Borrar esta captura?')) return;
-                        api('delete-screenshot', { id: id }).then(function (r) {
-                            if (!r || !r.ok) { alert((r && r.error) || 'No se pudo borrar'); return; }
-                            S.myShots = S.myShots.filter(function (s) { return s.id !== id; });
-                            var k = sel.indexOf(id); if (k >= 0) sel.splice(k, 1);
-                            paint();
-                        });
+                '<div class="pf2-drive-msg" style="font-size:11px;"></div>' +
+                '<div class="pf2-pick-list" style="max-height:230px;"><div class="pf2-pick-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));"></div></div>' +
+                '<div class="pf2-shot-meta" style="display:flex;flex-direction:column;gap:3px;"></div>' +
+                '<div class="pf2-pick-foot"><span class="pf2-pick-info"></span><button type="button" class="button" data-a="ok">Aceptar</button><button type="button" class="button" data-a="no">Cancelar</button></div>';
+            var msg = body.querySelector('.pf2-drive-msg'), grid = body.querySelector('.pf2-pick-grid');
+            var metaBox = body.querySelector('.pf2-shot-meta'), info = body.querySelector('.pf2-pick-info');
+            var okBtn = body.querySelector('[data-a="ok"]');
+            body.querySelector('[data-a="no"]').addEventListener('click', closePicker);
+            var files = [], sel = [], meta = {};     /* meta: driveId → { caption, game } */
+
+            /* Lo que ya estaba elegido (y sus pies) sale de mis capturas. */
+            var mine = S.myShots ? Promise.resolve(S.myShots) : api('my-screenshots').then(function (d) { return (S.myShots = (d && d.shots) || []); });
+            mine.then(function (shots) {
+                shots.forEach(function (x) { if (x.driveId) meta[x.driveId] = { caption: x.caption || '', game: x.game || '' }; });
+                (sc.config.ids || []).forEach(function (id) {
+                    var x = shots.find(function (y) { return y.id === id; });
+                    if (x && x.driveId) sel.push(x.driveId);
+                });
+                start();
+            });
+
+            function start() {
+                if (!driveToken()) { askConnect(); return; }
+                msg.textContent = 'Cargando tu Galería…';
+                listGallery().then(function (list) {
+                    files = list;
+                    msg.textContent = files.length ? 'Elige hasta ' + MAX.shots + ' imágenes de tu Galería (la primera sale grande):'
+                                                   : 'Tu Galería está vacía: sube imágenes desde la app Galería.';
+                    paint();
+                }).catch(function (e) {
+                    if (e && e.auth) { askConnect(); return; }
+                    msg.textContent = 'No se pudo leer tu Galería: ' + ((e && e.message) || 'error');
+                });
+            }
+            function askConnect() {
+                msg.innerHTML = 'Para elegir capturas de tu Galería tienes que conectar tu Google Drive (el mismo que usa la Galería). ' +
+                    '<button type="button" class="button" data-a="drive" style="margin-left:4px;">Conectar Google Drive</button>';
+                grid.innerHTML = ''; metaBox.innerHTML = ''; okBtn.disabled = true;
+                msg.querySelector('[data-a="drive"]').addEventListener('click', function () {
+                    connectDrive(function (err) {
+                        if (err) { msg.textContent = 'No se pudo conectar: ' + err.message; return; }
+                        okBtn.disabled = false;
+                        start();
                     });
                 });
-                if (info) info.textContent = sel.length + ' de ' + MAX.shots;
-            };
-            body.querySelector('[data-a="up"]').addEventListener('click', function () { file.click(); });
-            file.addEventListener('change', function () {
-                if (!file.files.length) return;
-                var btn = body.querySelector('[data-a="up"]');
-                var fd = new FormData();
-                fd.append('file', file.files[0]);
-                fd.append('caption', body.querySelector('[data-f="caption"]').value);
-                fd.append('game', body.querySelector('[data-f="game"]').value);
-                btn.disabled = true; btn.textContent = 'Subiendo…';
-                fetch(API + '?action=upload-screenshot', { method: 'POST', credentials: 'same-origin', body: fd })
-                    .then(function (r) { return r.json(); })
-                    .then(function (d) {
-                        btn.disabled = false; btn.textContent = 'Subir captura…'; file.value = '';
-                        if (!d || !d.ok) { alert((d && d.error) || 'No se pudo subir'); return; }
-                        S.myShots = [d.shot].concat(S.myShots || []);
-                        if (sel.length < MAX.shots) sel.push(d.shot.id);
-                        body.querySelector('[data-f="caption"]').value = '';
-                        body.querySelector('[data-f="game"]').value = '';
+            }
+            function paint() {
+                grid.innerHTML = files.map(function (f) {
+                    var n = sel.indexOf(f.id) + 1;
+                    return '<div class="pf2-pick wide' + (n ? ' on' : '') + '" data-id="' + esc(f.id) + '" title="' + esc(f.name) + '">' +
+                        '<div class="pf2-pick-ph" style="aspect-ratio:16/9;"></div>' +
+                        (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
+                        '<div class="pf2-pick-t">' + esc(f.name) + '</div></div>';
+                }).join('');
+                grid.querySelectorAll('.pf2-pick').forEach(function (el) {
+                    var f = files.find(function (x) { return x.id === el.dataset.id; });
+                    driveThumb(f, el.querySelector('.pf2-pick-ph'));
+                    el.addEventListener('click', function () {
+                        var k = sel.indexOf(f.id);
+                        if (k >= 0) sel.splice(k, 1); else if (sel.length < MAX.shots) sel.push(f.id);
                         paint();
-                    }).catch(function () { btn.disabled = false; btn.textContent = 'Subir captura…'; alert('Error de red al subir'); });
+                    });
+                });
+                metaBox.innerHTML = sel.map(function (id, i) {
+                    var m = meta[id] || { caption: '', game: '' };
+                    return '<div style="display:flex;gap:4px;align-items:center;font-size:11px;"><b style="width:14px;">' + (i + 1) + '</b>' +
+                        '<input type="text" data-id="' + esc(id) + '" data-f="caption" maxlength="200" placeholder="Pie de foto (opcional)" value="' + esc(m.caption) + '" style="flex:1;">' +
+                        '<input type="text" data-id="' + esc(id) + '" data-f="game" maxlength="200" placeholder="Juego (opcional)" value="' + esc(m.game) + '" style="flex:1;"></div>';
+                }).join('');
+                metaBox.querySelectorAll('input').forEach(function (inp) {
+                    inp.addEventListener('input', function () {
+                        var m = meta[inp.dataset.id] || (meta[inp.dataset.id] = { caption: '', game: '' });
+                        m[inp.dataset.f] = inp.value;
+                    });
+                });
+                info.textContent = sel.length + ' de ' + MAX.shots;
+            }
+            okBtn.addEventListener('click', function () {
+                okBtn.disabled = true; okBtn.textContent = 'Guardando…';
+                Promise.all(sel.map(makePublic)).then(function () {
+                    return api('gallery-screenshots', { items: sel.map(function (id) {
+                        var m = meta[id] || {};
+                        return { driveId: id, caption: m.caption || '', game: m.game || '' };
+                    }) });
+                }).then(function (d) {
+                    if (!d || !d.ok) throw new Error((d && d.error) || 'No se pudo guardar');
+                    sc.config = { ids: d.shots.map(function (x) { return x.id; }) };
+                    sc.data = d.shots;
+                    S.myShots = null;      /* se vuelven a pedir la próxima vez */
+                    closePicker();
+                    renderShowcases();
+                }).catch(function (e) {
+                    okBtn.disabled = false; okBtn.textContent = 'Aceptar';
+                    alert((e && e.message) || 'No se pudo guardar');
+                });
             });
-            info = pickerFoot(body, '', function () {
-                sc.config = { ids: sel.slice() };
-                sc.data = sel.map(function (id) { return (S.myShots || []).find(function (s) { return s.id === id; }); }).filter(Boolean);
-            });
-            if (S.myShots) paint();
-            else api('my-screenshots').then(function (d) { S.myShots = (d && d.shots) || []; paint(); });
         },
 
         /* Reseña destacada: una de mis reseñas (cualquier lista). */
