@@ -2646,7 +2646,9 @@
     box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
 #pf2-head .profile-avatar-img { width: 100%; height: 100%; }
 #pf2-head .profile-avatar-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
-.pf2-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; padding-right: 150px; }
+.pf2-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+/* Hueco para los botones de arriba a la derecha (solo en las dos primeras líneas). */
+.pf2-name, .pf2-status { padding-right: 190px; }
 .pf2-name { font-size: 18px; font-weight: bold; text-shadow: 1px 1px 0 #000; }
 .pf2-status { font-size: 10px; text-shadow: 1px 1px 0 #000; min-height: 12px; }
 .pf2-status b { font-weight: bold; }
@@ -2659,10 +2661,17 @@
 #pf2-head .pinfo-link svg { stroke: #fff; }
 #pf2-head .pinfo-link:hover svg { stroke: var(--accent-text, #fff); opacity: .8; }
 #pf2-head #profile-info-meta input { color: var(--input-text); text-shadow: none; max-width: 220px; }
-#pf2-head #profile-info-bio { margin: auto 0 0; height: 36px; padding: 3px 8px; font-size: 11px; color: var(--accent); text-shadow: none; flex: none;
+/* Bio: letra fija (sin el ajuste automático de fitBioText, que con bios
+   largas la dejaba diminuta), hasta 3 líneas. */
+#pf2-head #profile-info-bio { margin: auto 0 0; height: auto; min-height: 0; max-height: none; padding: 4px 8px; color: var(--accent); text-shadow: none; flex: none;
+    justify-content: flex-start; text-align: left; line-height: 1.35;
     box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1); }
+#pf2-head #profile-info-bio:empty { display: none; }
+#pf2-head .pinfo-bio-text { font-size: 11px !important; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 #pf2-head #profile-info-bio textarea { color: var(--input-text); }
-#pf2-head #profile-info-links { display: flex; flex-direction: column; gap: 4px; justify-content: flex-end; align-items: center; grid-template-columns: none; }
+/* Redes en fila, abajo a la derecha (en columna estiraban la cabecera y
+   se metían debajo de los botones). */
+#pf2-head #profile-info-links { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; align-self: flex-end; align-items: center; justify-content: flex-end; grid-template-columns: none; flex-shrink: 0; }
 .pf2-head-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; }
 .pf2-head-btns .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; }
 .pf2-head-btns #profile-notif-btn { width: 22px; height: 20px; }
@@ -2761,8 +2770,8 @@
 .pf2-editing .pf2-edit-ctl { display: inline-flex; }
 .pf2-handle { cursor: grab; letter-spacing: -2px; margin-right: 2px; }
 .pf2-hbtn { min-width: 0 !important; height: 15px !important; min-height: 0 !important; padding: 0 5px !important; font-size: 9px; align-items: center; justify-content: center; margin-left: 4px; }
-.pf2-slot { border: 1px dashed var(--border); padding: 10px; text-align: center; font-size: 11px; color: var(--text-faint, #808080); }
-.pf2-slot.add { cursor: pointer; color: var(--text); }
+.pf2-slot { border: 1px dashed var(--border); padding: 10px; text-align: center; font-size: 11px; color: var(--text); }
+.pf2-slot.add { cursor: pointer; }
 .pf2-slot.add:hover { background: var(--input-bg, #fff); }
 .pf2-slot b { color: var(--text); }
 
