@@ -2893,7 +2893,7 @@
 /* Logros de Steam: filas de 7 (hasta 3), de arriba abajo, en un
    bloque centrado y compacto con aire entre los iconos; los raros (menos
    del 10 %) con brillo del acento; debajo, juegos y horas. */
-.pf2-achs { display: grid; grid-template-columns: repeat(7, 52px); gap: 24px; justify-content: center; padding: 6px 4px; }
+.pf2-achs { display: grid; grid-template-columns: repeat(7, 52px); gap: 12px 24px; justify-content: center; padding: 6px 4px; }
 .pf2-achg { position: relative; width: 52px; height: 52px; }
 .pf2-achg img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
 .pf2-achg.raro img { box-shadow: 0 0 0 2px var(--accent), 0 0 7px 2px var(--accent); }

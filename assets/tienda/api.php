@@ -72,6 +72,7 @@ case 'state': {
     foreach ($itemsRows as &$it) {
         $it['marco'] = ($it['categoria'] === 'perfil' && isset($marcos[$it['slug']])) ? $marcos[$it['slug']] : null;
         $rid = (string)($it['discord_role_id'] ?? '');
+        $it['has_role'] = $rid !== '';      /* da un rol (aunque no se sepa su nombre) */
         if ($rid !== '' && isset($roles[$rid])) {
             $it['discord_role_name']  = $roles[$rid]['name'];
             $it['discord_role_color'] = $roles[$rid]['color'];
@@ -232,6 +233,181 @@ case 'buy': {
         'item'    => ['id' => $itemId, 'nombre' => $item['nombre'], 'precio' => $precio],
         'discord' => $discord,
     ]);
+    exit;
+}
+
+/* ─── REGALOS (decidido así) ─────────────────────────────────────────
+   Se regala a amigos mutuos desde el "modo regalo" de la tienda (la
+   tienda se ve como si fueras esa persona). Se cobra al regalar; la otra
+   persona tiene que abrirlo (aviso del haro con "Abrir" y "Regalos (N)" en
+   la tienda): Aceptar lo pasa a sus compras (precio 0; los roles de
+   Discord se le dan entonces), Rechazar devuelve los puntos a quien lo
+   mandó. Si al aceptar ya lo tiene (lo compró mientras), o le falta la
+   mejora anterior, también se devuelven. Tabla tienda_regalos. */
+case 'gift-friends':
+case 'gift-target':
+case 'gift':
+case 'gifts':
+case 'gift-answer': {
+    require_once __DIR__ . '/catalogo.php';
+    require_once dirname(__DIR__) . '/social-helpers.php';
+    tiendaEnsureRegalos($pdo);
+    $persona = function (array $u): array {
+        $label = (string)($u['label'] ?: $u['username'] ?: $u['user_key']);
+        $img = function_exists('getUserImage') ? (string)getUserImage($label) : '';
+        return ['key' => $u['user_key'], 'label' => $label, 'image' => $img !== '' ? '../' . $img : ''];
+    };
+    $userByKey = function (string $key) use ($pdo) {
+        $st = $pdo->prepare('SELECT id, user_key, username, label, discord_user_id FROM usuarios WHERE user_key = ?');
+        $st->execute([$key]);
+        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    };
+    $ownsSlug = function (int $uid, string $slug) use ($pdo): bool {
+        $st = $pdo->prepare('SELECT 1 FROM tienda_compras c JOIN tienda_items i ON i.id = c.item_id WHERE c.user_id = ? AND i.slug = ? LIMIT 1');
+        $st->execute([$uid, $slug]);
+        return (bool)$st->fetchColumn();
+    };
+
+    if ($action === 'gift-friends') {
+        $ids = mutualFollowerIds($pdo, $userId);
+        $out = [];
+        if ($ids) {
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT id, user_key, username, label FROM usuarios WHERE id IN ($ph) ORDER BY COALESCE(NULLIF(label, ''), username)");
+            $st->execute($ids);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $u) $out[] = $persona($u);
+        }
+        echo json_encode(['ok' => true, 'friends' => $out]);
+        exit;
+    }
+
+    if ($action === 'gift-target') {
+        $t = $userByKey((string)($_GET['user'] ?? ''));
+        if (!$t || (int)$t['id'] === $userId || !isMutualFollow($pdo, $userId, (int)$t['id'])) jsonError('Solo puedes regalar a amigos mutuos.', 403);
+        $st = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ?');
+        $st->execute([(int)$t['id']]);
+        $owned = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        $st = $pdo->prepare("SELECT DISTINCT item_id FROM tienda_regalos WHERE to_user_id = ? AND estado = 'pendiente'");
+        $st->execute([(int)$t['id']]);
+        $pending = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        echo json_encode(['ok' => true] + $persona($t) + [
+            'discord' => (string)($t['discord_user_id'] ?? '') !== '',
+            'owned'   => $owned,
+            'pending' => $pending,
+        ]);
+        exit;
+    }
+
+    if ($action === 'gift') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+        $b = getBody();
+        $itemId = (int)($b['item_id'] ?? 0);
+        $mensaje = mb_substr(trim((string)($b['mensaje'] ?? '')), 0, 200);
+        $t = $userByKey((string)($b['to'] ?? ''));
+        if (!$t || (int)$t['id'] === $userId || !isMutualFollow($pdo, $userId, (int)$t['id'])) jsonError('Solo puedes regalar a amigos mutuos.', 403);
+        $toId = (int)$t['id'];
+        $pdo->beginTransaction();
+        try {
+            $itStmt = $pdo->prepare('SELECT id, nombre, slug, precio, discord_role_id FROM tienda_items WHERE id = ? AND activo = 1 AND precio > 0 FOR UPDATE');
+            $itStmt->execute([$itemId]);
+            $item = $itStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$item) { $pdo->rollBack(); jsonError('Item no disponible', 404); }
+            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? LIMIT 1');
+            $chk->execute([$toId, $itemId]);
+            if ($chk->fetchColumn()) { $pdo->rollBack(); jsonError('Ya lo tiene.', 409); }
+            $chk = $pdo->prepare("SELECT 1 FROM tienda_regalos WHERE to_user_id = ? AND item_id = ? AND estado = 'pendiente' LIMIT 1");
+            $chk->execute([$toId, $itemId]);
+            if ($chk->fetchColumn()) { $pdo->rollBack(); jsonError('Ya tiene ese regalo pendiente de abrir.', 409); }
+            $prev = tiendaPrevSlug((string)($item['slug'] ?? ''));
+            if ($prev !== null && !$ownsSlug($toId, $prev)) { $pdo->rollBack(); jsonError('Le falta la mejora anterior.', 409); }
+            if ((string)($item['discord_role_id'] ?? '') !== '' && (string)($t['discord_user_id'] ?? '') === '') {
+                $pdo->rollBack(); jsonError('No tiene su Discord vinculado: no puede recibir roles.', 403);
+            }
+            $uStmt = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ? FOR UPDATE');
+            $uStmt->execute([$userId]);
+            $balance = (int)$uStmt->fetchColumn();
+            $precio = (int)$item['precio'];
+            if ($balance < $precio) { $pdo->rollBack(); jsonError('Autismo insuficiente (te faltan ' . ($precio - $balance) . ')', 402); }
+            $pdo->prepare('UPDATE usuarios SET autismo = autismo - ? WHERE id = ?')->execute([$precio, $userId]);
+            $pdo->prepare("INSERT INTO tienda_regalos (from_user_id, to_user_id, item_id, precio, mensaje) VALUES (?, ?, ?, ?, ?)")
+                ->execute([$userId, $toId, $itemId, $precio, $mensaje]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            jsonError('Error al regalar: ' . $e->getMessage(), 500);
+        }
+        echo json_encode(['ok' => true, 'autismo' => $balance - $precio, 'item' => ['id' => $itemId, 'nombre' => $item['nombre'], 'precio' => $precio]]);
+        exit;
+    }
+
+    if ($action === 'gifts') {
+        $st = $pdo->prepare("SELECT r.id, r.item_id, r.mensaje, UNIX_TIMESTAMP(r.creado_en) AS ts,
+                                    u.user_key, u.username, u.label, i.nombre, i.slug, i.categoria, i.descripcion, i.icono
+                               FROM tienda_regalos r
+                               JOIN usuarios u ON u.id = r.from_user_id
+                               JOIN tienda_items i ON i.id = r.item_id
+                              WHERE r.to_user_id = ? AND r.estado = 'pendiente'
+                              ORDER BY r.creado_en ASC, r.id ASC");
+        $st->execute([$userId]);
+        $out = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $from = $persona($r);
+            $out[] = ['id' => (int)$r['id'], 'from' => $from, 'mensaje' => (string)$r['mensaje'], 'ts' => (int)$r['ts'],
+                      'item' => ['id' => (int)$r['item_id'], 'nombre' => $r['nombre'], 'slug' => $r['slug'], 'categoria' => $r['categoria'],
+                                 'descripcion' => (string)$r['descripcion'], 'icono' => (string)$r['icono']]];
+        }
+        echo json_encode(['ok' => true, 'gifts' => $out]);
+        exit;
+    }
+
+    /* gift-answer */
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $b = getBody();
+    $giftId = (int)($b['id'] ?? 0);
+    $accept = !empty($b['accept']);
+    $discord = ['attempted' => false];
+    $refunded = '';
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare("SELECT r.*, i.nombre, i.slug, i.discord_role_id FROM tienda_regalos r JOIN tienda_items i ON i.id = r.item_id
+                              WHERE r.id = ? AND r.to_user_id = ? AND r.estado = 'pendiente' FOR UPDATE");
+        $st->execute([$giftId, $userId]);
+        $g = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$g) { $pdo->rollBack(); jsonError('Este regalo ya no está pendiente.', 404); }
+        $refund = function (string $estado) use ($pdo, $g) {
+            $pdo->prepare('UPDATE usuarios SET autismo = autismo + ? WHERE id = ?')->execute([(int)$g['precio'], (int)$g['from_user_id']]);
+            $pdo->prepare('UPDATE tienda_regalos SET estado = ?, resuelto_en = NOW() WHERE id = ?')->execute([$estado, (int)$g['id']]);
+        };
+        if (!$accept) {
+            $refund('rechazado');
+        } else {
+            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? LIMIT 1');
+            $chk->execute([$userId, (int)$g['item_id']]);
+            $prev = tiendaPrevSlug((string)($g['slug'] ?? ''));
+            if ($chk->fetchColumn()) {
+                $refund('devuelto'); $refunded = 'Ya lo tenías: se le devuelven los puntos a quien te lo regaló.';
+            } elseif ($prev !== null && !$ownsSlug($userId, $prev)) {
+                $refund('devuelto'); $refunded = 'Te falta la mejora anterior: se le devuelven los puntos a quien te lo regaló.';
+            } else {
+                $roleId = (string)($g['discord_role_id'] ?? '');
+                $dUser = (string)($user['discord_user_id'] ?? '');
+                if ($roleId !== '' && $dUser === '') { $pdo->rollBack(); jsonError('Vincula tu Discord (aquí al lado) para aceptar este regalo.', 403); }
+                $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, 0)')->execute([$userId, (int)$g['item_id']]);
+                $pdo->prepare("UPDATE tienda_regalos SET estado = 'aceptado', resuelto_en = NOW() WHERE id = ?")->execute([(int)$g['id']]);
+                if ($roleId !== '') {
+                    $r = discordAssignRole($dUser, $roleId);
+                    if (!$r['ok']) { $pdo->rollBack(); jsonError('No se pudo asignar el rol de Discord (' . ($r['error'] ?? 'error') . '). El regalo sigue pendiente.', 502); }
+                    $discord = ['attempted' => true, 'ok' => true];
+                }
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        jsonError('Error con el regalo: ' . $e->getMessage(), 500);
+    }
+    echo json_encode(['ok' => true, 'accepted' => $accept && $refunded === '', 'refunded' => $refunded,
+                      'item' => ['id' => (int)$g['item_id'], 'nombre' => $g['nombre']], 'discord' => $discord]);
     exit;
 }
 

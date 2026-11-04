@@ -200,3 +200,27 @@ function tiendaPrevSlug(string $slug): ?string {
     if (preg_match('/^(steam-(?:rare|ach)-fila)-(\d)$/', $slug, $m) && (int)$m[2] > 2) return $m[1] . '-' . ((int)$m[2] - 1);
     return null;
 }
+
+/* Regalos de la tienda (tienda api gift / gifts / gift-answer):
+   estado pendiente → aceptado | rechazado | devuelto (ya lo tenía o le
+   faltaba la mejora anterior al abrirlo). */
+function tiendaEnsureRegalos(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS tienda_regalos (
+            id           INT AUTO_INCREMENT PRIMARY KEY,
+            from_user_id INT NOT NULL,
+            to_user_id   INT NOT NULL,
+            item_id      INT NOT NULL,
+            precio       INT NOT NULL,
+            mensaje      VARCHAR(255) NOT NULL DEFAULT '',
+            estado       VARCHAR(12) NOT NULL DEFAULT 'pendiente',
+            creado_en    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resuelto_en  TIMESTAMP NULL,
+            INDEX idx_to (to_user_id, estado),
+            INDEX idx_item (to_user_id, item_id, estado)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) { /* sin permisos de CREATE */ }
+}

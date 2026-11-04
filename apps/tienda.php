@@ -272,6 +272,50 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
     #tienda-discord-name:empty::before { content: '— no vinculado —'; color: var(--text-muted); font-weight: normal; }
     #tienda-discord button { width: 100%; margin-top: 4px; min-height: 22px; font-size: 11px; }
 
+    /* Regalos: caja de la columna izquierda (Regalos (N) pendientes +
+       "Regalar a un amigo"), barra del modo regalo y sus ventanas. */
+    #tienda-gifts {
+      margin: 0 8px 8px; padding: 8px 10px;
+      background: var(--win-bg);
+      box-shadow:
+        inset -1px -1px var(--bezel-dark-1),
+        inset  1px  1px var(--bezel-light-1),
+        inset -2px -2px var(--bezel-dark-2),
+        inset  2px  2px var(--bezel-light-2);
+      font-size: 11px;
+    }
+    #tienda-gifts-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; text-align: center; }
+    #tienda-gifts-label b { color: var(--accent); }
+    #tienda-gifts-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+    .tienda-gift-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: pointer; color: var(--text); }
+    .tienda-gift-row:hover { background: var(--accent); color: var(--accent-text); }
+    .tienda-gift-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #tienda-gifts button { width: 100%; min-height: 22px; font-size: 11px; }
+    .tienda-av { width: 20px; height: 20px; flex-shrink: 0; display: inline-block; position: relative; }
+    .tienda-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #tienda-gift-bar { display: none; align-items: center; gap: 8px; margin: 0 0 12px; padding: 6px 10px; font-size: 11px;
+      background: var(--accent); color: var(--accent-text); }
+    #tienda-gift-bar.on { display: flex; }
+    #tienda-gift-bar .tienda-av { width: 24px; height: 24px; }
+    #tienda-gift-bar .tienda-gift-txt { flex: 1; }
+    #tienda-gift-bar button { min-height: 20px; font-size: 11px; }
+    .tienda-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+    .tienda-modal { width: min(420px, 92vw); max-height: 86vh; display: flex; flex-direction: column; color: var(--text); }
+    .tienda-modal .window-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 11px; overflow-y: auto; }
+    .tienda-modal-foot { display: flex; justify-content: flex-end; gap: 6px; }
+    .tienda-modal-item { display: flex; gap: 10px; align-items: flex-start; }
+    .tienda-modal-item .tienda-card-icon { width: 96px; height: 96px; flex-shrink: 0; }
+    .tienda-modal-item .tienda-card-icon > img, .tienda-modal-item .tienda-card-icon > .tienda-marco-prev { max-width: 64px; max-height: 64px; }
+    .tienda-modal-name { font-size: 13px; font-weight: bold; }
+    .tienda-modal-desc { color: var(--text-muted); margin-top: 3px; }
+    .tienda-modal-from { display: flex; align-items: center; gap: 6px; }
+    .tienda-modal-msg { padding: 6px 8px; background: var(--input-bg, #fff); color: var(--input-text, #000); box-shadow: inset 1px 1px var(--bezel-dark-1), inset -1px -1px var(--bezel-light-1); white-space: pre-wrap; word-break: break-word; font-style: italic; }
+    .tienda-friends { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1), inset -1px -1px var(--bezel-light-1); padding: 2px; }
+    .tienda-friend { display: flex; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; color: var(--input-text, #000); }
+    .tienda-friend:hover { background: var(--accent); color: var(--accent-text); }
+    .tienda-friend .tienda-av { width: 28px; height: 28px; }
+    .tienda-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: 11px; }
+
     /* Toast flotante para mensajes de estado (Cargando, Compra OK, errores).
        Solo se ve cuando tiene texto; en reposo está oculto. */
     #tienda-status {
@@ -584,6 +628,12 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             </div>
             <?php endif; ?>
         </div>
+        <!-- Regalos: los pendientes de abrir (si hay) y el modo regalo. -->
+        <div id="tienda-gifts">
+            <div id="tienda-gifts-label">Regalos</div>
+            <div id="tienda-gifts-list"></div>
+            <button type="button" class="button" id="tienda-gift-btn">Regalar a un amigo</button>
+        </div>
         <div id="tienda-discord">
             <div id="tienda-discord-label">Discord</div>
             <div id="tienda-discord-name"></div>
@@ -600,6 +650,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
         </div>
     </aside>
     <main id="tienda-main-area">
+        <div id="tienda-gift-bar"></div>
         <div id="tienda-view-principal">
             <div class="tienda-empty">Cargando…</div>
         </div>
@@ -673,6 +724,15 @@ async function api(action, body){
 }
 
 var _balance = 0, _items = [], _owned = {};
+/* Modo regalo (decidido así): eliges a un amigo mutuo y la tienda se ve
+   como si fueras esa persona (lo que ya tiene sale "Ya lo tiene", las
+   mejoras siguen las suyas) y "Comprar" pasa a "Regalar".
+   _gift = { key, label, image, discord, owned: {id: true}, pending: {id: true} } */
+var _gift = null;
+function isOwned(id){ return !!(_gift ? _gift.owned : _owned)[id|0]; }
+function isPending(id){ return !!(_gift && _gift.pending[id|0]); }
+function lblOwned(){ return _gift ? '✓ Ya lo tiene' : '✓ Ya lo tienes'; }
+function lblBuy(){ return _gift ? 'Regalar' : 'Comprar'; }
 /* Tu foto de perfil: va dentro de la vista previa de los marcos. */
 var MY_AVATAR = <?php $_myAv = getUserImage($userLabel); echo json_encode($_myAv ? '../' . $_myAv : ''); ?>;
 /* Categoría inicial = la primera pestaña (las pinta PHP desde catalogo.json). */
@@ -720,7 +780,8 @@ function renderBalance(){
     /* Botones se rehabilitan/deshabilitan según balance Y posesión. */
     document.querySelectorAll('[data-buy-id]').forEach(function(btn){
         var id = btn.dataset.buyId | 0;
-        if (_owned[id]) { btn.disabled = true; btn.textContent = '✓ Ya lo tienes'; return; }
+        if (isOwned(id)) { btn.disabled = true; btn.textContent = lblOwned(); return; }
+        if (isPending(id)) { btn.disabled = true; btn.textContent = 'Regalo pendiente'; return; }
         if (btn.dataset.locked) { btn.disabled = true; return; }   /* falta Discord o el hueco anterior */
         var p = parseInt(btn.dataset.price, 10);
         btn.disabled = p > _balance;
@@ -764,12 +825,12 @@ function renderItems(){
         var desc = it.discord_role_name
             ? 'Adquiere el rol ' + it.discord_role_name + ' en :melonduagua: 3.0'
             : (it.descripcion || '');
-        var owned = !!_owned[it.id|0];
+        var owned = isOwned(it.id);
         /* Items que conceden un rol de Discord requieren vinculación.
            Sin Discord enlazado deshabilitamos el botón y mostramos el motivo
            — el server también lo rechaza (403) por si alguien parchea esto. */
-        var needsDiscord = !!it.discord_role_name;
-        var discordLinked = window.__DISCORD_LINKED__ === true;
+        var needsDiscord = !!(it.discord_role_name || it.has_role);
+        var discordLinked = _gift ? _gift.discord : window.__DISCORD_LINKED__ === true;
         var locked = needsDiscord && !discordLinked && !owned;
         /* Compras en cadena del perfil (huecos, mejoras de expositor): en
            orden (el 4 pide el 3…). */
@@ -777,13 +838,13 @@ function renderItems(){
         var needsPrev = false;
         if (prevSlug && !owned) {
             var prev = _items.filter(function(x){ return x.slug === prevSlug; })[0];
-            needsPrev = !prev || !_owned[prev.id|0];
+            needsPrev = !prev || !isOwned(prev.id);
         }
         var prevHueco = prevSlug && /^expositor-hueco-(\d)$/.exec(prevSlug);
-        var btnLabel = owned     ? '✓ Ya lo tienes'
-                     : locked    ? 'Vincula Discord'
+        var btnLabel = owned     ? lblOwned()
+                     : locked    ? (_gift ? 'No tiene Discord' : 'Vincula Discord')
                      : needsPrev ? (prevHueco ? 'Antes, el hueco ' + prevHueco[1] : 'Antes, la mejora anterior')
-                                 : 'Comprar';
+                                 : lblBuy();
         var btnAttrs = locked ? ' disabled data-locked="1" title="Vincula tu Discord (sidebar) para comprar este item"'
                      : needsPrev ? ' disabled data-locked="1"' : '';
         /* Para los haros el icono es el PNG del último frame del gif
@@ -861,15 +922,15 @@ var EXPO_ADICIONALES = ['expositor-resena', 'expositor-juego-destacado', 'exposi
    cómo se cuentan. */
 var CADENAS_PERFIL = [
     { slugs: SLOT_SLUGS_PERFIL, icono: 'profileIcon', base: 2, cosa: 'huecos', nombre: 'Huecos de expositor',
-      fin: function(n){ return 'Ya tienes todos los huecos: ' + n + ' expositores a la vez en tu perfil.'; } }
+      fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' todos los huecos: ' + n + ' expositores a la vez en ' + (_gift ? 'su' : 'tu') + ' perfil.'; } }
 ].concat([['games', 'juegosIcon', 'Juegos favoritos', 'juegos'], ['movies', 'pelisIcon', 'Películas favoritas', 'películas'],
           ['series', 'melonArchiveIcon', 'Series favoritas', 'series'], ['books', 'booksIcon', 'Libros favoritos', 'libros'],
           ['music', 'musicaIcon', 'Música favorita', 'canciones']].map(function(m){
     return { slugs: ['media-' + m[0] + '-4', 'media-' + m[0] + '-5'], icono: m[1], base: 3, cosa: m[3], nombre: m[2],
-             fin: function(n){ return 'Ya tienes todos los huecos: ' + n + ' ' + m[3] + ' en tu Media favorita.'; } };
+             fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' todos los huecos: ' + n + ' ' + m[3] + ' en ' + (_gift ? 'su' : 'tu') + ' Media favorita.'; } };
 })).concat([['rare', 'Logros raros de Steam'], ['ach', 'Logros de Steam']].map(function(m){
     return { slugs: ['steam-' + m[0] + '-fila-2', 'steam-' + m[0] + '-fila-3'], icono: 'steamIcon', base: 1,
-             cosa: 'filas', nombre: m[1], fin: function(n){ return 'Ya tienes las ' + n + ' filas: ' + (n * 7) + ' logros en el expositor.'; } };
+             cosa: 'filas', nombre: m[1], fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' las ' + n + ' filas: ' + (n * 7) + ' logros en el expositor.'; } };
 }));
 function perfilPrecio(p) {
     return p + ' <img src="../assets/img/appIcons/puntosAutismo.png" class="punto-autismo-ic" alt="">';
@@ -887,13 +948,14 @@ function renderPerfil(view, items) {
     var adicionales = EXPO_ADICIONALES.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; })
                                       .filter(Boolean);
     var otros  = items.filter(function(it){ return !it.marco && !enCadena[it.slug] && EXPO_ADICIONALES.indexOf(it.slug) < 0; });
-    var foto = MY_AVATAR || '../assets/img/appIcons/profileIcon.png';
+    /* En modo regalo, los marcos se ven con la foto de esa persona. */
+    var foto = (_gift ? _gift.image : MY_AVATAR) || '../assets/img/appIcons/profileIcon.png';
     var html = '';
 
     if (marcos.length) {
         html += perfilSeccion('MARCOS DE AVATAR', 'Un marco alrededor de tu foto en el perfil, el chat, Social y los comentarios. Se elige en Personalizar del perfil.',
             marcos.map(function(it){
-                var owned = !!_owned[it.id|0];
+                var owned = isOwned(it.id);
                 return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
                     '<div class="tienda-card-icon">' +
                         '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto) + '" alt=""></span>' +
@@ -901,7 +963,7 @@ function renderPerfil(view, items) {
                     '</div>' +
                     '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
                     '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
-                    '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+                    '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? lblOwned() : lblBuy()) + '</button>' +
                 '</div>';
             }).join(''), 'tienda-sec-grid');
     }
@@ -912,8 +974,8 @@ function renderPerfil(view, items) {
     var anchas = CADENAS_PERFIL.map(function(c){
         var cad = c.slugs.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; }).filter(Boolean);
         if (!cad.length) return '';
-        var tienes = cad.filter(function(it){ return _owned[it.id|0]; }).length;
-        var sig = cad.filter(function(it){ return !_owned[it.id|0]; })[0];
+        var tienes = cad.filter(function(it){ return isOwned(it.id); }).length;
+        var sig = cad.filter(function(it){ return !isOwned(it.id); })[0];
         var total = c.base + cad.length;
         var pips = '';
         for (var i = 0; i < cad.length; i++) pips += '<i class="' + (i < tienes ? 'on' : '') + '"></i>';
@@ -921,11 +983,11 @@ function renderPerfil(view, items) {
             '<div class="tienda-wide-icon"><img src="../assets/img/appIcons/' + c.icono + '.png" alt=""></div>' +
             '<div class="tienda-wide-body">' +
                 '<div class="tienda-wide-name">' + esc(c.nombre) + '</div>' +
-                '<div class="tienda-wide-type">Mejora de expositor · tienes ' + (c.base + tienes) + ' de ' + total + ' ' + c.cosa + ' <span class="tienda-wide-pips">' + pips + '</span></div>' +
+                '<div class="tienda-wide-type">Mejora de expositor · ' + (_gift ? 'tiene ' : 'tienes ') + (c.base + tienes) + ' de ' + total + ' ' + c.cosa + ' <span class="tienda-wide-pips">' + pips + '</span></div>' +
                 '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : c.fin(total)) + '</div>' +
                 '<div class="tienda-wide-foot">' +
                     (sig ? '<span class="tienda-wide-price">' + perfilPrecio(sig.precio) + '</span>' +
-                           '<button type="button" class="button" data-buy-id="' + sig.id + '" data-price="' + sig.precio + '">Comprar</button>'
+                           '<button type="button" class="button" data-buy-id="' + sig.id + '" data-price="' + sig.precio + '">' + lblBuy() + '</button>'
                          : '<span class="tienda-wide-done">✓ Completo</span>') +
                 '</div>' +
             '</div></div>';
@@ -937,26 +999,26 @@ function renderPerfil(view, items) {
     if (adicionales.length) {
         var iconos = { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' };
         html += perfilSeccion('EXPOSITORES ADICIONALES', 'Expositores nuevos para tu perfil. Se ponen en Personalizar, en un hueco libre.', adicionales.map(function(it){
-            var owned = !!_owned[it.id|0];
+            var owned = isOwned(it.id);
             return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
                 '<div class="tienda-card-icon"><img class="tienda-card-icon-img" src="../assets/img/appIcons/' + iconos[it.slug] + '.png" alt="" style="image-rendering:pixelated;">' +
                     '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
                 '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
                 '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
-                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? lblOwned() : lblBuy()) + '</button>' +
             '</div>';
         }).join(''), 'tienda-sec-grid');
     }
 
     if (otros.length) {
         html += perfilSeccion('OTROS', '', otros.map(function(it){
-            var owned = !!_owned[it.id|0];
+            var owned = isOwned(it.id);
             return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
                 '<div class="tienda-card-icon"><img class="tienda-card-icon-img" src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">' +
                     '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
                 '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
                 '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
-                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? lblOwned() : lblBuy()) + '</button>' +
             '</div>';
         }).join(''), 'tienda-sec-grid');
     }
@@ -969,6 +1031,7 @@ function renderPerfil(view, items) {
 }
 
 async function buy(itemId, btn){
+    if (_gift) { openGiftConfirm(itemId); return; }
     btn.disabled = true;
     setStatus('Comprando…');
     try {
@@ -989,6 +1052,195 @@ async function buy(itemId, btn){
         btn.disabled = false;
     }
 }
+
+/* ═══════════════════ REGALOS ═══════════════════
+   "Regalar a un amigo" (columna izquierda) → eliges un amigo mutuo →
+   modo regalo (barra arriba, la tienda como si fueras esa persona) →
+   "Regalar" en un objeto → ventana con mensaje opcional (200) → se cobra
+   y le queda pendiente de abrir. Los regalos que te mandan salen en
+   "Regalos (N)" y con el aviso del haro ("Abrir" → ?regalo=ID o
+   postMessage tienda-open-gift): ventana con el objeto, quién lo manda y
+   el mensaje; Aceptar / Rechazar (devuelve los puntos). */
+var _gifts = [];
+function avHtml(p) {
+    return '<span class="tienda-av" data-marco-user="' + esc(p.key) + '">' +
+        (p.image ? '<img src="' + esc(p.image) + '" alt="">'
+                 : '<img src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">') + '</span>';
+}
+function perfilIcono(slug) {
+    var m = /^media-([a-z]+)-/.exec(slug || '');
+    if (m) return { games: 'juegosIcon', movies: 'pelisIcon', series: 'melonArchiveIcon', books: 'booksIcon', music: 'musicaIcon' }[m[1]] || 'profileIcon';
+    if (/^steam-/.test(slug)) return 'steamIcon';
+    return { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' }[slug] || 'profileIcon';
+}
+/* Icono de un objeto para las ventanas de regalo (como en sus tarjetas). */
+function itemIconHtml(it, foto) {
+    if (it.categoria === 'haros' && it.slug) {
+        return '<img class="tienda-card-icon-img" src="../assets/img/haro/' + esc(it.slug) + 'Haro-preview.png"' +
+            ' onerror="this.onerror=null;this.src=\'../assets/vids/' + esc(it.slug) + 'Haro-last.png\';" alt="">';
+    }
+    if (it.categoria === 'perfil' && /^marco-/.test(it.slug || '')) {
+        return '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto || '../assets/img/appIcons/profileIcon.png') + '" alt=""></span>';
+    }
+    if (it.categoria === 'perfil') {
+        return '<img class="tienda-card-icon-img" src="../assets/img/appIcons/' + perfilIcono(it.slug) + '.png" alt="" style="image-rendering:pixelated;">';
+    }
+    return '<span style="font-size:40px;line-height:1;">' + esc(it.icono || '🎁') + '</span>';
+}
+/* Nombre y descripción como en su tarjeta (los roles, con el del rol). */
+function itemTexts(it) {
+    return {
+        nombre: it.discord_role_name || it.nombre,
+        desc: it.discord_role_name ? 'Adquiere el rol ' + it.discord_role_name + ' en :melonduagua: 3.0' : (it.descripcion || ''),
+    };
+}
+function itemBlock(it, foto, extra) {
+    var tx = itemTexts(it);
+    return '<div class="tienda-modal-item"><div class="tienda-card-icon">' + itemIconHtml(it, foto) + '</div>' +
+        '<div><div class="tienda-modal-name">' + esc(tx.nombre) + '</div><div class="tienda-modal-desc">' + esc(tx.desc) + '</div>' + (extra || '') + '</div></div>';
+}
+/* Ventana Win98 sobre la tienda (como la de ayuda). */
+function tiendaModal(titleHtml) {
+    var bg = document.createElement('div');
+    bg.className = 'tienda-modal-bg';
+    bg.innerHTML = '<div class="window tienda-modal"><div class="title-bar"><div class="title-bar-text">' + titleHtml + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close"></button></div></div><div class="window-body"></div></div>';
+    document.body.appendChild(bg);
+    var close = function () { bg.remove(); document.removeEventListener('keydown', onKey); };
+    var onKey = function (e) { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    bg.querySelector('[aria-label="Close"]').addEventListener('click', close);
+    bg.addEventListener('click', function (e) { if (e.target === bg) close(); });
+    return { body: bg.querySelector('.window-body'), close: close };
+}
+var GIFT_IC = '<img src="../assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">';
+
+/* ── Los que me han regalado ── */
+async function loadGifts() {
+    try { var r = await api('gifts'); _gifts = (r && r.gifts) || []; } catch (_) { _gifts = []; }
+    renderGifts();
+}
+function renderGifts() {
+    document.getElementById('tienda-gifts-label').innerHTML = 'Regalos' + (_gifts.length ? ' (<b>' + _gifts.length + '</b>)' : '');
+    var list = document.getElementById('tienda-gifts-list');
+    list.innerHTML = _gifts.map(function (g) {
+        return '<div class="tienda-gift-row" data-gift="' + g.id + '" title="Abrir el regalo">' + avHtml(g.from) + '<span>De ' + esc(g.from.label) + '</span></div>';
+    }).join('');
+    list.querySelectorAll('[data-gift]').forEach(function (row) {
+        row.addEventListener('click', function () { openGift(+row.dataset.gift); });
+    });
+}
+function openGift(id) {
+    var g = _gifts.filter(function (x) { return x.id === id; })[0];
+    if (!g) { setStatus('Ese regalo ya no está pendiente.', 'error'); return; }
+    var it = _items.filter(function (x) { return (x.id|0) === g.item.id; })[0] || g.item;
+    var m = tiendaModal(GIFT_IC + 'Regalo de ' + esc(g.from.label));
+    m.body.innerHTML =
+        '<div class="tienda-modal-from">' + avHtml(g.from) + '<span><b>' + esc(g.from.label) + '</b> te ha enviado un regalo</span></div>' +
+        itemBlock(it, MY_AVATAR) +
+        (g.mensaje ? '<div class="tienda-modal-msg"></div>' : '') +
+        '<div class="tienda-modal-foot"><button type="button" class="button" data-a="no">Rechazar</button><button type="button" class="button" data-a="si">Aceptar</button></div>';
+    if (g.mensaje) m.body.querySelector('.tienda-modal-msg').textContent = g.mensaje;
+    var answer = async function (accept, btn) {
+        m.body.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+        try {
+            var r = await api('gift-answer', { id: g.id, accept: accept });
+            if (r.error) throw new Error(r.error);
+            m.close();
+            if (r.accepted) {
+                _owned[g.item.id] = true;
+                var msg = 'Regalo aceptado: ' + itemTexts(it).nombre;
+                if (r.discord && r.discord.attempted) msg += ' · 🎉 rol de Discord asignado';
+                setStatus(msg, 'ok');
+            } else {
+                setStatus(r.refunded || ('Regalo rechazado: se le devuelven los puntos a ' + g.from.label + '.'), r.refunded ? 'error' : 'ok');
+            }
+            loadGifts();
+            renderItems();
+        } catch (e) {
+            setStatus('Error: ' + e.message, 'error');
+            m.body.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        }
+    };
+    m.body.querySelector('[data-a="si"]').addEventListener('click', function () { answer(true); });
+    m.body.querySelector('[data-a="no"]').addEventListener('click', function () { answer(false); });
+}
+
+/* ── Regalar ── */
+async function openFriendPicker() {
+    var m = tiendaModal(GIFT_IC + 'Regalar a un amigo');
+    m.body.innerHTML = '<div>Elige a quién le quieres hacer un regalo. La tienda se verá como si fueras esa persona.</div>' +
+        '<div class="tienda-friends"><div class="tienda-empty">Cargando…</div></div>';
+    var box = m.body.querySelector('.tienda-friends');
+    var r;
+    try { r = await api('gift-friends'); } catch (_) { r = null; }
+    var fr = (r && r.friends) || [];
+    box.innerHTML = fr.length ? fr.map(function (f, i) {
+        return '<div class="tienda-friend" data-i="' + i + '">' + avHtml(f) + '<span>' + esc(f.label) + '</span></div>';
+    }).join('') : '<div class="tienda-empty" style="padding:12px;">Aún no tienes amigos mutuos (gente que te sigue y a la que sigues).</div>';
+    box.querySelectorAll('.tienda-friend').forEach(function (row) {
+        row.addEventListener('click', function () { m.close(); enterGiftMode(fr[+row.dataset.i].key); });
+    });
+}
+async function enterGiftMode(key) {
+    setStatus('Cargando…');
+    try {
+        var r = await api('gift-target&user=' + encodeURIComponent(key));
+        if (r.error) throw new Error(r.error);
+        var owned = {}, pending = {};
+        (r.owned || []).forEach(function (id) { owned[id|0] = true; });
+        (r.pending || []).forEach(function (id) { pending[id|0] = true; });
+        _gift = { key: r.key, label: r.label, image: r.image, discord: !!r.discord, owned: owned, pending: pending };
+        renderGiftBar();
+        renderItems();
+        setStatus('');
+    } catch (e) { setStatus('Error: ' + e.message, 'error'); }
+}
+function exitGiftMode() { _gift = null; renderGiftBar(); renderItems(); }
+function renderGiftBar() {
+    var bar = document.getElementById('tienda-gift-bar');
+    bar.classList.toggle('on', !!_gift);
+    if (!_gift) { bar.innerHTML = ''; return; }
+    bar.innerHTML = avHtml(_gift) + '<span class="tienda-gift-txt">Modo regalo: regalando a <b>' + esc(_gift.label) + '</b>. Lo que ya tiene sale como "Ya lo tiene".</span>' +
+        '<button type="button" class="button">Salir del modo regalo</button>';
+    bar.querySelector('button').addEventListener('click', exitGiftMode);
+}
+function openGiftConfirm(itemId) {
+    var it = _items.filter(function (x) { return (x.id|0) === (itemId|0); })[0];
+    if (!it || !_gift) return;
+    var to = _gift;
+    var m = tiendaModal(GIFT_IC + 'Regalar a ' + esc(to.label));
+    m.body.innerHTML = itemBlock(it, to.image, '<div style="margin-top:6px;">Precio: <b>' + perfilPrecio(it.precio) + '</b></div>') +
+        '<div>Mensaje (opcional):</div><textarea rows="3" maxlength="200"></textarea>' +
+        '<div class="tienda-modal-foot"><span class="tienda-modal-desc" style="margin-right:auto;" data-r="n">0 / 200</span>' +
+        '<button type="button" class="button" data-a="no">Cancelar</button><button type="button" class="button" data-a="si">Regalar</button></div>';
+    var ta = m.body.querySelector('textarea'), ok = m.body.querySelector('[data-a="si"]');
+    ta.addEventListener('input', function () { m.body.querySelector('[data-r="n"]').textContent = ta.value.length + ' / 200'; });
+    ok.disabled = it.precio > _balance;
+    if (ok.disabled) ok.title = 'No tienes puntos suficientes';
+    m.body.querySelector('[data-a="no"]').addEventListener('click', m.close);
+    ok.addEventListener('click', async function () {
+        ok.disabled = true;
+        try {
+            var r = await api('gift', { item_id: it.id, to: to.key, mensaje: ta.value.trim() });
+            if (r.error) throw new Error(r.error);
+            _balance = r.autismo|0;
+            if (_gift && _gift.key === to.key) _gift.pending[it.id|0] = true;
+            m.close();
+            renderItems();
+            setStatus('Regalo enviado a ' + to.label + ': ' + itemTexts(it).nombre + ' (-' + r.item.precio + ' puntos)', 'ok');
+        } catch (e) {
+            setStatus('Error: ' + e.message, 'error');
+            ok.disabled = false;
+        }
+    });
+    ta.focus();
+}
+document.getElementById('tienda-gift-btn').addEventListener('click', openFriendPicker);
+/* El escritorio abre un regalo desde el aviso del haro. */
+window.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'tienda-open-gift') loadGifts().then(function () { openGift(e.data.id|0); });
+});
 
 /* ── Cambio de vista ──
    Cubre tanto los .tienda-tab (Principal) como el botón #tienda-donar-btn
@@ -1225,11 +1477,16 @@ document.querySelectorAll('[data-view]').forEach(function(el){
         if (e.data && e.data.type === 'tienda-refresh') {
             pollBalance();           /* update inmediato del wallet */
             loadState();             /* refresca items + compras */
+            loadGifts();             /* regalos pendientes */
         }
     });
 })();
 
-loadState();
+/* ?regalo=ID: abierta desde el aviso del haro con la tienda cerrada. */
+Promise.all([loadState(), loadGifts()]).then(function () {
+    var m = /[?&]regalo=(\d+)/.exec(location.search);
+    if (m) openGift(+m[1]);
+});
 })();
 
 /* =========================================================

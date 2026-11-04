@@ -2594,22 +2594,54 @@ window.notifSystem = (function() {
     var tiendaIframe = document.getElementById('tienda-iframe');
     var tiendaLoaded = false;
 
-    document.getElementById('tienda-icon').addEventListener('dblclick', function() {
+    /* giftId: abre ese regalo (aviso del haro "Abrir"); con la tienda sin
+       cargar va en la URL (?regalo=), si ya estaba, por postMessage. */
+    function openTienda(giftId) {
         if (!tiendaLoaded) {
-            tiendaIframe.src = appSrc('apps/tienda.php');
+            tiendaIframe.src = appSrc('apps/tienda.php' + (giftId ? '?regalo=' + giftId : ''));
             tiendaLoaded = true;
         } else {
             /* Iframe ya estaba cargado: pedimos al iframe que refresque su
                estado (balance, items, compras) para que el wallet de la
                sidebar no se quede congelado tras minutos cerrada. */
             try { tiendaIframe.contentWindow.postMessage({ type: 'tienda-refresh' }, '*'); } catch (e) {}
+            if (giftId) { try { tiendaIframe.contentWindow.postMessage({ type: 'tienda-open-gift', id: giftId }, '*'); } catch (e) {} }
         }
         if (taskbarManager.isRegistered('tienda-window')) {
             taskbarManager.restore('tienda-window');
         } else {
             taskbarManager.register('tienda-window', 'Tienda', '<img src="assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
         }
-    });
+    }
+    window.melonOpenTienda = openTienda;
+    document.getElementById('tienda-icon').addEventListener('dblclick', function() { openTienda(); });
+
+    /* Regalos de la tienda: aviso del haro por cada regalo pendiente de
+       abrir (al entrar y cada minuto); "Abrir" lleva a la tienda con él. */
+    function pollGifts() {
+        if (!window.notifSystem) return;
+        fetch('assets/tienda/api.php?action=gifts', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                ((d && d.gifts) || []).forEach(function(g) {
+                    window.notifSystem.show({
+                        id:          'tienda-gift-' + g.id,
+                        type:        'action',
+                        title:       '<img src="assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Regalo',
+                        message:     g.from.label + ' te ha enviado un regalo',
+                        senderImage: (g.from.image || '').replace(/^\.\.\//, ''),
+                        senderKey:   g.from.key,
+                        sentAt:      g.ts,
+                        rejectLabel: 'Cerrar',
+                        acceptLabel: 'Abrir',
+                        onAccept:    function() { openTienda(g.id); },
+                    });
+                });
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollGifts, 6000);
+    setInterval(pollGifts, 60000);
 
     document.getElementById('tienda-close').addEventListener('click', function() {
         taskbarManager.unregister('tienda-window');
