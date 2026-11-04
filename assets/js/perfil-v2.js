@@ -3,10 +3,15 @@
    ──────────────────────────────────────────────────────────────────────
    Pinta lo que devuelve `v2` en get-profile / view-user
    (assets/profile/perfil2.php):
-     - expositores (Juegos / Películas / Series / Libros favoritos,
-       Capturas —de la Galería, en Google Drive—, Reseña destacada, Música
-       favorita, logros de Steam, Juego destacado, Playlist destacada y
-       Texto libre) en el orden que elige el usuario;
+     - expositores (Media favorita —juegos, películas, series, libros o
+       música, uno por tipo, elegido con el desplegable de la barra en
+       Personalizar—, Capturas —de la Galería, en Google Drive—, Reseña
+       destacada, logros de Steam, Juego destacado, Playlist destacada y
+       Texto libre) en el orden que elige el usuario. Reseña, Juego y
+       Playlist destacada se compran en la tienda (sin comprar solo los ve
+       su dueño, en Personalizar, como bloqueados); Media favorita (3 → 5)
+       y los logros de Steam (filas de 7, de 1 a 4) se mejoran allí
+       (`v2.perks`);
      - comentarios del muro (sustituyen a los posts);
      - columna lateral: nivel, medallas, amigos y actividad;
      - estado (en línea / ausente / no molestar / desconectado).
@@ -22,20 +27,36 @@
 (function () {
     var API = 'assets/profile/api.php';
     var TYPES = {
-        games:  { label: 'Juegos favoritos', icon: 'juegosIcon' },
+        media:  { label: 'Media favorita',   icon: 'juegosIcon' },
         shots:  { label: 'Capturas',         icon: 'galeriaIcon' },
         review: { label: 'Reseña destacada', icon: 'bestOfTheYearIcon' },
-        music:  { label: 'Música favorita',  icon: 'musicaIcon' },
         steam_rare: { label: 'Logros raros de Steam', icon: 'steamIcon' },
         steam_ach:  { label: 'Logros de Steam',       icon: 'steamIcon' },
-        movies:    { label: 'Películas favoritas', icon: 'pelisIcon' },
-        series:    { label: 'Series favoritas',    icon: 'melonArchiveIcon' },
-        books:     { label: 'Libros favoritos',    icon: 'booksIcon' },
         game_feat: { label: 'Juego destacado',     icon: 'juegosIcon' },
         playlist:  { label: 'Playlist destacada',  icon: 'songIcon' },
         text:      { label: 'Texto libre',         icon: 'newsIcon' },
     };
-    var MAX = { games: 4, movies: 4, series: 4, books: 4, shots: 3, music: 5, steam_ach: 8, game_feat: 8, text: 1000 };
+    /* Tipos de Media favorita (el título de la barra es el del tipo). */
+    var MEDIA = {
+        games:  { label: 'Juegos favoritos',    icon: 'juegosIcon' },
+        movies: { label: 'Películas favoritas', icon: 'pelisIcon' },
+        series: { label: 'Series favoritas',    icon: 'melonArchiveIcon' },
+        books:  { label: 'Libros favoritos',    icon: 'booksIcon' },
+        music:  { label: 'Música favorita',     icon: 'musicaIcon' },
+    };
+    var MEDIA_CATS = ['games', 'movies', 'series', 'books', 'music'];
+    var PAID = ['review', 'game_feat', 'playlist'];      /* se compran en la tienda */
+    var ACH_ROW = 7;                                     /* logros por fila */
+    var MAX = { shots: 3, game_feat: 8, text: 1000 };
+    function perks() { return (S.v2 && S.v2.perks) || {}; }
+    /* Cuántos caben en una Media favorita (3 + mejoras) y en un
+       expositor de logros (filas de 7). */
+    function mediaMax(cat) { return (perks().media || {})[cat] || 3; }
+    function achMax(type) { return ACH_ROW * ((perks().steamRows || {})[type] || 1); }
+    function unlocked(type) { return PAID.indexOf(type) < 0 || !!(perks().unlocked || {})[type]; }
+    function mediaUsed(except) {
+        return S.draft.filter(function (s) { return s.type === 'media' && s !== except; }).map(function (s) { return s.config.cat; });
+    }
     /* Favoritos (juegos, películas, series, libros): cómo se nombra cada
        cosa en su selector ([singular, plural, femenino]). */
     var FAV_NOUN = {
@@ -45,9 +66,9 @@
         books:  ['libro', 'libros', false],
     };
     /* Config y datos de un expositor recién añadido (vacío). */
-    function blankShowcase(t) {
+    function blankShowcase(t, cat) {
         if (t === 'review') return { config: { category: '', title: '' }, data: {} };
-        if (FAV_NOUN[t]) return { config: { titles: [] }, data: [] };
+        if (t === 'media') return { config: cat === 'music' ? { cat: cat, ids: [] } : { cat: cat, titles: [] }, data: [] };
         if (t === 'steam_rare') return { config: {}, data: {} };
         if (t === 'steam_ach') return { config: { items: [] }, data: {} };
         if (t === 'game_feat') return { config: { title: '', ach: [] }, data: {} };
@@ -56,6 +77,7 @@
         return { config: { ids: [] }, data: [] };
     }
     function isEmpty(sc) {
+        if (sc.locked) return true;
         var d = sc.data;
         if (!d) return true;
         if (Array.isArray(d)) return !d.length;
@@ -118,17 +140,29 @@
         refreshStatus();
     }
 
-    function panel(type, sub, idx) {
-        var t = TYPES[type];
+    function panel(sc, sub, idx) {
+        var type = sc.type;
+        var t = type === 'media' ? (MEDIA[sc.config.cat] || MEDIA.games) : TYPES[type];
+        /* Media favorita en Personalizar: el tipo se elige con un
+           desplegable en la barra (sin los tipos que ya tienen otra). */
+        var title = esc(t.label);
+        if (type === 'media' && S.editing) {
+            var used = mediaUsed(sc);
+            title = '<select class="pf2-media-sel" title="Tipo">' + MEDIA_CATS.filter(function (c) {
+                return c === sc.config.cat || used.indexOf(c) < 0;
+            }).map(function (c) {
+                return '<option value="' + c + '"' + (c === sc.config.cat ? ' selected' : '') + '>' + esc(MEDIA[c].label) + '</option>';
+            }).join('') + '</select>';
+        }
         var p = document.createElement('div');
         p.className = 'pf2-panel pf2-show';
         p.dataset.idx = idx;
         p.innerHTML =
             '<div class="profile-sidebar-heading pf2-panel-head">' +
                 '<span class="pf2-edit-ctl pf2-handle" title="Arrastra para moverlo">⠿</span>' +
-                ic(t.icon) + esc(t.label) +
+                ic(t.icon) + title +
                 '<span class="pf2-sub">' + (sub || '') + '</span>' +
-                (type === 'steam_rare' ? '' : '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="edit">Editar</button>') +
+                (type === 'steam_rare' || sc.locked ? '' : '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="edit">Editar</button>') +
                 '<button type="button" class="button pf2-edit-ctl pf2-hbtn" data-act="del" title="Quitar expositor">✕</button>' +
             '</div><div class="pf2-panel-body"></div>';
         return p;
@@ -144,13 +178,25 @@
         S.draft.forEach(function (sc, i) {
             var empty = isEmpty(sc);
             if (empty && !own) return;            /* a los demás no se les enseña un expositor vacío */
+            /* De pago sin comprar: solo lo ve su dueño, en Personalizar. */
+            if (sc.locked && !S.editing) return;
             var sub = '';
-            if (sc.type === 'games' && !own) sub = '';
             if (sc.type === 'shots' && S.v2.stats) sub = (sc.data || []).length + ' de ' + (S.v2.stats.counts.shots || 0);
-            var p = panel(sc.type, sub, i);
+            var p = panel(sc, sub, i);
             var body = p.querySelector('.pf2-panel-body');
-            if (empty) body.innerHTML = '<div class="pf2-empty">' + emptyText(sc.type) + '</div>';
-            else RENDER[sc.type](body, sc.data);
+            if (sc.locked) body.innerHTML = '<div class="pf2-empty pf2-locked">Bloqueado: cómpralo en la tienda (pestaña Perfil) para que salga en tu perfil.</div>';
+            else if (empty) body.innerHTML = '<div class="pf2-empty">' + emptyText(sc.type) + '</div>';
+            else RENDER[sc.type](body, sc.data, sc);
+            var msel = p.querySelector('.pf2-media-sel');
+            if (msel) {
+                msel.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+                msel.addEventListener('change', function () {
+                    /* Otro tipo: se empieza vacío (lo elegido era de otra lista). */
+                    var b = blankShowcase('media', msel.value);
+                    sc.config = b.config; sc.data = b.data;
+                    renderShowcases();
+                });
+            }
             var eb = p.querySelector('[data-act="edit"]');
             if (eb) eb.addEventListener('click', function () { openPicker(i); });
             p.querySelector('[data-act="del"]').addEventListener('click', function () {
@@ -227,17 +273,19 @@
             (st.total ? '<div class="pf2-tip-row">' + ic('bestOfTheYearIcon', 12, 3) + 'Logros <b>' + st.achieved + ' / ' + st.total + '</b></div>' +
                         '<div class="pf2-bar"><i style="width:' + pct + '%"></i></div>' : '');
     }
-    /* Fila de logros (iconos) con su ventanita y el resumen de Steam. */
-    function renderAch(body, data, rare) {
+    /* Logros en filas de 7 (como el expositor de logros de Steam), de
+       arriba abajo; los raros (menos del 10 % de los jugadores) con brillo
+       del color de acento. Debajo, juegos y horas jugadas en grande. */
+    function renderAch(body, data) {
         var items = data.items || [], tot = data.totals || {};
-        body.innerHTML = '<div class="pf2-ach"><div class="pf2-ach-list"></div>' +
-            '<div class="pf2-ach-sum"><b>' + (tot.games || 0) + '</b> juegos en Steam<br><b>' + (tot.hours || 0).toLocaleString('es') + '</b> h jugadas</div></div>';
-        var list = body.querySelector('.pf2-ach-list');
+        body.innerHTML = '<div class="pf2-achs"></div>' +
+            '<div class="pf2-ach-stats"><div><b>' + (tot.games || 0).toLocaleString('es') + '</b><span>juegos</span></div>' +
+            '<div><b>' + (tot.hours || 0).toLocaleString('es') + '</b><span>horas jugadas</span></div></div>';
+        var list = body.querySelector('.pf2-achs');
         items.forEach(function (a, i) {
             var d = document.createElement('div');
-            d.className = 'pf2-ach-it' + (i % 8 >= 4 ? ' flip' : '');
+            d.className = 'pf2-achg' + (i % ACH_ROW >= 4 ? ' flip' : '') + (a.percent != null && a.percent < 10 ? ' raro' : '');
             d.innerHTML = '<img src="' + esc(a.icon) + '" alt="">' +
-                (rare && a.percent != null ? '<div>' + String(a.percent).replace('.', ',') + ' %</div>' : '') +
                 '<div class="pf2-mtip"><b>' + esc(a.name) + '</b>' + (a.desc ? '<br>' + esc(a.desc) : '') +
                 '<br><i>' + esc(a.game || '') + '</i>' +
                 (a.percent != null ? '<br>Lo tiene el ' + String(a.percent).replace('.', ',') + ' % de los jugadores' : '') + '</div>';
@@ -246,14 +294,20 @@
     }
 
     var RENDER = {
-        steam_rare: function (body, data) { renderAch(body, data, true); },
-        steam_ach:  function (body, data) { renderAch(body, data, false); },
+        steam_rare: function (body, data) { renderAch(body, data); },
+        steam_ach:  function (body, data) { renderAch(body, data); },
+        /* Media favorita: portadas (juegos, películas, series, libros) o
+           discos (música), hasta 5 por fila. */
+        media: function (body, data, sc) {
+            if (sc.config.cat === 'music') RENDER.music(body, data);
+            else RENDER.games(body, data);
+        },
         games: function (body, data) {
-            body.innerHTML = '<div class="pf2-games"></div>';
+            body.innerHTML = '<div class="pf2-games pf2-games5"></div>';
             var g = body.firstChild;
             data.forEach(function (it, i) {
                 var d = document.createElement('div');
-                d.className = 'pf2-game' + (i % 4 >= 2 ? ' flip' : '');
+                d.className = 'pf2-game' + (i % 5 >= 3 ? ' flip' : '');
                 d.innerHTML = (it.image ? '<img src="' + esc(it.image) + '" alt="" loading="lazy">' : '<div class="pf2-game-noimg">' + esc(it.title) + '</div>') +
                     '<div class="window pf2-tip"><div class="title-bar"><div class="title-bar-text">' + esc(it.title) + '</div></div>' +
                     '<div class="window-body">' + steamRows(it.steam) +
@@ -300,9 +354,6 @@
             });
         },
         /* Películas, series y libros favoritos: como los juegos (sin Steam). */
-        movies: function (body, data) { RENDER.games(body, data); },
-        series: function (body, data) { RENDER.games(body, data); },
-        books:  function (body, data) { RENDER.games(body, data); },
         /* Juego destacado: portada grande; con Steam, horas, logros X / Y y
            los logros elegidos en grande; sin Steam, la reseña. */
         game_feat: function (body, g) {
@@ -555,7 +606,7 @@
     /* ════════════════════ Personalizar ════════════════════ */
     function setEditing(on, fresh) {
         S.editing = !!on;
-        if (on && fresh) { S.v2.slots = fresh.slots; S.v2.maxSlots = fresh.maxSlots; S.v2.steam = fresh.steam; S.draft = copy(fresh.showcases || []); }
+        if (on && fresh) { S.v2.slots = fresh.slots; S.v2.maxSlots = fresh.maxSlots; S.v2.steam = fresh.steam; S.v2.perks = fresh.perks; S.draft = copy(fresh.showcases || []); }
         if (!on && S.v2) S.draft = copy(S.v2.showcases || []);
         closePicker();
         /* Marco: el elegido no se guarda hasta "Guardar"; al salir se quita
@@ -684,18 +735,24 @@
             }).catch(function () { return { error: 'Error de red al guardar el marco' }; })
             : Promise.resolve({ ok: true });
         var shows = api('save-showcases', body).then(function (d) {
-            if (d && d.ok) { S.v2.showcases = d.showcases; S.v2.slots = d.slots; S.draft = copy(d.showcases); }
+            if (d && d.ok) { S.v2.showcases = d.showcases; S.v2.slots = d.slots; if (d.perks) S.v2.perks = d.perks; S.draft = copy(d.showcases); }
             return d || { error: 'No se pudieron guardar los expositores' };
         }).catch(function () { return { error: 'Error de red al guardar los expositores' }; });
         return Promise.all([shows, frame]).then(function (r) { return (r[1] && r[1].error) ? r[1] : r[0]; });
     }
 
-    /* Elegir el tipo del expositor nuevo (sin repetir los que ya hay). */
+    /* Elegir el tipo del expositor nuevo (sin repetir los que ya hay;
+       Media favorita mientras quede algún tipo libre; los de pago, solo
+       comprados). */
     function openTypeMenu(e) {
         var used = S.draft.map(function (s) { return s.type; });
-        var items = Object.keys(TYPES).filter(function (t) { return used.indexOf(t) < 0; }).map(function (t) {
+        var freeCats = MEDIA_CATS.filter(function (c) { return mediaUsed(null).indexOf(c) < 0; });
+        var items = Object.keys(TYPES).filter(function (t) {
+            if (t === 'media') return freeCats.length > 0;
+            return used.indexOf(t) < 0 && unlocked(t);
+        }).map(function (t) {
             return { label: TYPES[t].label, fn: function () {
-                var b = blankShowcase(t);
+                var b = blankShowcase(t, freeCats[0]);
                 S.draft.push({ type: t, config: b.config, data: b.data });
                 renderShowcases();
                 /* Los raros se calculan solos al guardar. */
@@ -743,7 +800,8 @@
 
     function openPicker(idx) {
         var sc = S.draft[idx];
-        if (!sc) return;
+        if (!sc || sc.locked) return;
+        if (sc.type === 'media') { if (sc.config.cat === 'music') PICK.music(sc); else favPicker(sc, sc.config.cat); return; }
         PICK[sc.type](sc);
     }
 
@@ -865,9 +923,9 @@
        añadir uno pendiente a la lista. */
     function favPicker(sc, cat) {
         var noun = FAV_NOUN[cat], fem = noun[2];
-        var max = MAX[cat];
-        var sel = (sc.config.titles || []).slice();
-        var body = pickerWindow(TYPES[cat].label);
+        var max = mediaMax(cat);
+        var sel = (sc.config.titles || []).slice(0, max);
+        var body = pickerWindow(MEDIA[cat].label);
         body.innerHTML =
             '<div style="font-size:11px;">' + (fem ? 'Elegidas' : 'Elegidos') + ' (máx. ' + max + '):</div>' +
             '<div class="pf2-pick-list" data-r="sel" style="max-height:150px;"><div class="pf2-pick-grid"></div></div>' +
@@ -931,7 +989,7 @@
         });
         info = pickerFoot(body, '', function () {
             var prev = sc.data || [];
-            sc.config = { titles: sel.slice() };
+            sc.config = { cat: cat, titles: sel.slice() };
             sc.data = sel.map(function (t) {
                 var rv = ownReview(cat, t);
                 var own = ownList(cat).find(function (x) { return x.title.toLowerCase() === t.toLowerCase(); });
@@ -953,10 +1011,6 @@
     }
 
     var PICK = {
-        games:  function (sc) { favPicker(sc, 'games'); },
-        movies: function (sc) { favPicker(sc, 'movies'); },
-        series: function (sc) { favPicker(sc, 'series'); },
-        books:  function (sc) { favPicker(sc, 'books'); },
 
         /* Juego destacado: un juego del catálogo y, si tiene Steam y el
            juego está en su biblioteca, hasta 8 de sus logros conseguidos
@@ -1253,9 +1307,10 @@
             var st = S.v2.steam || {};
             var body = pickerWindow('Logros de Steam');
             if (!st.linked) { body.innerHTML = '<div class="pf2-empty">' + emptyText('steam_ach') + '</div>'; pickerFoot(body, '', function () {}); return; }
-            var sel = ((sc.data && sc.data.items) || []).slice();
+            var maxAch = achMax('steam_ach');
+            var sel = ((sc.data && sc.data.items) || []).slice(0, maxAch);
             body.innerHTML =
-                '<div style="font-size:11px;">Elegidos (máx. ' + MAX.steam_ach + '):</div>' +
+                '<div style="font-size:11px;">Elegidos (máx. ' + maxAch + '):</div>' +
                 '<div class="pf2-pick-list" data-r="sel" style="max-height:80px;"><div class="pf2-ach-list"></div></div>' +
                 '<div style="display:flex;gap:6px;min-height:0;">' +
                     '<div style="width:190px;display:flex;flex-direction:column;gap:4px;"><input type="text" placeholder="Buscar juego…"><div class="pf2-pick-list" data-r="games" style="height:240px;"></div></div>' +
@@ -1272,7 +1327,7 @@
                 selL.querySelectorAll('.pf2-ach-it').forEach(function (el) {
                     el.addEventListener('click', function () { sel = sel.filter(function (a) { return key(a) !== el.dataset.k; }); paintSel(); if (curGame) showGame(curGame); });
                 });
-                if (info) info.textContent = sel.length + ' de ' + MAX.steam_ach;
+                if (info) info.textContent = sel.length + ' de ' + maxAch;
             };
             var paintGames = function () {
                 var q = input.value.trim().toLowerCase();
@@ -1302,7 +1357,7 @@
                             var k = g.appid + '|' + a.apiname;
                             var at = sel.findIndex(function (x) { return key(x) === k; });
                             if (at >= 0) sel.splice(at, 1);
-                            else if (sel.length < MAX.steam_ach) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
+                            else if (sel.length < maxAch) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
                             paintSel(); showGame(g);
                         });
                     });
@@ -1357,9 +1412,11 @@
             paint();
         },
 
-        /* Música favorita: hasta 5 de mi lista de música. */
+        /* Media favorita de música: de mi lista de música, hasta 3 (5 con
+           las mejoras). */
         music: function (sc) {
-            var sel = (sc.config.ids || []).slice();
+            var max = mediaMax('music');
+            var sel = (sc.config.ids || []).slice(0, max);
             var body = pickerWindow('Música favorita');
             var items = ownList('music').filter(function (it) { return /^\d+$/.test(String(it.id)); });
             body.innerHTML = '<input type="text" placeholder="Buscar…"><div class="pf2-pick-list"><div class="pf2-pick-grid"></div></div>';
@@ -1385,15 +1442,15 @@
                     }
                     el.addEventListener('click', function () {
                         var id = +el.dataset.id, k = sel.indexOf(id);
-                        if (k >= 0) sel.splice(k, 1); else if (sel.length < MAX.music) sel.push(id);
+                        if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(id);
                         paint();
                     });
                 });
-                if (info) info.textContent = sel.length + ' de ' + MAX.music;
+                if (info) info.textContent = sel.length + ' de ' + max;
             };
             input.addEventListener('input', paint);
             info = pickerFoot(body, '', function () {
-                sc.config = { ids: sel.slice() };
+                sc.config = { cat: 'music', ids: sel.slice() };
                 sc.data = sel.map(function (id) {
                     var it = items.find(function (x) { return +x.id === id; });
                     if (!it) return null;

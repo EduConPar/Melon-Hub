@@ -769,17 +769,18 @@ function renderItems(){
         var needsDiscord = !!it.discord_role_name;
         var discordLinked = window.__DISCORD_LINKED__ === true;
         var locked = needsDiscord && !discordLinked && !owned;
-        /* Huecos de expositor del perfil: en orden (el 4 pide el 3…). */
-        var SLOT_SLUGS = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-        var slotIdx = SLOT_SLUGS.indexOf(it.slug || '');
+        /* Compras en cadena del perfil (huecos, mejoras de expositor): en
+           orden (el 4 pide el 3…). */
+        var prevSlug = tiendaPrevSlug(it.slug || '');
         var needsPrev = false;
-        if (slotIdx > 0 && !owned) {
-            var prev = _items.filter(function(x){ return x.slug === SLOT_SLUGS[slotIdx - 1]; })[0];
+        if (prevSlug && !owned) {
+            var prev = _items.filter(function(x){ return x.slug === prevSlug; })[0];
             needsPrev = !prev || !_owned[prev.id|0];
         }
+        var prevHueco = prevSlug && /^expositor-hueco-(\d)$/.exec(prevSlug);
         var btnLabel = owned     ? '✓ Ya lo tienes'
                      : locked    ? 'Vincula Discord'
-                     : needsPrev ? 'Antes, el hueco ' + (slotIdx + 2)
+                     : needsPrev ? (prevHueco ? 'Antes, el hueco ' + prevHueco[1] : 'Antes, la mejora anterior')
                                  : 'Comprar';
         var btnAttrs = locked ? ' disabled data-locked="1" title="Vincula tu Discord (sidebar) para comprar este item"'
                      : needsPrev ? ' disabled data-locked="1"' : '';
@@ -821,13 +822,43 @@ function renderItems(){
     renderBalance();
 }
 
+/* Compras en cadena de la pestaña Perfil: el objeto que hay que tener
+   antes (null = ninguno). Misma regla que tiendaPrevSlug de
+   assets/tienda/catalogo.php (la que vale al comprar). */
+function tiendaPrevSlug(slug) {
+    var m;
+    if ((m = /^expositor-hueco-(\d)$/.exec(slug)) && +m[1] > 3) return 'expositor-hueco-' + (m[1] - 1);
+    if ((m = /^(media-[a-z]+)-(\d)$/.exec(slug)) && +m[2] > 4) return m[1] + '-' + (m[2] - 1);
+    if ((m = /^(steam-(?:rare|ach)-fila)-(\d)$/.exec(slug)) && +m[2] > 2) return m[1] + '-' + (m[2] - 1);
+    return null;
+}
+
 /* ── Pestaña Perfil, por secciones (como la tienda de puntos de Steam) ──
    MARCOS DE AVATAR: tarjetas con tu foto dentro de cada marco.
-   EXPOSITORES: UNA sola tarjeta ancha para los huecos de expositor que va
-   cambiando según los que ya tengas (hueco 3 → 4 → 5, con su precio);
-   comprados los tres, sale completa. Lo que no sea ni marco ni hueco va
-   en OTROS, con la tarjeta normal. */
+   SUBIR DE NIVEL EXPOSITORES: una tarjeta ancha por cadena de mejoras
+   que va cambiando según lo que ya tengas (con su precio y pips):
+   huecos de expositor (3 → 4 → 5), Media favorita de cada tipo (3 → 4 →
+   5 elementos) y las filas de los dos expositores de logros de Steam
+   (1 → 4); comprada entera, sale completa.
+   EXPOSITORES ADICIONALES: los que se compran (Reseña, Juego y Playlist
+   destacada), en tarjetas normales.
+   El resto va en OTROS, con la tarjeta normal. */
 var SLOT_SLUGS_PERFIL = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
+var EXPO_ADICIONALES = ['expositor-resena', 'expositor-juego-destacado', 'expositor-playlist'];
+/* Cadenas de mejoras: slugs en orden, icono, cuántos hay de base y
+   cómo se cuentan. */
+var CADENAS_PERFIL = [
+    { slugs: SLOT_SLUGS_PERFIL, icono: 'profileIcon', base: 2, cosa: 'huecos', nombre: 'Huecos de expositor',
+      fin: function(n){ return 'Ya tienes todos los huecos: ' + n + ' expositores a la vez en tu perfil.'; } }
+].concat([['games', 'juegosIcon', 'Juegos favoritos', 'juegos'], ['movies', 'pelisIcon', 'Películas favoritas', 'películas'],
+          ['series', 'melonArchiveIcon', 'Series favoritas', 'series'], ['books', 'booksIcon', 'Libros favoritos', 'libros'],
+          ['music', 'musicaIcon', 'Música favorita', 'canciones']].map(function(m){
+    return { slugs: ['media-' + m[0] + '-4', 'media-' + m[0] + '-5'], icono: m[1], base: 3, cosa: m[3], nombre: m[2],
+             fin: function(n){ return 'Ya tienes todos los huecos: ' + n + ' ' + m[3] + ' en tu Media favorita.'; } };
+})).concat([['rare', 'Logros raros de Steam'], ['ach', 'Logros de Steam']].map(function(m){
+    return { slugs: ['steam-' + m[0] + '-fila-2', 'steam-' + m[0] + '-fila-3', 'steam-' + m[0] + '-fila-4'], icono: 'steamIcon', base: 1,
+             cosa: 'filas', nombre: m[1], fin: function(n){ return 'Ya tienes las ' + n + ' filas: ' + (n * 7) + ' logros en el expositor.'; } };
+}));
 function perfilPrecio(p) {
     return p + ' <img src="../assets/img/appIcons/puntosAutismo.png" class="punto-autismo-ic" alt="">';
 }
@@ -839,9 +870,11 @@ function perfilSeccion(titulo, sub, cuerpo, cls) {
 }
 function renderPerfil(view, items) {
     var marcos = items.filter(function(it){ return !!it.marco; });
-    var huecos = SLOT_SLUGS_PERFIL.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; })
-                                  .filter(Boolean);
-    var otros  = items.filter(function(it){ return !it.marco && SLOT_SLUGS_PERFIL.indexOf(it.slug) < 0; });
+    var enCadena = {};
+    CADENAS_PERFIL.forEach(function(c){ c.slugs.forEach(function(sl){ enCadena[sl] = true; }); });
+    var adicionales = EXPO_ADICIONALES.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; })
+                                      .filter(Boolean);
+    var otros  = items.filter(function(it){ return !it.marco && !enCadena[it.slug] && EXPO_ADICIONALES.indexOf(it.slug) < 0; });
     var foto = MY_AVATAR || '../assets/img/appIcons/profileIcon.png';
     var html = '';
 
@@ -861,26 +894,45 @@ function renderPerfil(view, items) {
             }).join(''), 'tienda-sec-grid');
     }
 
-    if (huecos.length) {
-        /* El primero que no tienes es el que se vende ahora. */
-        var tienes = huecos.filter(function(it){ return _owned[it.id|0]; }).length;
-        var sig = huecos.filter(function(it){ return !_owned[it.id|0]; })[0];
-        var total = 2 + huecos.length;
+    /* Una tarjeta ancha por cadena: el primero que no tienes es el que se
+       vende ahora. */
+    var anchas = CADENAS_PERFIL.map(function(c){
+        var cad = c.slugs.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; }).filter(Boolean);
+        if (!cad.length) return '';
+        var tienes = cad.filter(function(it){ return _owned[it.id|0]; }).length;
+        var sig = cad.filter(function(it){ return !_owned[it.id|0]; })[0];
+        var total = c.base + cad.length;
         var pips = '';
-        for (var i = 0; i < huecos.length; i++) pips += '<i class="' + (i < tienes ? 'on' : '') + '"></i>';
-        var card = '<div class="tienda-wide' + (sig ? '' : ' is-owned') + '">' +
-            '<div class="tienda-wide-icon"><img src="../assets/img/appIcons/profileIcon.png" alt=""></div>' +
+        for (var i = 0; i < cad.length; i++) pips += '<i class="' + (i < tienes ? 'on' : '') + '"></i>';
+        return '<div class="tienda-wide' + (sig ? '' : ' is-owned') + '">' +
+            '<div class="tienda-wide-icon"><img src="../assets/img/appIcons/' + c.icono + '.png" alt=""></div>' +
             '<div class="tienda-wide-body">' +
-                '<div class="tienda-wide-name">' + esc(sig ? sig.nombre : 'Huecos de expositor') + '</div>' +
-                '<div class="tienda-wide-type">Mejora de expositor · tienes ' + (2 + tienes) + ' de ' + total + ' huecos <span class="tienda-wide-pips">' + pips + '</span></div>' +
-                '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : 'Ya tienes todos los huecos: ' + total + ' expositores a la vez en tu perfil.') + '</div>' +
+                '<div class="tienda-wide-name">' + esc(sig ? sig.nombre : c.nombre) + '</div>' +
+                '<div class="tienda-wide-type">Mejora de expositor · tienes ' + (c.base + tienes) + ' de ' + total + ' ' + c.cosa + ' <span class="tienda-wide-pips">' + pips + '</span></div>' +
+                '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : c.fin(total)) + '</div>' +
                 '<div class="tienda-wide-foot">' +
                     (sig ? '<span class="tienda-wide-price">' + perfilPrecio(sig.precio) + '</span>' +
                            '<button type="button" class="button" data-buy-id="' + sig.id + '" data-price="' + sig.precio + '">Comprar</button>'
                          : '<span class="tienda-wide-done">✓ Completo</span>') +
                 '</div>' +
             '</div></div>';
-        html += perfilSeccion('EXPOSITORES', 'Más huecos para enseñar cosas en tu perfil a la vez. Cada mejora añade uno, hasta ' + total + '.', card, 'tienda-sec-wide');
+    }).join('');
+    if (anchas) {
+        html += perfilSeccion('SUBIR DE NIVEL EXPOSITORES', 'Más huecos de expositor, más elementos en Media favorita (de 3 a 5, por tipo) y más filas en los expositores de logros de Steam (de 1 a 4).', anchas, 'tienda-sec-wide');
+    }
+
+    if (adicionales.length) {
+        var iconos = { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' };
+        html += perfilSeccion('EXPOSITORES ADICIONALES', 'Expositores nuevos para tu perfil. Se ponen en Personalizar, en un hueco libre.', adicionales.map(function(it){
+            var owned = !!_owned[it.id|0];
+            return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+                '<div class="tienda-card-icon"><img class="tienda-card-icon-img" src="../assets/img/appIcons/' + iconos[it.slug] + '.png" alt="" style="image-rendering:pixelated;">' +
+                    '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
+                '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
+                '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
+                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+            '</div>';
+        }).join(''), 'tienda-sec-grid');
     }
 
     if (otros.length) {

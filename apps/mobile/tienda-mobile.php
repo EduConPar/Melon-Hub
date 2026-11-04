@@ -816,6 +816,17 @@ function renderBalance(){
         btn.disabled = p > _balance;
     });
 }
+/* Compras en cadena de la pestaña Perfil: el objeto que hay que tener
+   antes (null = ninguno). Misma regla que tiendaPrevSlug de
+   assets/tienda/catalogo.php (la que vale al comprar). */
+function tiendaPrevSlug(slug) {
+    var m;
+    if ((m = /^expositor-hueco-(\d)$/.exec(slug)) && +m[1] > 3) return 'expositor-hueco-' + (m[1] - 1);
+    if ((m = /^(media-[a-z]+)-(\d)$/.exec(slug)) && +m[2] > 4) return m[1] + '-' + (m[2] - 1);
+    if ((m = /^(steam-(?:rare|ach)-fila)-(\d)$/.exec(slug)) && +m[2] > 2) return m[1] + '-' + (m[2] - 1);
+    return null;
+}
+
 function renderItems(){
     var view = document.getElementById('tienda-view-principal');
     /* Pestañas con "proximamente" en catalogo.json (ahora Mascotas): placeholder.
@@ -856,17 +867,18 @@ function renderItems(){
         var needsDiscord  = !!it.discord_role_name;
         var discordLinked = window.__DISCORD_LINKED__ === true;
         var locked        = needsDiscord && !discordLinked && !owned;
-        /* Huecos de expositor del perfil: en orden (el 4 pide el 3…). */
-        var SLOT_SLUGS = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-        var slotIdx = SLOT_SLUGS.indexOf(it.slug || '');
+        /* Compras en cadena del perfil (huecos, mejoras de expositor): en
+           orden (el 4 pide el 3…). */
+        var prevSlug = tiendaPrevSlug(it.slug || '');
         var needsPrev = false;
-        if (slotIdx > 0 && !owned) {
-            var prev = _items.filter(function(x){ return x.slug === SLOT_SLUGS[slotIdx - 1]; })[0];
+        if (prevSlug && !owned) {
+            var prev = _items.filter(function(x){ return x.slug === prevSlug; })[0];
             needsPrev = !prev || !_owned[prev.id|0];
         }
+        var prevHueco = prevSlug && /^expositor-hueco-(\d)$/.exec(prevSlug);
         var btnLabel = owned     ? '✓ Ya lo tienes'
                      : locked    ? 'Vincula Discord'
-                     : needsPrev ? 'Antes, el hueco ' + (slotIdx + 2)
+                     : needsPrev ? (prevHueco ? 'Antes, el hueco ' + prevHueco[1] : 'Antes, la mejora anterior')
                                  : 'Comprar';
         var btnAttrs = (locked || needsPrev) ? ' disabled data-locked="1"' : '';
         /* Para los haros el icono usa la convención

@@ -11,10 +11,14 @@
      blando" (deleted_at) para que esa copia no los vuelva a crear.
    - Expositores (profile_showcases): cada usuario elige cuáles y en qué
      orden. Huecos: 2 de serie + los comprados en la tienda (hueco 3, 4
-     y 5, en orden). Tipos: games, shots, review, music, steam_rare,
-     steam_ach, movies / series / books (favoritos, como games),
-     game_feat (Juego destacado), playlist (Playlist destacada) y text
-     (Texto libre).
+     y 5, en orden). Tipos: media (Media favorita: juegos, películas,
+     series, libros o música, uno por tipo; 3 elementos + mejoras
+     media-<tipo>-4/5), shots, review, steam_rare, steam_ach (filas de 7
+     logros + mejoras steam-rare|ach-fila-2/3/4), game_feat (Juego
+     destacado), playlist (Playlist destacada) y text (Texto libre).
+     Reseña, Juego y Playlist destacada se compran en la tienda
+     (PF2_PAID): sin comprar se guardan pero no salen. Los tipos viejos
+     games / movies / series / books / music pasan a media al leerlos.
    - Capturas (profile_screenshots): imágenes de la Galería del usuario
      (su Google Drive). El navegador las hace públicas en Drive y aquí solo
      se guarda el enlace (drive_id + url), su pie de foto y el juego. Las
@@ -30,16 +34,20 @@ require_once __DIR__ . '/steam.php';                     /* fase 2: horas y logr
 
 const PF2_BASE_SLOTS   = 2;
 const PF2_SLOT_SLUGS   = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-const PF2_TYPES        = ['games', 'shots', 'review', 'music', 'steam_rare', 'steam_ach',
-                          'movies', 'series', 'books', 'game_feat', 'playlist', 'text'];
-const PF2_FAV_CATS     = ['games', 'movies', 'series', 'books'];   /* "<lo que sea> favoritos" */
-const PF2_MAX_STEAM_ACH = 8;
-const PF2_MAX_GAMES    = 4;                                        /* también películas, series y libros */
+const PF2_TYPES        = ['media', 'shots', 'review', 'steam_rare', 'steam_ach', 'game_feat', 'playlist', 'text'];
+const PF2_FAV_CATS     = ['games', 'movies', 'series', 'books'];   /* catálogo de títulos (game-catalog) */
+const PF2_MEDIA_CATS   = ['games', 'movies', 'series', 'books', 'music'];
+const PF2_MEDIA_BASE   = 3;                                        /* + media-<tipo>-4 y -5 */
+const PF2_MEDIA_MAX    = 5;
+const PF2_ACH_ROW      = 7;                                        /* logros por fila */
+const PF2_ACH_ROWS_MAX = 4;                                        /* 1 + steam-…-fila-2/3/4 */
+const PF2_MAX_STEAM_ACH = PF2_ACH_ROW * PF2_ACH_ROWS_MAX;
+/* Expositores que se compran en la tienda (tipo => slug). */
+const PF2_PAID         = ['review' => 'expositor-resena', 'game_feat' => 'expositor-juego-destacado', 'playlist' => 'expositor-playlist'];
 const PF2_MAX_FEAT_ACH = 8;
 const PF2_MAX_TEXT     = 1000;
 const PF2_PLAYLIST_TRACKS = 5;
 const PF2_MAX_SHOTS    = 3;
-const PF2_MAX_MUSIC    = 5;
 
 /* Medallas: [clave, nombre, emoji, unidad, umbrales bronce/plata/oro]. */
 const PF2_MEDALS = [
@@ -126,17 +134,49 @@ function pf2_migratePosts(PDO $pdo, int $uid): void {
 }
 
 /* ── Huecos ──────────────────────────────────────────────────────── */
-function pf2_slots(PDO $pdo, int $uid): int {
+/* Slugs comprados de la pestaña Perfil (huecos, expositores de pago y
+   mejoras). Se recuerda por petición; `$fresh` lo vuelve a leer (tras
+   guardar no hace falta: guardar no compra nada). */
+function pf2_ownedSlugs(PDO $pdo, int $uid): array {
+    static $cache = [];
+    if (isset($cache[$uid])) return $cache[$uid];
     try {
-        $ph = implode(',', array_fill(0, count(PF2_SLOT_SLUGS), '?'));
-        $st = $pdo->prepare("SELECT COUNT(DISTINCT i.slug) FROM tienda_compras c
+        $st = $pdo->prepare("SELECT DISTINCT i.slug FROM tienda_compras c
                              JOIN tienda_items i ON i.id = c.item_id
-                             WHERE c.user_id = ? AND i.slug IN ($ph)");
-        $st->execute(array_merge([$uid], PF2_SLOT_SLUGS));
-        return PF2_BASE_SLOTS + (int)$st->fetchColumn();
+                             WHERE c.user_id = ? AND i.slug IS NOT NULL");
+        $st->execute([$uid]);
+        return $cache[$uid] = array_fill_keys($st->fetchAll(PDO::FETCH_COLUMN), true);
     } catch (Throwable $e) {
-        return PF2_BASE_SLOTS;
+        return [];
     }
+}
+
+function pf2_slots(PDO $pdo, int $uid): int {
+    $own = pf2_ownedSlugs($pdo, $uid);
+    $n = 0;
+    foreach (PF2_SLOT_SLUGS as $sl) if (isset($own[$sl])) $n++;
+    return PF2_BASE_SLOTS + $n;
+}
+
+/* Lo comprado que cambia los expositores (`v2.perks`):
+     unlocked  — tipo de pago => comprado;
+     media     — tipo => cuántos elementos caben (3, 4 o 5);
+     steamRows — steam_rare / steam_ach => filas de 7 logros (1 a 4). */
+function pf2_perks(PDO $pdo, int $uid): array {
+    $own = pf2_ownedSlugs($pdo, $uid);
+    $unlocked = [];
+    foreach (PF2_PAID as $type => $slug) $unlocked[$type] = isset($own[$slug]);
+    $media = [];
+    foreach (PF2_MEDIA_CATS as $cat) {
+        $media[$cat] = PF2_MEDIA_BASE + (isset($own["media-$cat-4"]) ? 1 : 0) + (isset($own["media-$cat-5"]) ? 1 : 0);
+    }
+    $rows = [];
+    foreach (['steam_rare' => 'rare', 'steam_ach' => 'ach'] as $type => $k) {
+        $r = 1;
+        for ($i = 2; $i <= PF2_ACH_ROWS_MAX; $i++) if (isset($own["steam-$k-fila-$i"])) $r++;
+        $rows[$type] = $r;
+    }
+    return ['unlocked' => $unlocked, 'media' => $media, 'steamRows' => $rows];
 }
 
 /* ── Utilidades ──────────────────────────────────────────────────── */
@@ -289,12 +329,15 @@ function pf2_ownReview(PDO $pdo, int $uid, string $cat, string $title): ?array {
 function pf2_cleanConfig(string $type, $cfg): array {
     $cfg = is_array($cfg) ? $cfg : [];
     switch ($type) {
-        case 'games':
-        case 'movies':
-        case 'series':
-        case 'books':
+        case 'media':
+            /* Se guardan hasta 5 aunque solo quepan 3 (sin las mejoras salen
+               los primeros; al comprarlas vuelven los demás). */
+            $cat = in_array($cfg['cat'] ?? '', PF2_MEDIA_CATS, true) ? $cfg['cat'] : 'games';
+            if ($cat === 'music') {
+                return ['cat' => $cat, 'ids' => array_slice(array_values(array_unique(array_map('intval', (array)($cfg['ids'] ?? [])))), 0, PF2_MEDIA_MAX)];
+            }
             $t = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 200), (array)($cfg['titles'] ?? [])), 'strlen'));
-            return ['titles' => array_slice(array_values(array_unique($t)), 0, PF2_MAX_GAMES)];
+            return ['cat' => $cat, 'titles' => array_slice(array_values(array_unique($t)), 0, PF2_MEDIA_MAX)];
         case 'game_feat':
             $ach = array_values(array_unique(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 120), (array)($cfg['ach'] ?? [])), 'strlen')));
             return ['title' => mb_substr(trim((string)($cfg['title'] ?? '')), 0, 200), 'ach' => array_slice($ach, 0, PF2_MAX_FEAT_ACH)];
@@ -308,8 +351,6 @@ function pf2_cleanConfig(string $type, $cfg): array {
         case 'review':
             $cat = in_array($cfg['category'] ?? '', ['movies', 'series', 'books', 'games', 'music'], true) ? $cfg['category'] : '';
             return ['category' => $cat, 'title' => mb_substr(trim((string)($cfg['title'] ?? '')), 0, 200)];
-        case 'music':
-            return ['ids' => array_slice(array_values(array_unique(array_map('intval', (array)($cfg['ids'] ?? [])))), 0, PF2_MAX_MUSIC)];
         case 'steam_rare':
             return [];
         case 'steam_ach':
@@ -324,16 +365,39 @@ function pf2_cleanConfig(string $type, $cfg): array {
     return [];
 }
 
+/* Tipo + config limpios; los viejos (games, movies, series, books,
+   music) pasan a Media favorita de ese tipo. null = tipo desconocido. */
+function pf2_normShowcase(string $type, $cfg): ?array {
+    $cfg = is_array($cfg) ? $cfg : [];
+    if (in_array($type, PF2_MEDIA_CATS, true)) { $cfg['cat'] = $type; $type = 'media'; }
+    if (!in_array($type, PF2_TYPES, true)) return null;
+    return ['type' => $type, 'config' => pf2_cleanConfig($type, $cfg)];
+}
+
+/* Una Media favorita por tipo: si se repite, vale la primera. */
+function pf2_dedupeMedia(array $list): array {
+    $seen = [];
+    $out = [];
+    foreach ($list as $s) {
+        if ($s['type'] === 'media') {
+            if (isset($seen[$s['config']['cat']])) continue;
+            $seen[$s['config']['cat']] = true;
+        }
+        $out[] = $s;
+    }
+    return $out;
+}
+
 function pf2_rawShowcases(PDO $pdo, int $uid): array {
     try {
         $st = $pdo->prepare("SELECT type, config FROM profile_showcases WHERE user_id = ? ORDER BY position");
         $st->execute([$uid]);
         $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if (!in_array($r['type'], PF2_TYPES, true)) continue;
-            $out[] = ['type' => $r['type'], 'config' => pf2_cleanConfig($r['type'], json_decode((string)$r['config'], true))];
+            $n = pf2_normShowcase((string)$r['type'], json_decode((string)$r['config'], true));
+            if ($n) $out[] = $n;
         }
-        return $out;
+        return pf2_dedupeMedia($out);
     } catch (Throwable $e) { return []; }
 }
 
@@ -341,10 +405,10 @@ function pf2_saveShowcases(PDO $pdo, int $uid, array $list): array {
     $slots = pf2_slots($pdo, $uid);
     $clean = [];
     foreach ($list as $s) {
-        $type = (string)($s['type'] ?? '');
-        if (!in_array($type, PF2_TYPES, true)) continue;
-        $clean[] = ['type' => $type, 'config' => pf2_cleanConfig($type, $s['config'] ?? [])];
+        $n = pf2_normShowcase((string)($s['type'] ?? ''), $s['config'] ?? []);
+        if ($n) $clean[] = $n;
     }
+    $clean = pf2_dedupeMedia($clean);
     if (count($clean) > $slots) {
         return ['ok' => false, 'error' => 'Solo tienes ' . $slots . ' huecos de expositor.'];
     }
@@ -368,12 +432,30 @@ function pf2_showcases(PDO $pdo, int $uid): array {
     /* Steam (fase 2): solo si está vinculado y hay clave. */
     $sid = steam_key() !== '' ? steam_idOf($pdo, $uid) : '';
     $owned = $sid !== '' ? steam_owned($sid) : null;
+    $perks = pf2_perks($pdo, $uid);
     $favTitles = [];
-    foreach ($raw as $s) if ($s['type'] === 'games') $favTitles = $s['config']['titles'];
+    foreach ($raw as $s) {
+        if ($s['type'] === 'media' && $s['config']['cat'] === 'games') $favTitles = array_slice($s['config']['titles'], 0, $perks['media']['games']);
+    }
     foreach ($raw as $s) {
         $cfg = $s['config'];
         $data = [];
-        switch ($s['type']) {
+        /* De pago sin comprar: se conserva lo elegido, pero sin datos (no
+           sale; el dueño lo ve en Personalizar como bloqueado). */
+        if (isset(PF2_PAID[$s['type']]) && !$perks['unlocked'][$s['type']]) {
+            $out[] = ['type' => $s['type'], 'config' => $cfg, 'data' => [], 'locked' => true];
+            continue;
+        }
+        /* Media favorita: se pinta como el tipo que tenga, con los
+           elementos que quepan (3 + mejoras). */
+        $kind = $s['type'];
+        if ($kind === 'media') {
+            $kind = $cfg['cat'];
+            $lim = $perks['media'][$kind];
+            if ($kind === 'music') $cfg['ids'] = array_slice($cfg['ids'], 0, $lim);
+            else $cfg['titles'] = array_slice($cfg['titles'], 0, $lim);
+        }
+        switch ($kind) {
             case 'games':
                 foreach ($cfg['titles'] as $t) {
                     $rev = pf2_ownReview($pdo, $uid, 'games', $t);
@@ -390,10 +472,10 @@ function pf2_showcases(PDO $pdo, int $uid): array {
             case 'series':
             case 'books':
                 foreach ($cfg['titles'] as $t) {
-                    $rev = pf2_ownReview($pdo, $uid, $s['type'], $t);
+                    $rev = pf2_ownReview($pdo, $uid, $kind, $t);
                     $data[] = [
                         'title' => $t,
-                        'image' => pf2_gameImage($pdo, $uid, $t, $s['type']),
+                        'image' => pf2_gameImage($pdo, $uid, $t, $kind),
                         'stars' => $rev ? (float)$rev['stars'] : null,
                     ];
                 }
@@ -472,13 +554,16 @@ function pf2_showcases(PDO $pdo, int $uid): array {
                 }
                 break;
             case 'steam_rare':
-                $data = $sid !== '' ? ['items' => steam_rarest($sid, $owned, $favTitles), 'totals' => steam_totals($owned)] : [];
+                $data = $sid !== '' ? ['items' => steam_rarest($sid, $owned, $favTitles, PF2_ACH_ROW * $perks['steamRows']['steam_rare']),
+                                       'totals' => steam_totals($owned)] : [];
                 break;
             case 'steam_ach':
-                $data = $sid !== '' ? ['items' => steam_picked($sid, $owned, $cfg['items']), 'totals' => steam_totals($owned)] : [];
+                /* Se guardan hasta 28; salen los que quepan en sus filas. */
+                $data = $sid !== '' ? ['items' => array_slice(steam_picked($sid, $owned, $cfg['items']), 0, PF2_ACH_ROW * $perks['steamRows']['steam_ach']),
+                                       'totals' => steam_totals($owned)] : [];
                 break;
         }
-        $out[] = ['type' => $s['type'], 'config' => $cfg, 'data' => $data];
+        $out[] = ['type' => $s['type'], 'config' => $s['config'], 'data' => $data];
     }
     return $out;
 }
@@ -600,6 +685,7 @@ function pf2_profile(PDO $pdo, int $uid, int $viewerUid): array {
         'slots'     => pf2_slots($pdo, $uid),
         'maxSlots'  => PF2_BASE_SLOTS + count(PF2_SLOT_SLUGS),
         'showcases' => pf2_showcases($pdo, $uid),
+        'perks'     => pf2_perks($pdo, $uid),
         'comments'  => pf2_comments($pdo, $uid, $viewerUid),
         'stats'     => pf2_stats($pdo, $uid),
         'friends'   => pf2_friends($pdo, $uid),

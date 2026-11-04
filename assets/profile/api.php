@@ -2355,7 +2355,7 @@ case 'save-showcases': {
     if (!$uid) jsonError('Usuario no encontrado', 500);
     $r = pf2_saveShowcases($pdo, $uid, (array)(jsonBody()['showcases'] ?? []));
     if (!$r['ok']) jsonError($r['error']);
-    jsonResponse(['ok' => true, 'showcases' => pf2_showcases($pdo, $uid), 'slots' => pf2_slots($pdo, $uid)]);
+    jsonResponse(['ok' => true, 'showcases' => pf2_showcases($pdo, $uid), 'slots' => pf2_slots($pdo, $uid), 'perks' => pf2_perks($pdo, $uid)]);
 }
 
 /* Juegos registrados en las listas/reseñas de todos (para "Juegos
