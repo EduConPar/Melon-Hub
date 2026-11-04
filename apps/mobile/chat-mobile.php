@@ -100,6 +100,9 @@ $projectBaseUrl = rtrim(str_replace('\\', '/', dirname(dirname(dirname($_SERVER[
     <?php require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php"; emitInterfaceCss("../../"); ?>
     <script src="../../assets/js/interface-loader.js?v=fs1"></script>
     <link rel="stylesheet" href="../../assets/css/themes.css">
+    <!-- Marcos de perfil en las fotos (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <?php if ($activeThemeCss): ?>
     <link rel="stylesheet" id="active-theme-link" href="../../<?= htmlspecialchars($activeThemeCss); ?>">
     <?php endif; ?>

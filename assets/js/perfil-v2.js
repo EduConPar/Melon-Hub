@@ -347,7 +347,9 @@
         list.forEach(function (c) {
             var d = document.createElement('div');
             d.className = 'pf2-comment';
-            d.innerHTML = (c.avatar ? '<img src="' + esc(c.avatar) + '" alt="">' : '<img alt="" style="visibility:hidden">') +
+            /* data-marco-user: el marco del autor (melon-marcos.js). */
+            d.innerHTML = '<span class="pf2-comment-av" data-marco-user="' + esc(c.authorKey) + '">' +
+                    (c.avatar ? '<img src="' + esc(c.avatar) + '" alt="">' : '<img alt="" style="visibility:hidden">') + '</span>' +
                 '<div class="pf2-comment-main"><span class="pf2-comment-who">' + esc(c.author) + '</span>' +
                     '<span class="pf2-comment-when">' + esc(rel(c.ts)) + '</span>' +
                     (c.text ? '<div class="pf2-comment-txt">' + esc(c.text) + '</div>' : '') +
@@ -398,8 +400,10 @@
         var fr = S.v2.friends || [];
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">' + ic('profileIcon') + 'Amigos<span class="pf2-sub">' + fr.length + '</span></div>' +
             '<div class="pf2-panel-body">' + (fr.length ? '<div class="pf2-friends">' + fr.slice(0, 8).map(function (f) {
-                return f.image ? '<img src="' + esc(f.image) + '" alt="" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">'
-                               : '<div class="pf2-friend-ph" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">' + esc(f.label.slice(0, 2)) + '</div>';
+                return '<span class="pf2-friend" data-marco-user="' + esc(f.key) + '">' +
+                    (f.image ? '<img src="' + esc(f.image) + '" alt="" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">'
+                             : '<div class="pf2-friend-ph" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">' + esc(f.label.slice(0, 2)) + '</div>') +
+                    '</span>';
             }).join('') + '</div>' : '<div class="pf2-empty">Sin amigos todavía.</div>') + '</div></div>';
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Actividad</div><div class="pf2-panel-body pf2-counts">' +
             '<div>Reseñas <b>' + (c.reviews || 0) + '</b></div><div>Capturas <b>' + (c.shots || 0) + '</b></div>' +
@@ -426,8 +430,62 @@
         if (on && fresh) { S.v2.slots = fresh.slots; S.v2.maxSlots = fresh.maxSlots; S.v2.steam = fresh.steam; S.draft = copy(fresh.showcases || []); }
         if (!on && S.v2) S.draft = copy(S.v2.showcases || []);
         closePicker();
+        /* Marco: el elegido no se guarda hasta "Guardar"; al salir se quita
+           la vista previa (si se guardó, ya lo pinta melon-marcos.js). */
+        S.frameDraft = undefined;
+        previewFrame();
         renderShowcases();
         renderSteamCtl();
+        if (on) loadFrames().then(renderSteamCtl);
+    }
+
+    /* ── Marco de la foto (fase 4; assets/profile/marcos.php) ──
+       Botón "Marco" en Personalizar, junto al de Steam: ventana con los
+       marcos comprados (pestaña Perfil de la tienda) sobre tu foto. */
+    function loadFrames() {
+        S.framesP = api('my-frames').then(function (d) {
+            if (d && d.ok) S.frames = { owned: d.owned || [], active: d.active || '' };
+        }).catch(function () {});
+        return S.framesP;
+    }
+    function headAvatar() { return document.querySelector('#profile-avatar-col .profile-avatar-frame'); }
+    function previewFrame() {
+        var el = headAvatar();
+        if (!el) return;
+        if (S.editing && S.frameDraft !== undefined) el.setAttribute('data-marco-preview', S.frameDraft);
+        else el.removeAttribute('data-marco-preview');
+    }
+    function openFramePicker() {
+        /* Si la lista aún no ha llegado, se espera (si no, saldría vacía). */
+        (S.framesP || loadFrames()).then(buildFramePicker);
+    }
+    function buildFramePicker() {
+        var fr = S.frames || { owned: [], active: '' };
+        var sel = S.frameDraft !== undefined ? S.frameDraft : fr.active;
+        var avImg = headAvatar() && headAvatar().querySelector('img');
+        var av = avImg ? '<img src="' + esc(avImg.getAttribute('src')) + '" alt="">' : '<div class="pf2-pick-ph"></div>';
+        var body = pickerWindow('Marco de la foto');
+        var list = document.createElement('div');
+        list.className = 'pf2-pick-list';
+        var grid = document.createElement('div');
+        grid.className = 'pf2-pick-grid pf2-marco-grid';
+        [{ slug: '', nombre: 'Sin marco' }].concat(fr.owned).forEach(function (m) {
+            var c = document.createElement('div');
+            c.className = 'pf2-pick pf2-pick-marco' + (m.slug === sel ? ' on' : '');
+            c.innerHTML = '<span class="pf2-marco-prev" data-marco-preview="' + esc(m.slug) + '">' + av + '</span>' +
+                '<div class="pf2-pick-t">' + esc(m.nombre) + '</div>';
+            c.addEventListener('click', function () {
+                sel = m.slug;
+                grid.querySelectorAll('.pf2-pick').forEach(function (x) { x.classList.toggle('on', x === c); });
+            });
+            grid.appendChild(c);
+        });
+        list.appendChild(grid);
+        body.appendChild(list);
+        pickerFoot(body, fr.owned.length ? '' : 'Aún no tienes marcos: están en la tienda, pestaña Perfil.', function () {
+            S.frameDraft = sel;
+            previewFrame();
+        });
     }
 
     /* "Conectar Steam" (solo en Personalizar, debajo de las redes): inicio
@@ -442,6 +500,11 @@
         var st = S.v2.steam || {};
         var box = document.createElement('div');
         box.id = 'pf2-steam-ctl';
+        var mb = document.createElement('button');
+        mb.type = 'button';
+        mb.className = 'button pf2-marco-btn';
+        mb.textContent = 'Marco';
+        mb.addEventListener('click', openFramePicker);
         if (!st.configured) {
             box.innerHTML = ic('steamIcon', 12, 3) + 'Steam no está configurado en la web';
         } else if (st.linked) {
@@ -464,6 +527,7 @@
                 if (!w) location.href = 'assets/profile/steam-login.php';
             });
         }
+        box.insertBefore(mb, box.firstChild);
         head.appendChild(box);
     }
     window.addEventListener('message', function (e) {
@@ -483,10 +547,19 @@
     function save() {
         if (!S.v2) return Promise.resolve({ ok: true });
         var body = { showcases: S.draft.map(function (s) { return { type: s.type, config: s.config }; }) };
-        return api('save-showcases', body).then(function (d) {
+        var frame = (S.frameDraft !== undefined && S.frames && S.frameDraft !== S.frames.active)
+            ? api('set-frame', { slug: S.frameDraft }).then(function (d) {
+                if (!d || !d.ok) return d || { error: 'No se pudo guardar el marco' };
+                S.frames.active = d.active || '';
+                if (window.MelonMarcos && S.ctx) MelonMarcos.set(S.ctx.userKey, S.frames.active);
+                return d;
+            }).catch(function () { return { error: 'Error de red al guardar el marco' }; })
+            : Promise.resolve({ ok: true });
+        var shows = api('save-showcases', body).then(function (d) {
             if (d && d.ok) { S.v2.showcases = d.showcases; S.v2.slots = d.slots; S.draft = copy(d.showcases); }
             return d || { error: 'No se pudieron guardar los expositores' };
         }).catch(function () { return { error: 'Error de red al guardar los expositores' }; });
+        return Promise.all([shows, frame]).then(function (r) { return (r[1] && r[1].error) ? r[1] : r[0]; });
     }
 
     /* Elegir el tipo del expositor nuevo (sin repetir los que ya hay). */

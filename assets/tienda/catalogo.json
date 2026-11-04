@@ -5,6 +5,7 @@
     "objetos: categoria + slug identifican el objeto (no cambiar el slug de uno que ya existe: sería otro objeto). El orden es el de esta lista dentro de cada categoría.",
     "precio 0 = lo tiene todo el mundo (no sale en la tienda, solo en Temas). discord_role_id = rol que da al comprarlo (opcional). icono = emoji o vacío.",
     "Quitar un objeto de aquí lo desactiva (deja de venderse; quien lo compró lo conserva). Volver a ponerlo lo reactiva.",
+    "Marcos de perfil (categoria perfil, slug marco-…): \"marco\": \"css\" usa el estilo [data-marco=\"<slug>\"]::before de assets/css/marcos.css; si no, la ruta de una imagen transparente en assets/img/marcos/ (png/gif/webp) que se estira sobre la foto: el hueco de la foto ocupa el centro y el marco sobresale un 14 % por cada lado (un marco con otras medidas, como marco-paint, las pone en marcos.css).",
     "Haros: los archivos van en assets/vids/<slug>Haro.gif, <slug>Haro-last.png, assets/img/haro/<slug>Haro-preview.png y assets/sound/<slug>Haro.mp3 (opcional)."
   ],
   "pestanas": [
@@ -36,6 +37,20 @@
 
     { "categoria": "perfil", "slug": "expositor-hueco-3", "nombre": "Hueco de expositor 3", "descripcion": "Un tercer expositor a la vez en tu perfil.", "precio": 500 },
     { "categoria": "perfil", "slug": "expositor-hueco-4", "nombre": "Hueco de expositor 4", "descripcion": "Un cuarto expositor a la vez en tu perfil (antes, el hueco 3).", "precio": 1000 },
-    { "categoria": "perfil", "slug": "expositor-hueco-5", "nombre": "Hueco de expositor 5", "descripcion": "El quinto y último expositor a la vez (antes, el hueco 4).", "precio": 2000 }
+    { "categoria": "perfil", "slug": "expositor-hueco-5", "nombre": "Hueco de expositor 5", "descripcion": "El quinto y último expositor a la vez (antes, el hueco 4).", "precio": 2000 },
+
+    { "categoria": "perfil", "slug": "marco-sandia",   "nombre": "Marco sandía",   "descripcion": "Corteza de sandía con pepitas alrededor de tu foto de perfil.", "precio": 400, "marco": "assets/img/marcos/marco-sandia.png" },
+    { "categoria": "perfil", "slug": "marco-paint",    "nombre": "Marco Paint",    "descripcion": "Tu foto como un dibujo en el Paint de toda la vida: herramientas, paleta y barra de título.", "precio": 400, "marco": "assets/img/marcos/marco-paint.png" },
+    { "categoria": "perfil", "slug": "marco-xp",       "nombre": "Marco XP",       "descripcion": "Tu foto dentro de una ventana azul con su barra de título y los botones de minimizar, maximizar y cerrar.", "precio": 400, "marco": "assets/img/marcos/marco-xp.png" },
+    { "categoria": "perfil", "slug": "marco-polaroid", "nombre": "Marco polaroid", "descripcion": "Tu foto revelada en una polaroid, con otra detrás, un clip y un trozo de cinta.", "precio": 400, "marco": "assets/img/marcos/marco-polaroid.png" },
+    { "categoria": "perfil", "slug": "marco-98",       "nombre": "Marco 98",       "descripcion": "Tu foto en una ventana de Windows 98 de las de siempre.", "precio": 400, "marco": "assets/img/marcos/marco-98.png" },
+    { "categoria": "perfil", "slug": "marco-bi", "nombre": "Marco orgullo bi", "descripcion": "Marco con los colores de la bandera del orgullo bisexual.", "precio": 300, "marco": "css" },
+    { "categoria": "perfil", "slug": "marco-gay", "nombre": "Marco orgullo gay", "descripcion": "Marco con los colores de la bandera del orgullo gay (arcoíris).", "precio": 300, "marco": "css" },
+    { "categoria": "perfil", "slug": "marco-trans", "nombre": "Marco orgullo trans", "descripcion": "Marco con los colores de la bandera del orgullo trans.", "precio": 300, "marco": "css" },
+    { "categoria": "perfil", "slug": "marco-nobinario", "nombre": "Marco orgullo no binario", "descripcion": "Marco con los colores de la bandera del orgullo no binario.", "precio": 300, "marco": "css" },
+    { "categoria": "perfil", "slug": "marco-lesbiana", "nombre": "Marco orgullo lésbico", "descripcion": "Marco con los colores de la bandera del orgullo lésbico.", "precio": 300, "marco": "css" },
+    { "categoria": "perfil", "slug": "marco-overdose", "nombre": "Marco Overdose", "descripcion": "Tu foto en una ventana de MelonOS Overdose, lila y morada.", "precio": 400, "marco": "assets/img/marcos/marco-overdose.png" },
+    { "categoria": "perfil", "slug": "marco-gatito", "nombre": "Marco gatito", "descripcion": "Marco blanco con orejas de gato y bigotes alrededor de tu foto de perfil.", "precio": 400, "marco": "assets/img/marcos/marco-gatito.png" },
+    { "categoria": "perfil", "slug": "marco-fantasma", "nombre": "Marco fantasma", "descripcion": "Un fantasma de sábana que da vueltas alrededor de tu foto (animado).", "precio": 500, "marco": "css" }
   ]
 }

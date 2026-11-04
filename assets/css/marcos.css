@@ -1,0 +1,152 @@
+/* ──────────────────────────────────────────────
+   MARCOS DE PERFIL (assets/profile/marcos.php, assets/js/melon-marcos.js)
+   ──────────────────────────────────────────────
+   melon-marcos.js pone data-marco="<slug>" en el contenedor de la foto
+   (el que lleva data-marco-user). El marco es su ::before, que sobresale
+   alrededor: así sobrevive a los innerHTML que repintan la foto y no
+   choca con el ::after (el ✏ del perfil en edición).
+   Los de imagen solo necesitan esta base: el background-image lo añade
+   melon-marcos.js. Los de CSS ("marco": "css" en catalogo.json) tienen
+   su regla aquí abajo, con el slug. */
+
+[data-marco] {
+    /* El marco sale por fuera del contenedor: si recortara, no se vería. */
+    overflow: visible !important;
+}
+.mh-marco-rel { position: relative; }
+
+[data-marco]::before {
+    content: '';
+    position: absolute;
+    /* El hueco de la foto ocupa el centro y el marco sobresale un 14 %
+       por cada lado (el % es del ancho del contenedor). */
+    top: -14%; left: -14%; right: -14%; bottom: -14%;
+    pointer-events: none;
+    z-index: 2;
+    background: center / 100% 100% no-repeat;
+    image-rendering: pixelated;
+}
+/* La foto y el hueco sin foto llenan el contenedor (sin recorte, el
+   👤 de 58 px se saldría del marco de 48). */
+[data-marco] > img,
+[data-marco] > .profile-avatar-placeholder { max-width: 100%; max-height: 100%; }
+/* Sin el recorte, una foto redonda (contenedor con border-radius) lo
+   seguiría siendo. */
+[data-marco] > img { border-radius: inherit; }
+/* El punto de presencia, por encima del marco. */
+[data-marco] > .pf-presence-dot { z-index: 3; }
+
+/* Banderas del orgullo: anillo hecho con CSS (el relleno del ::before es
+   el grosor, el 8 %, y la máscara deja ver solo el borde; el hueco = la
+   foto), con las franjas horizontales de la bandera de arriba abajo de todo el marco (el
+   degradado ocupa el ::before entero, así que el lado de arriba es de la
+   primera franja y el de abajo de la última). El borde fino oscuro hace
+   que las franjas blancas se vean sobre fondo blanco. */
+[data-marco="marco-bi"]::before,
+[data-marco="marco-gay"]::before,
+[data-marco="marco-trans"]::before,
+[data-marco="marco-nobinario"]::before,
+[data-marco="marco-lesbiana"]::before {
+    top: calc(-8% - 1px); left: calc(-8% - 1px); right: calc(-8% - 1px); bottom: calc(-8% - 1px);
+    padding: 8%;
+    border: 1px solid rgba(0, 0, 0, .35);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+/* Bisexual: 40 / 20 / 40. */
+[data-marco="marco-bi"]::before {
+    background: linear-gradient(#d60270 0 40%, #9b4f96 40% 60%, #0038a8 60% 100%);
+}
+/* Gay (arcoíris de 6 franjas). */
+[data-marco="marco-gay"]::before {
+    background: linear-gradient(#e40303 0 16.67%, #ff8c00 16.67% 33.33%, #ffed00 33.33% 50%,
+        #008026 50% 66.67%, #24408e 66.67% 83.33%, #732982 83.33% 100%);
+}
+/* Trans. */
+[data-marco="marco-trans"]::before {
+    background: linear-gradient(#5bcefa 0 20%, #f5a9b8 20% 40%, #fff 40% 60%, #f5a9b8 60% 80%, #5bcefa 80% 100%);
+}
+/* No binario. */
+[data-marco="marco-nobinario"]::before {
+    background: linear-gradient(#fcf434 0 25%, #fff 25% 50%, #9c59d1 50% 75%, #2c2c2c 75% 100%);
+}
+/* Lesbiana (la de 5 franjas). */
+[data-marco="marco-lesbiana"]::before {
+    background: linear-gradient(#d52d00 0 20%, #ff9a56 20% 40%, #fff 40% 60%, #d362a4 60% 80%, #a30262 80% 100%);
+}
+
+/* Vista previa en las tarjetas de la tienda (pestaña Perfil). */
+.tienda-marco-prev { position: relative; display: block; width: 46%; aspect-ratio: 1; }
+.tienda-marco-prev > img { width: 100%; height: 100%; display: block; object-fit: contain; image-rendering: pixelated; background: var(--inset-bg, #c0c0c0); }
+
+/* Marcos de imagen con degradados (no pixel art): escalado suave. */
+[data-marco="marco-xp"]::before { image-rendering: auto; }
+
+/* Paint: como la ventana de verdad, sobresale más por la izquierda
+   (herramientas a dos columnas) y por abajo (paleta) que por arriba
+   (barra de título) y la derecha (barra de desplazamiento). Medidas de
+   marco-paint.png: hueco de 120 px y bordes 16 / 13 / 26 / 34 px.
+   Encoge suave: a píxeles se perderían rayas al hacerse pequeño. */
+[data-marco="marco-paint"]::before {
+    top: -13.33%; right: -10.83%; bottom: -21.67%; left: -28.33%;
+    image-rendering: auto;
+}
+
+/* Polaroid: borde de abajo más ancho, otra polaroid detrás, clip arriba
+   y cinta en la esquina (marco-polaroid.png: hueco de 150 px y bordes
+   28 / 26 / 52 / 22 px). La cinta y el clip tapan un poco la foto. */
+[data-marco="marco-polaroid"]::before {
+    top: -18.67%; right: -17.33%; bottom: -34.67%; left: -14.67%;
+    image-rendering: auto;
+}
+
+/* Ventana Win98: barra de título alta arriba y bordes finos
+   (marco-98.png: hueco de 150 px y bordes 32 / 6 / 6 / 6 px). */
+[data-marco="marco-98"]::before {
+    top: -21.33%; right: -4%; bottom: -4%; left: -4%;
+    image-rendering: auto;
+}
+
+/* Ventana de MelonOS Overdose (interfaz kawaii): borde morado, franja
+   lavanda y la barra de título y el cuerpo como dos tarjetas
+   (marco-overdose.png: hueco de 150 px y bordes 42 / 8 / 8 / 8 px). */
+[data-marco="marco-overdose"]::before {
+    top: -28%; right: -5.33%; bottom: -5.33%; left: -5.33%;
+    image-rendering: auto;
+}
+
+/* Gatito (pixel art): orejas que salen por arriba y bigotes por los
+   lados (marco-gatito.png: hueco de 100 px y bordes 23 / 17 / 7 / 17 px).
+   Encoge suave: a píxeles se perderían el contorno y los bigotes. */
+[data-marco="marco-gatito"]::before {
+    top: -23%; right: -17%; bottom: -7%; left: -17%;
+    image-rendering: auto;
+}
+
+/* Fantasma (animado, solo CSS): un fantasma de sábana que da la vuelta
+   entera a la foto, siempre de pie (sin girar en las esquinas). El SVG lleva dentro su propia animación (flota arriba y
+   abajo, ondea el bajo de la sábana y parpadea). */
+[data-marco="marco-fantasma"]::before {
+    right: auto; bottom: auto;
+    left: 0; top: -6%;
+    width: 36%; height: 41.4%;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 46'%3E %3Cg%3E%3CanimateTransform attributeName='transform' type='translate' values='0 0;0 -1.6;0 0' dur='1.4s' repeatCount='indefinite'/%3E %3Cpath fill='%23f7f7f4' stroke='%232b2b2b' stroke-width='1.6' stroke-linejoin='round' d='M6 22C6 10 13 3 20 3S34 10 34 22V38Q31 42 28 38T22 38T16 38T10 38Q7 42 6 38Z'%3E %3Canimate attributeName='d' dur='0.9s' repeatCount='indefinite' values='M6 22C6 10 13 3 20 3S34 10 34 22V38Q31 42 28 38T22 38T16 38T10 38Q7 42 6 38Z;M6 22C6 10 13 3 20 3S34 10 34 22V38Q31 34 28 38T22 38T16 38T10 38Q7 34 6 38Z;M6 22C6 10 13 3 20 3S34 10 34 22V38Q31 42 28 38T22 38T16 38T10 38Q7 42 6 38Z'/%3E%3C/path%3E %3Cpath fill='%23dcdcd6' d='M28 9Q33 14 33 22V37Q31 39 29 37V22Q29 14 25 8Z' opacity='.7'/%3E %3Cg fill='%231a1a1a'%3E%3Cellipse cx='15' cy='19' rx='2.6' ry='3.6'%3E%3Canimate attributeName='ry' values='3.6;3.6;0.4;3.6' keyTimes='0;0.92;0.96;1' dur='4s' repeatCount='indefinite'/%3E%3C/ellipse%3E %3Cellipse cx='25' cy='19' rx='2.6' ry='3.6'%3E%3Canimate attributeName='ry' values='3.6;3.6;0.4;3.6' keyTimes='0;0.92;0.96;1' dur='4s' repeatCount='indefinite'/%3E%3C/ellipse%3E %3Cellipse cx='20' cy='27' rx='1.6' ry='2.1'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+    image-rendering: auto;
+    transform: translate(-50%, -50%);
+    animation: mh-fantasma 12s linear infinite;
+}
+@keyframes mh-fantasma {
+    0%   { left: 0%;    top: -6%; }
+    22%  { left: 100%;  top: -6%; }
+    25%  { left: 106%;  top: 0%; }
+    47%  { left: 106%;  top: 100%; }
+    50%  { left: 100%;  top: 106%; }
+    72%  { left: 0%;    top: 106%; }
+    75%  { left: -6%;   top: 100%; }
+    97%  { left: -6%;   top: 0%; }
+    100% { left: 0%;    top: -6%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-marco="marco-fantasma"]::before { animation: none; }
+}

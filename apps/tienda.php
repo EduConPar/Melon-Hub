@@ -41,6 +41,9 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
     <?php require_once dirname(__DIR__) . "/assets/php/active-interface.php"; emitInterfaceCss("../"); ?>
     <script src="../assets/js/interface-loader.js?v=fs1"></script>
     <link rel="stylesheet" href="../assets/css/themes.css?v=<?php echo filemtime(dirname(__DIR__) . '/assets/css/themes.css'); ?>">
+    <!-- Marcos de perfil (vista previa en las tarjetas de la pestaña Perfil) -->
+    <link rel="stylesheet" href="../assets/css/marcos.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/marcos.css'); ?>">
+    <script src="../assets/js/melon-marcos.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js'); ?>"></script>
     <?php if ($activeThemeCss): ?>
     <link rel="stylesheet" id="active-theme-link" href="<?php echo htmlspecialchars($activeThemeCss); ?>">
     <?php endif; ?>
@@ -752,6 +755,10 @@ function renderItems(){
                 + ' src="../assets/img/haro/' + esc(it.slug) + 'Haro-preview.png"'
                 + ' onerror="this.onerror=null;this.src=\'../assets/vids/' + esc(it.slug) + 'Haro-last.png\';"'
                 + ' alt="">';
+        } else if (it.categoria === 'perfil' && it.marco) {
+            /* Marcos: el marco alrededor del icono de perfil del pack
+               (dibujo en assets/css/marcos.css / melon-marcos.js). */
+            iconHtml = '<span class="tienda-marco-prev" data-marco="' + esc(it.slug) + '"><img src="../assets/img/appIcons/profileIcon.png" alt=""></span>';
         } else if (it.categoria === 'perfil') {
             /* Huecos de expositor: icono del perfil del pack del tema. */
             iconHtml = '<img class="tienda-card-icon-img" src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">';

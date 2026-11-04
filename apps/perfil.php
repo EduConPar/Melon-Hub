@@ -159,6 +159,7 @@ if ($_perfilStandalone) {
     <link rel="stylesheet" href="assets/css/reproductor.css">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/marcos.css'); ?>">
     <?php if ($activeThemeCss): ?>
     <?php /* $activeThemeCss ya es root-relative (themeCssRelPath
               devuelve "assets/themes/..."). Con <base href="../"> se
@@ -355,7 +356,7 @@ if ($_perfilStandalone) {
                 <div id="pf2-scroll">
                     <div id="pf2-head">
                         <div id="profile-avatar-col">
-                            <div class="profile-avatar-frame">
+                            <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
                                 <?php $profileImg = getUserImage($desktopLabel); ?>
                                 <?php if ($profileImg): ?>
                                 <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
@@ -395,7 +396,7 @@ if ($_perfilStandalone) {
             <div id="profile-view-cat">
                 <div id="profile-catview-topbar">
                     <div id="profile-catview-avatar-wrap">
-                        <div class="profile-avatar-frame">
+                        <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
                             <?php if (isset($profileImg) && $profileImg): ?>
                             <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
                             <?php else: ?>
@@ -437,7 +438,7 @@ if ($_perfilStandalone) {
             <div id="profile-view-music">
                 <div id="music-catview-topbar">
                     <div id="music-catview-avatar-wrap">
-                        <div class="profile-avatar-frame">
+                        <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
                             <?php if (isset($profileImg) && $profileImg): ?>
                             <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
                             <?php else: ?>
@@ -958,6 +959,7 @@ if ($_perfilStandalone) {
    Google Drive (perfil-v2.js). */
 window.__GOOGLE_CLIENT_ID = <?php echo json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : ''); ?>;
 </script>
+<script src="assets/js/melon-marcos.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js'); ?>"></script>
 <script src="assets/js/perfil-v2.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/perfil-v2.js'); ?>"></script>
 <script>
 /* =========================
@@ -3710,6 +3712,7 @@ var PROFILE_USERS = <?php
             if (window.__attachPresenceDot) {
                 window.__attachPresenceDot(frame, viewingUser || currentSessionUser);
             }
+            frame.setAttribute('data-marco-user', viewingUser || currentSessionUser);   /* marco */
         }
         if (nameEl) nameEl.textContent = label;
         if (titleEl) titleEl.innerHTML = icon + ' ' + ownLabel;
@@ -4774,6 +4777,7 @@ var PROFILE_USERS = <?php
         card.className = 'profile-social-card';
         var avWrap = document.createElement('div');
         avWrap.className = 'profile-avatar-frame';
+        avWrap.setAttribute('data-marco-user', userKey);   /* marco (melon-marcos.js) */
         if (u.image) {
             var img = document.createElement('img');
             img.className = 'profile-avatar-img';
@@ -4860,6 +4864,7 @@ var PROFILE_USERS = <?php
             item.dataset.user = k;
             var iconWrap = document.createElement('span');
             iconWrap.className = 'profile-nav-icon profile-nav-icon-followed';
+            iconWrap.setAttribute('data-marco-user', k);   /* marco (melon-marcos.js) */
             if (u.image) {
                 var img = document.createElement('img');
                 img.className = 'profile-nav-avatar';
@@ -5072,6 +5077,7 @@ var PROFILE_USERS = <?php
                 var avFrame = document.querySelector('#profile-avatar-col .profile-avatar-frame');
                 if (avFrame) {
                     avFrame.innerHTML = '';
+                    avFrame.setAttribute('data-marco-user', data.userKey);   /* marco (melon-marcos.js) */
                     if (u && u.image) {
                         var img = document.createElement('img');
                         img.className = 'profile-avatar-img';
@@ -5464,6 +5470,7 @@ var PROFILE_USERS = <?php
                fuera del rect (bottom/right negativos). */
             avEl.style.position = 'relative';
             avEl.style.overflow = 'visible';
+            avEl.setAttribute('data-marco-user', userKey);   /* marco (melon-marcos.js) */
             /* Dot de presencia del user con el que chateo. Hereda
                online/away/dnd del cache (mismos sets que Social) para
                no parpadear: applyPresence() los re-aplica en cada poll. */
@@ -6309,6 +6316,7 @@ var PROFILE_USERS = <?php
                 }
             ?>;
             if (window.__attachPresenceDot) window.__attachPresenceDot(avFrame, currentSessionUser);
+            avFrame.setAttribute('data-marco-user', currentSessionUser);   /* marco (melon-marcos.js) */
         }
         var nameEl = document.getElementById('profile-username');
         if (nameEl) nameEl.textContent = <?php echo json_encode($desktopLabel); ?>;

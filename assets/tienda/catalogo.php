@@ -74,11 +74,23 @@ function tiendaCatalogo(): ?array {
             'icono'           => (string)($o['icono'] ?? ''),
             'discord_role_id' => preg_replace('/\D/', '', (string)($o['discord_role_id'] ?? '')),
             'orden'           => $orden[$cat],
+            /* Marcos de perfil: "css" (estilo en assets/css/marcos.css) o la
+               ruta de la imagen (assets/img/marcos/…). No va a la BD: lo lee
+               assets/profile/marcos.php del archivo. */
+            'marco'           => tiendaMarcoValido($o['marco'] ?? null),
         ];
     }
 
     $cache = ['pestanas' => $pestanas, 'objetos' => $objetos, 'hash' => sha1($raw)];
     return $cache;
+}
+
+/* Campo "marco" de un objeto: "css" o una imagen de assets/img/marcos/.
+   Cualquier otra cosa → null (no es un marco). */
+function tiendaMarcoValido($m): ?string {
+    if ($m === 'css') return 'css';
+    if (is_string($m) && preg_match('#^assets/img/marcos/[A-Za-z0-9_-]+\.(png|gif|webp)$#', $m)) return $m;
+    return null;
 }
 
 /* Pestañas de la tienda (para pintarlas en tienda.php / tienda-mobile.php). */

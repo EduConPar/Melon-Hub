@@ -274,7 +274,7 @@ function renderList() {
             ? '<div class="ch-friend-badge">' + c.unread + '</div>'
             : '';
         return '<div class="ch-friend" data-user="' + esc(c.userKey) + '">' +
-            '<div class="ch-friend-av">' + av + presence + '</div>' +
+            '<div class="ch-friend-av" data-marco-user="' + esc(c.userKey) + '">' + av + presence + '</div>' +
             '<div class="ch-friend-info">' +
                 '<div class="ch-friend-name">' + esc(name) + muteIcon + '</div>' +
                 '<div class="ch-friend-sub' + (c.unread > 0 ? ' has-unread' : '') + '">' + esc(sub) + '</div>' +
@@ -389,6 +389,7 @@ function refreshChatHeader() {
                       : (meta && meta.online) ? ' is-online' : '';
     const presence = '<span class="ch-presence-dot' + presenceCls + '"></span>';
     avEl.innerHTML = av + presence;
+    avEl.setAttribute('data-marco-user', uKey);   /* marco de perfil (melon-marcos.js) */
     nmEl.textContent = name;
     /* Status — hereda los flags del meta cacheado (los mismos que usa
        Social). Prioridad:

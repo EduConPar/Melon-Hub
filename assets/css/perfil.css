@@ -2743,7 +2743,8 @@
 .pf2-new-comment input { flex: 1; min-width: 0; }
 .pf2-comment { display: flex; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 11px; }
 .pf2-comment:first-of-type { border-top: 0; }
-.pf2-comment > img { width: 28px; height: 28px; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); flex-shrink: 0; cursor: pointer; }
+.pf2-comment-av { flex-shrink: 0; width: 28px; height: 28px; }
+.pf2-comment-av > img { width: 28px; height: 28px; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); flex-shrink: 0; cursor: pointer; }
 .pf2-comment-main { flex: 1; min-width: 0; }
 .pf2-comment-who { font-weight: bold; cursor: pointer; }
 .pf2-comment-when { color: var(--text-faint, #808080); font-size: 9px; margin-left: 4px; font-weight: normal; }
@@ -2765,6 +2766,9 @@
 .pf2-medal:hover .pf2-mtip { display: block; }
 .pf2-mtip .pf2-bar { margin-top: 3px; }
 .pf2-friends { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+/* Con algún marco puesto, más separación para que no se monten. */
+.pf2-friends:has([data-marco]) { gap: 12px; padding: 6px; }
+.pf2-friend { display: block; }
 .pf2-friends img, .pf2-friends .pf2-friend-ph { width: 100%; aspect-ratio: 1; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); cursor: pointer; display: block; }
 .pf2-friend-ph { display: flex !important; align-items: center; justify-content: center; font-size: 11px; background: var(--inset-bg, #808080); }
 .pf2-counts { font-size: 11px; display: flex; flex-direction: column; }
@@ -2817,6 +2821,12 @@
 #pf2-steam-ctl { position: absolute; right: 8px; top: 34px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end;
     max-width: 240px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000; }
 #pf2-steam-ctl .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; text-shadow: none; }
+.pf2-marco-btn { order: -1; }
+/* Selector de marco: la foto con cada marco (que sobresale: más hueco). */
+.pf2-marco-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px; padding: 12px; }
+.pf2-marco-prev { display: block; width: 64px; height: 64px; margin: 0 auto 14px; }
+.pf2-marco-prev > img, .pf2-marco-prev > .pf2-pick-ph { width: 64px; height: 64px; object-fit: cover; }
+.pf2-pick-marco { text-align: center; padding: 10px 2px 2px; }
 .pf2-steam-warn { width: 100%; text-align: right; color: #ffd34d; }
 .pf2-ach { display: flex; gap: 8px; align-items: flex-start; }
 .pf2-ach-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }

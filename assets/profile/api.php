@@ -26,6 +26,9 @@
    POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
    POST  ?action=steam-disconnect      {}                    (Steam: steam.php)
    GET   ?action=steam-games
+   GET   ?action=frames                                    (marcos: marcos.php)
+   GET   ?action=my-frames
+   POST  ?action=set-frame             { slug }            ('' = sin marco)
    GET   ?action=steam-game-achievements&appid=N
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
@@ -2319,6 +2322,30 @@ case 'delete-wall-comment': {
 }
 
 /* Guarda los expositores propios (tipo + configuración, en orden). */
+/* Marcos de perfil (assets/profile/marcos.php): "frames" lo pide
+   melon-marcos.js en cada página que pinta fotos; "my-frames" y
+   "set-frame" son de Personalizar. */
+case 'frames': {
+    require_once __DIR__ . '/marcos.php';
+    jsonResponse(['ok' => true] + marcos_todos($pdo));
+}
+case 'my-frames': {
+    require_once __DIR__ . '/marcos.php';
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + marcos_propios($pdo, $uid));
+}
+case 'set-frame': {
+    require_once __DIR__ . '/marcos.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $slug = (string)(jsonBody()['slug'] ?? '');
+    if ($slug !== '' && !preg_match('/^[a-z0-9_-]{1,60}$/', $slug)) jsonError('Marco no válido');
+    if (!marcos_poner($pdo, $uid, $slug)) jsonError('No tienes ese marco', 403);
+    jsonResponse(['ok' => true, 'active' => marcos_activo($pdo, $uid)]);
+}
+
 case 'save-showcases': {
     require_once __DIR__ . '/perfil2.php';
     pf2_ensure($pdo);

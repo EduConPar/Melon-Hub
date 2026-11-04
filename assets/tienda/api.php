@@ -66,7 +66,11 @@ case 'state': {
 
     /* Resolvemos el nombre del rol de Discord de cada item (cacheado 1h). */
     $roles = discordGetRoles($pdo);
+    /* Marcos de perfil: su dibujo, para la vista previa de la tarjeta. */
+    require_once dirname(__DIR__) . '/profile/marcos.php';
+    $marcos = marcos_defs();
     foreach ($itemsRows as &$it) {
+        $it['marco'] = ($it['categoria'] === 'perfil' && isset($marcos[$it['slug']])) ? $marcos[$it['slug']] : null;
         $rid = (string)($it['discord_role_id'] ?? '');
         if ($rid !== '' && isset($roles[$rid])) {
             $it['discord_role_name']  = $roles[$rid]['name'];
