@@ -71,7 +71,8 @@ function ensureSchema(PDO $pdo): void {
 
     /* Haros */
     $seed('haros', 'green',  'Verde',    'Haro verde clásico. Lo tienes por defecto.', 0,  1);
-    $seed('haros', 'yellow', 'Amarillo', 'Haro amarillo',                              50, 2);
+    $seed('haros', 'yellow', 'Amarillo', 'Haro amarillo',                              200, 2);
+    $seed('haros', 'purple', 'Morado', 'Haro Morado', 200, 3);
     /* Mascotas — la skin se aplica a la PRÓXIMA mascota que crees
        (la actual mantiene su skin original). */
     $seed('mascotas', 'gabriel', 'Gabriel', 'Mascota Gabriel — angel shimeji con 46 frames.', 0, 1);

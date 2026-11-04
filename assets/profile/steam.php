@@ -112,18 +112,59 @@ function steam_achievements(string $sid, int $appid): array {
     return $out;
 }
 
-/* Título "a mano" de la lista ↔ juego de Steam: sin mayúsculas, ™ ® ni
-   signos. */
+/* Título "a mano" de la lista ↔ juego de Steam, en tres pasos (el primero
+   que acierte):
+     1. exacto, sin mayúsculas, ™ ® ni signos ("Hollow Knight");
+     2. normalizado (steam_loose): romanos a números ("Hearts of Iron IV"
+        = "Hearts of Iron 4"), sin tildes, "&" = "and", sin "The" delante
+        ni coletillas de edición ("GOTY", "Definitive Edition"…);
+     3. parecido: el que más se parezca, si es un 90 % o más (nombres de
+        6+ letras, para no emparejar cosas cortas al azar) y con los mismos
+        números (las secuelas: "Celeste 2" no es "Celeste").
+   Nada de "empieza por": "Hollow Knight" no es "Hollow Knight: Silksong". */
 function steam_norm(string $s): string {
     $s = mb_strtolower($s);
     $s = str_replace(['™', '®', '©'], '', $s);
     return preg_replace('/[^\p{L}\p{N}]+/u', '', $s);
 }
+function steam_loose(string $s): string {
+    $s = mb_strtolower(str_replace(['™', '®', '©'], '', $s));
+    if (class_exists('Normalizer')) $s = preg_replace('/\p{Mn}+/u', '', Normalizer::normalize($s, Normalizer::FORM_D));
+    $s = str_replace('&', ' and ', $s);
+    $s = preg_replace('/\bgame of the year\b/u', ' ', $s);
+    $words = preg_split('/[^\p{L}\p{N}]+/u', $s, -1, PREG_SPLIT_NO_EMPTY);
+    static $ROMAN = ['ii' => 2, 'iii' => 3, 'iv' => 4, 'vi' => 6, 'vii' => 7, 'viii' => 8, 'ix' => 9, 'xi' => 11,
+                     'xii' => 12, 'xiii' => 13, 'xiv' => 14, 'xv' => 15, 'xvi' => 16, 'xvii' => 17, 'xviii' => 18, 'xix' => 19, 'xx' => 20];
+    static $EDITION = ['edition', 'goty', 'definitive', 'remastered', 'deluxe', 'enhanced', 'ultimate'];
+    $out = [];
+    $n = count($words);
+    foreach ($words as $i => $w) {
+        if (in_array($w, $EDITION, true)) continue;
+        if (isset($ROMAN[$w])) $w = (string)$ROMAN[$w];
+        /* "V" y "X" sueltos solo al final ("GTA V"), no "X-COM". */
+        elseif ($i === $n - 1 && $i > 0 && ($w === 'v' || $w === 'x')) $w = $w === 'v' ? '5' : '10';
+        $out[] = $w;
+    }
+    if (($out[0] ?? '') === 'the' && count($out) > 1) array_shift($out);
+    return implode('', $out);
+}
 function steam_match(array $owned, string $title): ?array {
     $n = steam_norm($title);
     if ($n === '') return null;
     foreach ($owned as $g) if (steam_norm($g['name']) === $n) return $g;
-    return null;
+    $l = steam_loose($title);
+    if ($l === '') return null;
+    $best = null; $bestPct = 0.0;
+    $nums = function ($x) { preg_match_all('/\d+/', $x, $m); return implode(',', $m[0]); };
+    $lNums = $nums($l);
+    foreach ($owned as $g) {
+        $gl = steam_loose($g['name']);
+        if ($gl === $l) return $g;
+        if (mb_strlen($l) < 6 || mb_strlen($gl) < 6 || $nums($gl) !== $lNums) continue;
+        similar_text($l, $gl, $pct);
+        if ($pct > $bestPct) { $bestPct = $pct; $best = $g; }
+    }
+    return $bestPct >= 90 ? $best : null;
 }
 
 /* Datos de un juego favorito: horas y logros (conseguidos / total). */
