@@ -96,27 +96,11 @@ function pf2_ensure(PDO $pdo): void {
     pf2_ensureStoreItems($pdo);
 }
 
-/* Los tres huecos de la tienda (pestaña "Perfil"). Se crean si faltan;
-   si ya existen no se tocan (el precio se puede cambiar en la BD). */
+/* Los huecos de la tienda (pestaña "Perfil", expositor-hueco-3/4/5)
+   están en assets/tienda/catalogo.json con el resto de objetos. */
 function pf2_ensureStoreItems(PDO $pdo): void {
-    static $done = false;
-    if ($done) return;
-    $done = true;
-    $items = [
-        ['expositor-hueco-3', 'Hueco de expositor 3', 'Un tercer expositor a la vez en tu perfil.', 500, 1],
-        ['expositor-hueco-4', 'Hueco de expositor 4', 'Un cuarto expositor a la vez en tu perfil (antes, el hueco 3).', 1000, 2],
-        ['expositor-hueco-5', 'Hueco de expositor 5', 'El quinto y último expositor a la vez (antes, el hueco 4).', 2000, 3],
-    ];
-    try {
-        $chk = $pdo->prepare("SELECT 1 FROM tienda_items WHERE slug = ? LIMIT 1");
-        $ins = $pdo->prepare("INSERT INTO tienda_items (nombre, slug, descripcion, precio, icono, activo, orden, categoria)
-                              VALUES (?, ?, ?, ?, '', 1, ?, 'perfil')");
-        foreach ($items as $it) {
-            $chk->execute([$it[0]]);
-            if ($chk->fetchColumn()) continue;
-            $ins->execute([$it[1], $it[0], $it[2], $it[3], $it[4]]);
-        }
-    } catch (Throwable $e) { /* la tienda no existe en este entorno */ }
+    require_once dirname(__DIR__) . '/tienda/catalogo.php';
+    tiendaSyncCatalogo($pdo);
 }
 
 /* ── Posts → comentarios del muro (por usuario, idempotente) ──────── */

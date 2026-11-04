@@ -82,9 +82,11 @@ function listInterfaces(): array {
 function listInterfacesForUser(PDO $pdo, ?int $userId): array {
     $all = listInterfaces();
     if ($userId === null) return $all;
-    /* Slugs con fila premium activa en la tienda. */
+    /* Slugs con fila en la tienda. Sin mirar `activo`: una interfaz
+       premium quitada del catálogo (assets/tienda/catalogo.json) no pasa
+       a ser gratis, solo deja de venderse; quien la compró la conserva. */
     $stmt = $pdo->prepare("SELECT slug, precio FROM tienda_items
-                           WHERE categoria = 'interfaces' AND activo = 1 AND slug <> ''");
+                           WHERE categoria = 'interfaces' AND slug <> ''");
     $stmt->execute();
     $shopRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$shopRows) return $all;

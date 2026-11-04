@@ -16,7 +16,7 @@
    ────────────────────────────────────────────── */
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
-require_once __DIR__ . '/items.php';
+require_once dirname(__DIR__) . '/tienda/catalogo.php';   /* haros y mascotas: salen de assets/tienda/catalogo.json */
 
 $u      = requireAuth();
 $userKey = $u['key'];
@@ -31,14 +31,16 @@ $uid = (function() use ($pdo, $userKey) {
 })();
 if (!$uid) jsonError('Usuario no encontrado en BD', 500);
 
-/* Items que el usuario posee de una categoría (base + comprados). */
+/* Items que el usuario posee de una categoría (base + comprados). Los
+   base solo si siguen activos; los comprados aunque se hayan quitado del
+   catálogo (assets/tienda/catalogo.json): quien lo compró lo conserva. */
 function loadOwnedItems(PDO $pdo, int $uid, string $categoria): array {
     $sql = "SELECT i.id, i.nombre, i.slug, i.icono, i.precio, i.descripcion,
                    (i.precio = 0) AS is_base,
                    EXISTS (SELECT 1 FROM tienda_compras c WHERE c.user_id = ? AND c.item_id = i.id) AS owned
             FROM tienda_items i
-            WHERE i.activo = 1 AND i.categoria = ?
-              AND (i.precio = 0
+            WHERE i.categoria = ?
+              AND ((i.precio = 0 AND i.activo = 1)
                    OR EXISTS (SELECT 1 FROM tienda_compras c WHERE c.user_id = ? AND c.item_id = i.id))
             ORDER BY i.orden ASC, i.id ASC";
     $stmt = $pdo->prepare($sql);
@@ -73,19 +75,19 @@ function setActiveItemId(PDO $pdo, int $uid, string $keyName, int $itemId): void
 }
 
 /* Verifica que el usuario posea el ítem (base o comprado) antes de
-   permitir activarlo. */
+   permitir activarlo. Uno comprado vale aunque ya no se venda. */
 function userOwnsItem(PDO $pdo, int $uid, int $itemId, string $categoria): bool {
-    $stmt = $pdo->prepare("SELECT id, precio FROM tienda_items WHERE id = ? AND categoria = ? AND activo = 1");
+    $stmt = $pdo->prepare("SELECT id, precio, activo FROM tienda_items WHERE id = ? AND categoria = ?");
     $stmt->execute([$itemId, $categoria]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) return false;
-    if ((int)$row['precio'] === 0) return true; /* base */
+    if ((int)$row['precio'] === 0) return (bool)$row['activo']; /* base */
     $stmt = $pdo->prepare("SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ?");
     $stmt->execute([$uid, $itemId]);
     return (bool) $stmt->fetchColumn();
 }
 
-personalizeEnsureItems($pdo);
+tiendaSyncCatalogo($pdo);
 
 switch ($action) {
 

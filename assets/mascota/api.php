@@ -174,13 +174,14 @@ try {
 function resolvePreferredMascotSlug(PDO $pdo, int $userId): string {
     $fallback = 'gabriel';
     try {
+        /* Sin mirar `activo`: una skin comprada y quitada luego del
+           catálogo de la tienda se conserva. */
         $stmt = $pdo->prepare("
             SELECT t.slug
             FROM user_settings s
             JOIN tienda_items t
               ON t.id = CAST(s.value AS UNSIGNED)
              AND t.categoria = 'mascotas'
-             AND t.activo = 1
             WHERE s.user_id = ? AND s.key_name = 'active_mascot'
             LIMIT 1
         ");

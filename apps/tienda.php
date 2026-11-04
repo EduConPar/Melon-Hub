@@ -6,6 +6,7 @@ header('Expires: 0');
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
 require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: cajita "DEV" de darse puntos */
+require_once dirname(__DIR__) . '/assets/tienda/catalogo.php';   /* pestañas de la tienda (catalogo.json) */
 require_once dirname(__DIR__) . '/assets/themes/theme-helpers.php';
 
 $userKey = $_SESSION['user'] ?? null;
@@ -550,11 +551,12 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             <div id="tienda-discord-name"></div>
             <button type="button" class="button" id="tienda-discord-btn">…</button>
         </div>
-        <div class="tienda-tab active" data-view="principal" data-cat="discord"><img src="../assets/img/appIcons/discordIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Discord</div>
-        <div class="tienda-tab"        data-view="principal" data-cat="interfaces"><img src="../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Interfaces</div>
-        <div class="tienda-tab"        data-view="principal" data-cat="mascotas"><img src="../assets/img/appIcons/mascotaIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Mascotas</div>
-        <div class="tienda-tab"        data-view="principal" data-cat="haros"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros</div>
-        <div class="tienda-tab"        data-view="principal" data-cat="perfil"><img src="../assets/img/appIcons/profileIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Perfil</div>
+        <?php
+        /* Pestañas: salen de assets/tienda/catalogo.json (la primera empieza
+           activa; "proximamente" → la pestaña enseña "Coming soon..."). */
+        foreach (tiendaPestanas() as $_i => $_t): ?>
+        <div class="tienda-tab<?= $_i === 0 ? ' active' : '' ?>" data-view="principal" data-cat="<?= htmlspecialchars($_t['id']) ?>"<?= $_t['proximamente'] ? ' data-soon="1"' : '' ?>><?php if ($_t['icono'] !== ''): ?><img src="../<?= htmlspecialchars($_t['icono']) ?>" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;"><?php endif; ?><?= htmlspecialchars($_t['nombre']) ?></div>
+        <?php endforeach; ?>
         <div id="tienda-donar-footer">
             <button type="button" class="button" id="tienda-donar-btn" data-view="donaciones">☕ Donaciones</button>
         </div>
@@ -632,7 +634,10 @@ async function api(action, body){
     return r.json();
 }
 
-var _balance = 0, _items = [], _owned = {}, _activeCat = 'discord';
+var _balance = 0, _items = [], _owned = {};
+/* Categoría inicial = la primera pestaña (las pinta PHP desde catalogo.json). */
+var _firstTab = document.querySelector('.tienda-tab[data-cat]');
+var _activeCat = _firstTab ? _firstTab.dataset.cat : 'discord';
 
 /* SOLO DEV: darse puntos para probar (assets/tienda/api.php dev-grant). */
 (function(){
@@ -683,9 +688,10 @@ function renderBalance(){
 }
 function renderItems(){
     var view = document.getElementById('tienda-view-principal');
-    /* Categoría Mascotas: placeholder hasta que esté implementada.
+    /* Pestañas con "proximamente" en catalogo.json (ahora Mascotas): placeholder.
        Ocupa todo el alto disponible y se centra horizontal+verticalmente. */
-    if (_activeCat === 'mascotas') {
+    var _tab = document.querySelector('.tienda-tab[data-cat="' + _activeCat + '"]');
+    if (_tab && _tab.dataset.soon) {
         view.innerHTML = '<div class="tienda-empty" style="display:flex;align-items:center;justify-content:center;min-height:60vh;font-size:22px;">Coming soon...</div>';
         return;
     }

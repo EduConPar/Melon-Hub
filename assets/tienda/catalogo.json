@@ -1,0 +1,28 @@
+{
+  "_ayuda": [
+    "Catálogo de la tienda. Lo lee assets/tienda/catalogo.php y lo copia a la tabla tienda_items al subirlo.",
+    "pestanas: las pestañas de la tienda, en este orden. id = la categoría de sus objetos; icono = ruta desde la raíz de la web; proximamente: true = sale 'Coming soon...' en vez de los objetos.",
+    "objetos: categoria + slug identifican el objeto (no cambiar el slug de uno que ya existe: sería otro objeto). El orden es el de esta lista dentro de cada categoría.",
+    "precio 0 = lo tiene todo el mundo (no sale en la tienda, solo en Temas). discord_role_id = rol que da al comprarlo (opcional). icono = emoji o vacío.",
+    "Quitar un objeto de aquí lo desactiva (deja de venderse; quien lo compró lo conserva). Volver a ponerlo lo reactiva.",
+    "Haros: los archivos van en assets/vids/<slug>Haro.gif, <slug>Haro-last.png, assets/img/haro/<slug>Haro-preview.png y assets/sound/<slug>Haro.mp3 (opcional)."
+  ],
+  "pestanas": [
+    { "id": "discord",    "nombre": "Discord",    "icono": "assets/img/appIcons/discordIcon.png" },
+    { "id": "interfaces", "nombre": "Interfaces", "icono": "assets/img/appIcons/interfaceIcon.png" },
+    { "id": "mascotas",   "nombre": "Mascotas",   "icono": "assets/img/appIcons/mascotaIcon.png", "proximamente": true },
+    { "id": "haros",      "nombre": "Haros",      "icono": "assets/img/appIcons/haroIcon.png" },
+    { "id": "perfil",     "nombre": "Perfil",     "icono": "assets/img/appIcons/profileIcon.png" }
+  ],
+  "objetos": [
+    { "categoria": "haros", "slug": "green",  "nombre": "Verde",    "descripcion": "Haro verde clásico. Lo tienes por defecto.", "precio": 0 },
+    { "categoria": "haros", "slug": "yellow", "nombre": "Amarillo", "descripcion": "Haro amarillo", "precio": 200 },
+    { "categoria": "haros", "slug": "purple", "nombre": "Morado",   "descripcion": "Haro Morado",   "precio": 200 },
+
+    { "categoria": "mascotas", "slug": "gabriel", "nombre": "Gabriel", "descripcion": "Mascota Gabriel — angel shimeji con 46 frames.", "precio": 0 },
+
+    { "categoria": "perfil", "slug": "expositor-hueco-3", "nombre": "Hueco de expositor 3", "descripcion": "Un tercer expositor a la vez en tu perfil.", "precio": 500 },
+    { "categoria": "perfil", "slug": "expositor-hueco-4", "nombre": "Hueco de expositor 4", "descripcion": "Un cuarto expositor a la vez en tu perfil (antes, el hueco 3).", "precio": 1000 },
+    { "categoria": "perfil", "slug": "expositor-hueco-5", "nombre": "Hueco de expositor 5", "descripcion": "El quinto y último expositor a la vez (antes, el hueco 4).", "precio": 2000 }
+  ]
+}
