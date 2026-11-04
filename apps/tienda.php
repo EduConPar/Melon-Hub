@@ -297,6 +297,41 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
       grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
       gap: 14px; align-content: start;
     }
+    /* Pestaña Perfil: secciones (renderPerfil) en vez de la cuadrícula. */
+    #tienda-view-principal.is-secciones { display: block; }
+    .tienda-sec { margin-bottom: 18px; }
+    /* Título en mayúsculas con una línea grabada hasta el final (como los
+       separadores de Win98: oscura + clara). */
+    .tienda-sec-h { display: flex; align-items: center; gap: 8px; margin: 0 0 4px;
+      font-size: 12px; font-weight: bold; letter-spacing: 1px; color: var(--text); }
+    .tienda-sec-h::after { content: ''; flex: 1; border-top: 1px solid var(--bezel-dark-1); border-bottom: 1px solid var(--bezel-light-1); }
+    .tienda-sec-sub { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+    .tienda-sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+    .tienda-sec-wide { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    /* Tarjeta ancha (expositores): icono a la izquierda y los datos al lado. */
+    .tienda-wide { display: flex; background: var(--win-bg); min-height: 96px;
+      border-top: 2px solid var(--bezel-light-1); border-left: 2px solid var(--bezel-light-1);
+      border-right: 2px solid var(--bezel-dark-2); border-bottom: 2px solid var(--bezel-dark-2); }
+    .tienda-wide-icon { width: 88px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--inset-bg);
+      box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1); margin: 4px; }
+    .tienda-wide-icon img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+    .tienda-wide-body { flex: 1; min-width: 0; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+    .tienda-wide-name { font-size: 12px; font-weight: bold; color: var(--text); }
+    .tienda-wide-type { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .tienda-wide-pips { display: inline-flex; gap: 2px; }
+    .tienda-wide-pips i { width: 10px; height: 6px; background: var(--inset-bg); box-shadow: inset 1px 1px var(--bezel-dark-1); }
+    .tienda-wide-pips i.on { background: var(--accent); }
+    .tienda-wide-desc { font-size: 10px; color: var(--text-muted); flex: 1; }
+    .tienda-wide-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .tienda-wide-price { font-size: 11px; font-weight: bold; color: var(--text); }
+    .tienda-wide-foot .button { min-height: 22px; }
+    .tienda-wide-foot .button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .tienda-wide-done { font-size: 11px; font-weight: bold; color: var(--accent); }
+    /* Vista previa de marco con tu foto: hueco fijo de 72 px y el sitio
+       que pide cada marco alrededor (--mk-* de marcos.css). */
+    .tienda-marco-prev.is-foto { width: 72px; height: 72px;
+      margin: calc(72px * var(--mk-t, .14)) calc(72px * var(--mk-r, .14)) calc(72px * var(--mk-b, .14)) calc(72px * var(--mk-l, .14)); }
+    .tienda-marco-prev.is-foto > img { object-fit: cover; image-rendering: auto; }
     .tienda-card {
       background: var(--win-bg);
       border-top: 2px solid var(--bezel-light-1);
@@ -638,6 +673,8 @@ async function api(action, body){
 }
 
 var _balance = 0, _items = [], _owned = {};
+/* Tu foto de perfil: va dentro de la vista previa de los marcos. */
+var MY_AVATAR = <?php $_myAv = getUserImage($userLabel); echo json_encode($_myAv ? '../' . $_myAv : ''); ?>;
 /* Categoría inicial = la primera pestaña (las pinta PHP desde catalogo.json). */
 var _firstTab = document.querySelector('.tienda-tab[data-cat]');
 var _activeCat = _firstTab ? _firstTab.dataset.cat : 'discord';
@@ -691,6 +728,8 @@ function renderBalance(){
 }
 function renderItems(){
     var view = document.getElementById('tienda-view-principal');
+    /* Perfil va por secciones (renderPerfil); el resto, en cuadrícula. */
+    view.classList.toggle('is-secciones', _activeCat === 'perfil');
     /* Pestañas con "proximamente" en catalogo.json (ahora Mascotas): placeholder.
        Ocupa todo el alto disponible y se centra horizontal+verticalmente. */
     var _tab = document.querySelector('.tienda-tab[data-cat="' + _activeCat + '"]');
@@ -703,6 +742,7 @@ function renderItems(){
         view.innerHTML = '<div class="tienda-empty">No hay items en esta categoría todavía.</div>';
         return;
     }
+    if (_activeCat === 'perfil') { renderPerfil(view, items); return; }
     view.innerHTML = items.map(function(it){
         /* El nombre visible es el del rol de Discord (si lo lleva); si no,
            cae al nombre interno del item. Coloreamos el texto del nombre
@@ -775,6 +815,88 @@ function renderItems(){
             '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '"' + btnAttrs + '>' + btnLabel + '</button>' +
         '</div>';
     }).join('');
+    view.querySelectorAll('[data-buy-id]').forEach(function(btn){
+        btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
+    });
+    renderBalance();
+}
+
+/* ── Pestaña Perfil, por secciones (como la tienda de puntos de Steam) ──
+   MARCOS DE AVATAR: tarjetas con tu foto dentro de cada marco.
+   EXPOSITORES: UNA sola tarjeta ancha para los huecos de expositor que va
+   cambiando según los que ya tengas (hueco 3 → 4 → 5, con su precio);
+   comprados los tres, sale completa. Lo que no sea ni marco ni hueco va
+   en OTROS, con la tarjeta normal. */
+var SLOT_SLUGS_PERFIL = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
+function perfilPrecio(p) {
+    return p + ' <img src="../assets/img/appIcons/puntosAutismo.png" class="punto-autismo-ic" alt="">';
+}
+function perfilSeccion(titulo, sub, cuerpo, cls) {
+    return '<section class="tienda-sec">' +
+        '<h3 class="tienda-sec-h">' + esc(titulo) + '</h3>' +
+        (sub ? '<div class="tienda-sec-sub">' + esc(sub) + '</div>' : '') +
+        '<div class="' + cls + '">' + cuerpo + '</div></section>';
+}
+function renderPerfil(view, items) {
+    var marcos = items.filter(function(it){ return !!it.marco; });
+    var huecos = SLOT_SLUGS_PERFIL.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; })
+                                  .filter(Boolean);
+    var otros  = items.filter(function(it){ return !it.marco && SLOT_SLUGS_PERFIL.indexOf(it.slug) < 0; });
+    var foto = MY_AVATAR || '../assets/img/appIcons/profileIcon.png';
+    var html = '';
+
+    if (marcos.length) {
+        html += perfilSeccion('MARCOS DE AVATAR', 'Un marco alrededor de tu foto en el perfil, el chat, Social y los comentarios. Se elige en Personalizar del perfil.',
+            marcos.map(function(it){
+                var owned = !!_owned[it.id|0];
+                return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+                    '<div class="tienda-card-icon">' +
+                        '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto) + '" alt=""></span>' +
+                        '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span>' +
+                    '</div>' +
+                    '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
+                    '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
+                    '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+                '</div>';
+            }).join(''), 'tienda-sec-grid');
+    }
+
+    if (huecos.length) {
+        /* El primero que no tienes es el que se vende ahora. */
+        var tienes = huecos.filter(function(it){ return _owned[it.id|0]; }).length;
+        var sig = huecos.filter(function(it){ return !_owned[it.id|0]; })[0];
+        var total = 2 + huecos.length;
+        var pips = '';
+        for (var i = 0; i < huecos.length; i++) pips += '<i class="' + (i < tienes ? 'on' : '') + '"></i>';
+        var card = '<div class="tienda-wide' + (sig ? '' : ' is-owned') + '">' +
+            '<div class="tienda-wide-icon"><img src="../assets/img/appIcons/profileIcon.png" alt=""></div>' +
+            '<div class="tienda-wide-body">' +
+                '<div class="tienda-wide-name">' + esc(sig ? sig.nombre : 'Huecos de expositor') + '</div>' +
+                '<div class="tienda-wide-type">Mejora de expositor · tienes ' + (2 + tienes) + ' de ' + total + ' huecos <span class="tienda-wide-pips">' + pips + '</span></div>' +
+                '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : 'Ya tienes todos los huecos: ' + total + ' expositores a la vez en tu perfil.') + '</div>' +
+                '<div class="tienda-wide-foot">' +
+                    (sig ? '<span class="tienda-wide-price">' + perfilPrecio(sig.precio) + '</span>' +
+                           '<button type="button" class="button" data-buy-id="' + sig.id + '" data-price="' + sig.precio + '">Comprar</button>'
+                         : '<span class="tienda-wide-done">✓ Completo</span>') +
+                '</div>' +
+            '</div></div>';
+        html += perfilSeccion('EXPOSITORES', 'Más huecos para enseñar cosas en tu perfil a la vez. Cada mejora añade uno, hasta ' + total + '.', card, 'tienda-sec-wide');
+    }
+
+    if (otros.length) {
+        html += perfilSeccion('OTROS', '', otros.map(function(it){
+            var owned = !!_owned[it.id|0];
+            return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+                '<div class="tienda-card-icon"><img class="tienda-card-icon-img" src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">' +
+                    '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
+                '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
+                '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
+                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? '✓ Ya lo tienes' : 'Comprar') + '</button>' +
+            '</div>';
+        }).join(''), 'tienda-sec-grid');
+    }
+
+    view.innerHTML = html;
     view.querySelectorAll('[data-buy-id]').forEach(function(btn){
         btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
     });
