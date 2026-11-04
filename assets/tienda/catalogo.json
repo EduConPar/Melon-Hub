@@ -53,10 +53,8 @@
     { "categoria": "perfil", "slug": "media-music-5", "nombre": "Música favorita", "descripcion": "El quinto y último hueco en tu Media favorita de música (antes, el cuarto).", "precio": 1000 },
     { "categoria": "perfil", "slug": "steam-rare-fila-2", "nombre": "Logros raros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros raros de Steam.", "precio": 500 },
     { "categoria": "perfil", "slug": "steam-rare-fila-3", "nombre": "Logros raros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros raros de Steam (antes, la fila 2).", "precio": 1000 },
-    { "categoria": "perfil", "slug": "steam-rare-fila-4", "nombre": "Logros raros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros raros de Steam (antes, la fila 3).", "precio": 1500 },
     { "categoria": "perfil", "slug": "steam-ach-fila-2", "nombre": "Logros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros de Steam.", "precio": 500 },
     { "categoria": "perfil", "slug": "steam-ach-fila-3", "nombre": "Logros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros de Steam (antes, la fila 2).", "precio": 1000 },
-    { "categoria": "perfil", "slug": "steam-ach-fila-4", "nombre": "Logros de Steam", "descripcion": "Una fila más de 7 logros en el expositor Logros de Steam (antes, la fila 3).", "precio": 1500 },
 
     { "categoria": "perfil", "slug": "marco-sandia",   "nombre": "Marco sandía",   "descripcion": "Corteza de sandía con pepitas alrededor de tu foto de perfil.", "precio": 400, "marco": "assets/img/marcos/marco-sandia.png" },
     { "categoria": "perfil", "slug": "marco-paint",    "nombre": "Marco Paint",    "descripcion": "Tu foto como un dibujo en el Paint de toda la vida: herramientas, paleta y barra de título.", "precio": 400, "marco": "assets/img/marcos/marco-paint.png" },

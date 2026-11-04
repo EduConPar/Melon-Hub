@@ -10,7 +10,7 @@
        Texto libre) en el orden que elige el usuario. Reseña, Juego y
        Playlist destacada se compran en la tienda (sin comprar solo los ve
        su dueño, en Personalizar, como bloqueados); Media favorita (3 → 5)
-       y los logros de Steam (filas de 7, de 1 a 4) se mejoran allí
+       y los logros de Steam (filas de 7, de 1 a 3) se mejoran allí
        (`v2.perks`);
      - comentarios del muro (sustituyen a los posts);
      - columna lateral: nivel, medallas, amigos y actividad;

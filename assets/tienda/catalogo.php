@@ -190,7 +190,7 @@ function tiendaBuscarFila(array $filas, array $o, array $usados): ?int {
    antes de poder comprar este (null = ninguno).
      - huecos de expositor: el 4 pide el 3, el 5 pide el 4;
      - Media favorita (media-<tipo>-4/5): el 5 pide el 4 del mismo tipo;
-     - filas de logros de Steam (steam-rare|ach-fila-2/3/4): cada fila pide
+     - filas de logros de Steam (steam-rare|ach-fila-2/3): cada fila pide
        la anterior del mismo expositor.
    La usan tienda api `buy` y, con la misma regla, tienda.php y
    tienda-mobile.php (tiendaPrevSlug en JS). */

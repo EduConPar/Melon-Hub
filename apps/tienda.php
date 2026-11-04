@@ -818,16 +818,21 @@ function renderItems(){
             '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '"' + btnAttrs + '>' + btnLabel + '</button>' +
         '</div>';
     }).join('');
-    view.innerHTML = SECCION_TAB[_activeCat] ? perfilSeccion(SECCION_TAB[_activeCat], '', cards, 'tienda-sec-grid') : cards;
+    var sec = SECCION_TAB[_activeCat];
+    view.innerHTML = sec ? perfilSeccion(sec[0], sec[1], cards, 'tienda-sec-grid') : cards;
     view.querySelectorAll('[data-buy-id]').forEach(function(btn){
         btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
     });
     renderBalance();
 }
 
-/* Título de la sección de las pestañas que no son Perfil (en mayúsculas,
-   como las de Perfil; decidido así). */
-var SECCION_TAB = { discord: 'ROLES DE DISCORD', haros: 'HAROS ESTÁNDAR', interfaces: 'INTERFACES' };
+/* Título (en mayúsculas, como los de Perfil; decidido así) y descripción
+   de la sección de las pestañas que no son Perfil. */
+var SECCION_TAB = {
+    discord:    ['ROLES DE DISCORD', 'Roles para tu cuenta en el servidor de Discord. Para comprarlos tienes que tener tu Discord vinculado.'],
+    haros:      ['HAROS ESTÁNDAR', 'Otros colores para el haro que te trae los avisos. Se elige en Temas, en Personalización.'],
+    interfaces: ['INTERFACES', 'Cambian el aspecto de todo Melon Hub. Se elige en Temas, en Personalización.'],
+};
 
 /* Compras en cadena de la pestaña Perfil: el objeto que hay que tener
    antes (null = ninguno). Misma regla que tiendaPrevSlug de
@@ -846,7 +851,7 @@ function tiendaPrevSlug(slug) {
    que va cambiando según lo que ya tengas (con su precio y pips):
    huecos de expositor (3 → 4 → 5), Media favorita de cada tipo (3 → 4 →
    5 elementos) y las filas de los dos expositores de logros de Steam
-   (1 → 4); comprada entera, sale completa.
+   (1 → 3); comprada entera, sale completa.
    EXPOSITORES ADICIONALES: los que se compran (Reseña, Juego y Playlist
    destacada), en tarjetas normales.
    El resto va en OTROS, con la tarjeta normal. */
@@ -863,7 +868,7 @@ var CADENAS_PERFIL = [
     return { slugs: ['media-' + m[0] + '-4', 'media-' + m[0] + '-5'], icono: m[1], base: 3, cosa: m[3], nombre: m[2],
              fin: function(n){ return 'Ya tienes todos los huecos: ' + n + ' ' + m[3] + ' en tu Media favorita.'; } };
 })).concat([['rare', 'Logros raros de Steam'], ['ach', 'Logros de Steam']].map(function(m){
-    return { slugs: ['steam-' + m[0] + '-fila-2', 'steam-' + m[0] + '-fila-3', 'steam-' + m[0] + '-fila-4'], icono: 'steamIcon', base: 1,
+    return { slugs: ['steam-' + m[0] + '-fila-2', 'steam-' + m[0] + '-fila-3'], icono: 'steamIcon', base: 1,
              cosa: 'filas', nombre: m[1], fin: function(n){ return 'Ya tienes las ' + n + ' filas: ' + (n * 7) + ' logros en el expositor.'; } };
 }));
 function perfilPrecio(p) {
@@ -926,7 +931,7 @@ function renderPerfil(view, items) {
             '</div></div>';
     }).join('');
     if (anchas) {
-        html += perfilSeccion('SUBIR DE NIVEL EXPOSITORES', 'Más huecos de expositor, más elementos en Media favorita (de 3 a 5, por tipo) y más filas en los expositores de logros de Steam (de 1 a 4).', anchas, 'tienda-sec-wide');
+        html += perfilSeccion('SUBIR DE NIVEL EXPOSITORES', 'Más huecos de expositor, más elementos en Media favorita (de 3 a 5, por tipo) y más filas en los expositores de logros de Steam (de 1 a 3).', anchas, 'tienda-sec-wide');
     }
 
     if (adicionales.length) {

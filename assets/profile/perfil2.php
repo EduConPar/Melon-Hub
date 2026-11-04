@@ -14,7 +14,7 @@
      y 5, en orden). Tipos: media (Media favorita: juegos, películas,
      series, libros o música, uno por tipo; 3 elementos + mejoras
      media-<tipo>-4/5), shots, review, steam_rare, steam_ach (filas de 7
-     logros + mejoras steam-rare|ach-fila-2/3/4), game_feat (Juego
+     logros + mejoras steam-rare|ach-fila-2/3, máximo 3 filas), game_feat (Juego
      destacado), playlist (Playlist destacada) y text (Texto libre).
      Reseña, Juego y Playlist destacada se compran en la tienda
      (PF2_PAID): sin comprar se guardan pero no salen. Los tipos viejos
@@ -40,7 +40,7 @@ const PF2_MEDIA_CATS   = ['games', 'movies', 'series', 'books', 'music'];
 const PF2_MEDIA_BASE   = 3;                                        /* + media-<tipo>-4 y -5 */
 const PF2_MEDIA_MAX    = 5;
 const PF2_ACH_ROW      = 7;                                        /* logros por fila */
-const PF2_ACH_ROWS_MAX = 4;                                        /* 1 + steam-…-fila-2/3/4 */
+const PF2_ACH_ROWS_MAX = 3;                                        /* 1 + steam-…-fila-2/3 (máximo 3 filas) */
 const PF2_MAX_STEAM_ACH = PF2_ACH_ROW * PF2_ACH_ROWS_MAX;
 /* Expositores que se compran en la tienda (tipo => slug). */
 const PF2_PAID         = ['review' => 'expositor-resena', 'game_feat' => 'expositor-juego-destacado', 'playlist' => 'expositor-playlist'];
@@ -161,7 +161,7 @@ function pf2_slots(PDO $pdo, int $uid): int {
 /* Lo comprado que cambia los expositores (`v2.perks`):
      unlocked  — tipo de pago => comprado;
      media     — tipo => cuántos elementos caben (3, 4 o 5);
-     steamRows — steam_rare / steam_ach => filas de 7 logros (1 a 4). */
+     steamRows — steam_rare / steam_ach => filas de 7 logros (1 a 3). */
 function pf2_perks(PDO $pdo, int $uid): array {
     $own = pf2_ownedSlugs($pdo, $uid);
     $unlocked = [];
