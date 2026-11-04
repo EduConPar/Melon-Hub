@@ -332,6 +332,10 @@ $_isTablet = isTabletDevice();
     <link rel="stylesheet" href="assets/css/reproductor.css?v=<?php echo filemtime(__DIR__ . '/assets/css/reproductor.css'); ?>">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
+    <!-- Marcos de perfil: apps/perfil.php va incluido aquí y su <link> a
+         marcos.css solo está en su cabecera standalone. Sin esto el marco
+         (data-marco, de melon-marcos.js) no se dibuja en el escritorio. -->
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/marcos.css'); ?>">
     <?php if ($_isTablet): ?>
     <!-- Overrides para tablets (taskbar, ventanas, hit-targets). Va DESPUÉS
          de themes.css para que sus reglas ganen sin !important. -->
