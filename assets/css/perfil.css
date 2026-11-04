@@ -2893,14 +2893,14 @@
 /* Logros de Steam: filas de 7 (hasta 3), de arriba abajo, en un
    bloque centrado y compacto con aire entre los iconos; los raros (menos
    del 10 %) con brillo del acento; debajo, juegos y horas. */
-.pf2-achs { display: grid; grid-template-columns: repeat(7, 52px); gap: 16px; justify-content: center; padding: 6px 4px; }
+.pf2-achs { display: grid; grid-template-columns: repeat(7, 52px); gap: 24px; justify-content: center; padding: 6px 4px; }
 .pf2-achg { position: relative; width: 52px; height: 52px; }
 .pf2-achg img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
 .pf2-achg.raro img { box-shadow: 0 0 0 2px var(--accent), 0 0 7px 2px var(--accent); }
 .pf2-achg .pf2-mtip { left: 0; right: auto; width: 180px; }
 .pf2-achg.flip .pf2-mtip { left: auto; right: 0; }
 .pf2-achg:hover .pf2-mtip { display: block; }
-.pf2-ach-stats { display: flex; gap: 36px; width: calc(7 * 52px + 6 * 16px); margin: 8px auto 2px; padding-top: 6px; border-top: 1px solid var(--bezel-dark-1); }
+.pf2-ach-stats { display: flex; gap: 36px; width: calc(7 * 52px + 6 * 24px); margin: 8px auto 2px; padding-top: 6px; border-top: 1px solid var(--bezel-dark-1); }
 .pf2-ach-stats b { display: block; font-size: 20px; line-height: 1; font-weight: normal; }
 .pf2-ach-stats span { font-size: 10px; }
 
