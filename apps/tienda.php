@@ -728,8 +728,10 @@ function renderBalance(){
 }
 function renderItems(){
     var view = document.getElementById('tienda-view-principal');
-    /* Perfil va por secciones (renderPerfil); el resto, en cuadrícula. */
-    view.classList.toggle('is-secciones', _activeCat === 'perfil');
+    /* Perfil va por secciones (renderPerfil); Discord, Haros e
+       Interfaces, en una sección con título (SECCION_TAB); el resto, en
+       cuadrícula. */
+    view.classList.toggle('is-secciones', _activeCat === 'perfil' || !!SECCION_TAB[_activeCat]);
     /* Pestañas con "proximamente" en catalogo.json (ahora Mascotas): placeholder.
        Ocupa todo el alto disponible y se centra horizontal+verticalmente. */
     var _tab = document.querySelector('.tienda-tab[data-cat="' + _activeCat + '"]');
@@ -743,7 +745,7 @@ function renderItems(){
         return;
     }
     if (_activeCat === 'perfil') { renderPerfil(view, items); return; }
-    view.innerHTML = items.map(function(it){
+    var cards = items.map(function(it){
         /* El nombre visible es el del rol de Discord (si lo lleva); si no,
            cae al nombre interno del item. Coloreamos el texto del nombre
            con el color del rol cuando exista, así se mantiene la identidad
@@ -816,11 +818,16 @@ function renderItems(){
             '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '"' + btnAttrs + '>' + btnLabel + '</button>' +
         '</div>';
     }).join('');
+    view.innerHTML = SECCION_TAB[_activeCat] ? perfilSeccion(SECCION_TAB[_activeCat], '', cards, 'tienda-sec-grid') : cards;
     view.querySelectorAll('[data-buy-id]').forEach(function(btn){
         btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
     });
     renderBalance();
 }
+
+/* Título de la sección de las pestañas que no son Perfil (en mayúsculas,
+   como las de Perfil; decidido así). */
+var SECCION_TAB = { discord: 'ROLES DE DISCORD', haros: 'HAROS ESTÁNDAR', interfaces: 'INTERFACES' };
 
 /* Compras en cadena de la pestaña Perfil: el objeto que hay que tener
    antes (null = ninguno). Misma regla que tiendaPrevSlug de
@@ -895,7 +902,8 @@ function renderPerfil(view, items) {
     }
 
     /* Una tarjeta ancha por cadena: el primero que no tienes es el que se
-       vende ahora. */
+       vende ahora. El nombre es siempre el de la cadena (sin "fila 2",
+       ": 4"…; decidido así): lo que toca se ve en "tienes X de Y". */
     var anchas = CADENAS_PERFIL.map(function(c){
         var cad = c.slugs.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; }).filter(Boolean);
         if (!cad.length) return '';
@@ -907,7 +915,7 @@ function renderPerfil(view, items) {
         return '<div class="tienda-wide' + (sig ? '' : ' is-owned') + '">' +
             '<div class="tienda-wide-icon"><img src="../assets/img/appIcons/' + c.icono + '.png" alt=""></div>' +
             '<div class="tienda-wide-body">' +
-                '<div class="tienda-wide-name">' + esc(sig ? sig.nombre : c.nombre) + '</div>' +
+                '<div class="tienda-wide-name">' + esc(c.nombre) + '</div>' +
                 '<div class="tienda-wide-type">Mejora de expositor · tienes ' + (c.base + tienes) + ' de ' + total + ' ' + c.cosa + ' <span class="tienda-wide-pips">' + pips + '</span></div>' +
                 '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : c.fin(total)) + '</div>' +
                 '<div class="tienda-wide-foot">' +

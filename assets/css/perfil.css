@@ -2902,3 +2902,8 @@
 .pf2-ach-stats { display: flex; gap: 50px; margin: 10px 4px 2px; padding-top: 8px; border-top: 1px solid var(--bezel-dark-1); }
 .pf2-ach-stats b { display: block; font-size: 28px; line-height: 1; font-weight: normal; }
 .pf2-ach-stats span { font-size: 11px; }
+
+/* Media favorita: los elementos siempre centrados, tengas los que tengas
+   (cada uno del ancho de 1/5 de la fila). */
+.pf2-games.pf2-games5, .pf2-music { display: flex; justify-content: center; gap: 6px; }
+.pf2-games.pf2-games5 > .pf2-game, .pf2-music > .pf2-album { width: calc((100% - 24px) / 5); flex: 0 0 auto; }

@@ -307,7 +307,8 @@
             var g = body.firstChild;
             data.forEach(function (it, i) {
                 var d = document.createElement('div');
-                d.className = 'pf2-game' + (i % 5 >= 3 ? ' flip' : '');
+                /* Centrados: la ventanita se abre hacia el lado con sitio. */
+                d.className = 'pf2-game' + (i >= data.length / 2 ? ' flip' : '');
                 d.innerHTML = (it.image ? '<img src="' + esc(it.image) + '" alt="" loading="lazy">' : '<div class="pf2-game-noimg">' + esc(it.title) + '</div>') +
                     '<div class="window pf2-tip"><div class="title-bar"><div class="title-bar-text">' + esc(it.title) + '</div></div>' +
                     '<div class="window-body">' + steamRows(it.steam) +
@@ -914,6 +915,39 @@
         });
     }
 
+    /* Selectores: al elegir algo solo se marca o se desmarca (clase "on"
+       y la tira de elegidos); no se vuelve a pintar la lista, que si no
+       recarga todas las imágenes y salta a cada clic. */
+    function htmlEl(html) { var d = document.createElement('div'); d.innerHTML = html; return d.firstChild; }
+    /* Tira de elegidos: reutiliza los nodos que ya estaban (sus imágenes
+       no se vuelven a cargar) y pone el número de orden en [data-n]. */
+    function syncStrip(box, keys, make, emptyHtml) {
+        var old = {};
+        Array.prototype.forEach.call(box.children, function (e) { if (e.dataset && e.dataset.k != null) old[e.dataset.k] = e; });
+        box.innerHTML = '';
+        if (!keys.length) { box.innerHTML = emptyHtml; return; }
+        keys.forEach(function (k, i) {
+            var e = old[k] || make(k);
+            e.dataset.k = k;
+            var n = e.querySelector('[data-n]');
+            if (n) n.textContent = i + 1;
+            box.appendChild(e);
+        });
+    }
+
+    /* Casillas de una cuadrícula de selector: "on" y el número de orden
+       según `sel` (la clave de cada casilla en data-<attr>). */
+    function markPicks(grid, attr, sel, conv) {
+        grid.querySelectorAll('.pf2-pick').forEach(function (e) {
+            var v = e.dataset[attr];
+            var n = sel.indexOf(conv ? conv(v) : v) + 1;
+            e.classList.toggle('on', n > 0);
+            var b = e.querySelector('.pf2-pick-n');
+            if (n && !b) { b = document.createElement('span'); b.className = 'pf2-pick-n'; e.insertBefore(b, e.querySelector('.pf2-pick-t')); }
+            if (n) b.textContent = n; else if (b) b.remove();
+        });
+    }
+
     /* Imagen de un título del catálogo (juegos, películas, series, libros). */
     function catImg(cat, t) { return S.catalog[cat + '|' + String(t).toLowerCase()]; }
     function setCatImg(cat, t, img) { if (img) S.catalog[cat + '|' + String(t).toLowerCase()] = img; }
@@ -938,16 +972,20 @@
             var img = catImg(cat, t);
             return '<div class="pf2-pick portrait' + (on ? ' on' : '') + '" data-t="' + esc(t) + '">' +
                 (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '<div class="pf2-pick-ph"></div>') +
-                (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
+                (n ? '<span class="pf2-pick-n" data-n>' + n + '</span>' : '') +
                 '<div class="pf2-pick-t">' + esc(t) + '</div></div>';
         };
         var paintSel = function () {
-            selG.innerHTML = sel.length ? sel.map(function (t, i) { return tile(t, true, i + 1); }).join('') : '<div class="pf2-empty">' + (fem ? 'Ninguna' : 'Ninguno') + ' todavía.</div>';
-            selG.querySelectorAll('.pf2-pick').forEach(function (el) {
-                el.title = 'Quitar';
-                el.addEventListener('click', function () { sel.splice(sel.indexOf(el.dataset.t), 1); paintSel(); paintRes(lastRes); });
-            });
+            syncStrip(selG, sel, function (t) {
+                var e = htmlEl(tile(t, true, 1));
+                e.title = 'Quitar';
+                e.addEventListener('click', function () { var k = sel.indexOf(t); if (k >= 0) sel.splice(k, 1); paintSel(); markRes(); });
+                return e;
+            }, '<div class="pf2-empty">' + (fem ? 'Ninguna' : 'Ninguno') + ' todavía.</div>');
             if (info) info.textContent = sel.length + ' de ' + max;
+        };
+        var markRes = function () {
+            resG.querySelectorAll('.pf2-pick').forEach(function (e) { e.classList.toggle('on', sel.indexOf(e.dataset.t) >= 0); });
         };
         var lastRes = [];
         var paintRes = function (games) {
@@ -960,7 +998,7 @@
                     var t = el.dataset.t, k = sel.indexOf(t);
                     if (k >= 0) sel.splice(k, 1);
                     else if (sel.length < max) sel.push(t);
-                    paintSel(); paintRes(lastRes);
+                    paintSel(); markRes();
                 });
             });
         };
@@ -1051,18 +1089,19 @@
                     el.addEventListener('click', function () {
                         if (el.dataset.t === cur) return;
                         cur = el.dataset.t; ach = [];
-                        paintRes(lastRes); loadSteam();
+                        resG.querySelectorAll('.pf2-pick').forEach(function (e) { e.classList.toggle('on', e.dataset.t === cur); });
+                        loadSteam();
                     });
                 });
             };
             var paintSel = function () {
-                var picked = ach.map(function (api) { return achList.find(function (a) { return a.apiname === api; }); }).filter(Boolean);
-                selL.innerHTML = picked.length ? picked.map(function (a, i) {
-                    return '<div class="pf2-ach-it" data-api="' + esc(a.apiname) + '" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div>' + (i + 1) + '</div></div>';
-                }).join('') : '<div class="pf2-empty">Ninguno todavía.</div>';
-                selL.querySelectorAll('.pf2-ach-it').forEach(function (el) {
-                    el.addEventListener('click', function () { ach.splice(ach.indexOf(el.dataset.api), 1); paintSel(); paintAch(); });
-                });
+                var keys = ach.filter(function (api) { return achList.some(function (a) { return a.apiname === api; }); });
+                syncStrip(selL, keys, function (api) {
+                    var a = achList.find(function (x) { return x.apiname === api; });
+                    var e = htmlEl('<div class="pf2-ach-it" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div data-n></div></div>');
+                    e.addEventListener('click', function () { var k = ach.indexOf(api); if (k >= 0) ach.splice(k, 1); paintSel(); markAch(); });
+                    return e;
+                }, '<div class="pf2-empty">Ninguno todavía.</div>');
                 if (info) info.textContent = match && match.inSteam ? ach.length + ' de ' + MAX.game_feat + ' logros' : '';
             };
             var paintAch = function () {
@@ -1075,9 +1114,12 @@
                     el.addEventListener('click', function () {
                         var k = ach.indexOf(el.dataset.api);
                         if (k >= 0) ach.splice(k, 1); else if (ach.length < MAX.game_feat) ach.push(el.dataset.api);
-                        paintSel(); paintAch();
+                        paintSel(); markAch();
                     });
                 });
+            };
+            var markAch = function () {
+                achL.querySelectorAll('.pf2-pick-row').forEach(function (e) { e.classList.toggle('on', ach.indexOf(e.dataset.api) >= 0); });
             };
             /* Parte de Steam: según haya Steam y el juego esté en él. */
             var showSteam = function (on) { selBox.style.display = achL.style.display = on ? '' : 'none'; };
@@ -1165,7 +1207,10 @@
                         '<small>' + p.count + (p.count === 1 ? ' canción' : ' canciones') + '</small></div>';
                 }).join('') : '<div class="pf2-empty">' + (all.length ? 'Ninguna con ese nombre.' : 'No tienes playlists todavía.') + '</div>';
                 list.querySelectorAll('.pf2-pick-row').forEach(function (el) {
-                    el.addEventListener('click', function () { cur = +el.dataset.id; paint(); });
+                    el.addEventListener('click', function () {
+                        cur = +el.dataset.id;
+                        list.querySelectorAll('.pf2-pick-row').forEach(function (e) { e.classList.toggle('on', e === el); });
+                    });
                 });
             };
             input.addEventListener('input', paint);
@@ -1263,9 +1308,15 @@
                     el.addEventListener('click', function () {
                         var k = sel.indexOf(f.id);
                         if (k >= 0) sel.splice(k, 1); else if (sel.length < MAX.shots) sel.push(f.id);
-                        paint();
+                        mark();
                     });
                 });
+                mark();
+            }
+            /* Elegir no vuelve a pintar las miniaturas (se recargarían de
+               Drive): solo la marca, el número y los pies de foto. */
+            function mark() {
+                markPicks(grid, 'id', sel);
                 metaBox.innerHTML = sel.map(function (id, i) {
                     var m = meta[id] || { caption: '', game: '' };
                     return '<div style="display:flex;gap:4px;align-items:center;font-size:11px;"><b style="width:14px;">' + (i + 1) + '</b>' +
@@ -1321,13 +1372,20 @@
             var games = [], info, curGame = null;
             var key = function (a) { return a.appid + '|' + a.apiname; };
             var paintSel = function () {
-                selL.innerHTML = sel.length ? sel.map(function (a, i) {
-                    return '<div class="pf2-ach-it" data-k="' + esc(key(a)) + '" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div>' + (i + 1) + '</div></div>';
-                }).join('') : '<div class="pf2-empty">Ninguno todavía.</div>';
-                selL.querySelectorAll('.pf2-ach-it').forEach(function (el) {
-                    el.addEventListener('click', function () { sel = sel.filter(function (a) { return key(a) !== el.dataset.k; }); paintSel(); if (curGame) showGame(curGame); });
-                });
+                syncStrip(selL, sel.map(key), function (k) {
+                    var a = sel.find(function (x) { return key(x) === k; });
+                    var e = htmlEl('<div class="pf2-ach-it" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div data-n></div></div>');
+                    e.addEventListener('click', function () { sel = sel.filter(function (x) { return key(x) !== k; }); paintSel(); markAch(); });
+                    return e;
+                }, '<div class="pf2-empty">Ninguno todavía.</div>');
                 if (info) info.textContent = sel.length + ' de ' + maxAch;
+            };
+            /* Marca los logros del juego abierto que están elegidos. */
+            var markAch = function () {
+                if (!curGame) return;
+                achL.querySelectorAll('.pf2-pick-row').forEach(function (e) {
+                    e.classList.toggle('on', sel.some(function (x) { return x.appid === curGame.appid && x.apiname === e.dataset.api; }));
+                });
             };
             var paintGames = function () {
                 var q = input.value.trim().toLowerCase();
@@ -1336,7 +1394,11 @@
                     return '<div class="pf2-pick-row' + (curGame && curGame.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span style="flex:1;">' + esc(g.name) + '</span><small>' + g.hours + ' h</small></div>';
                 }).join('') || '<div class="pf2-empty">Sin juegos.</div>';
                 gamesL.querySelectorAll('.pf2-pick-row').forEach(function (el) {
-                    el.addEventListener('click', function () { curGame = games.find(function (g) { return g.appid === +el.dataset.app; }); paintGames(); showGame(curGame); });
+                    el.addEventListener('click', function () {
+                        curGame = games.find(function (g) { return g.appid === +el.dataset.app; });
+                        gamesL.querySelectorAll('.pf2-pick-row').forEach(function (e) { e.classList.toggle('on', +e.dataset.app === curGame.appid); });
+                        showGame(curGame);
+                    });
                 });
             };
             var showGame = function (g) {
@@ -1358,7 +1420,7 @@
                             var at = sel.findIndex(function (x) { return key(x) === k; });
                             if (at >= 0) sel.splice(at, 1);
                             else if (sel.length < maxAch) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
-                            paintSel(); showGame(g);
+                            paintSel(); markAch();
                         });
                     });
                 });
@@ -1398,7 +1460,10 @@
                         '<span class="pf2-stars">' + stars(x.it.review.stars) + '</span></div>';
                 }).join('') : '<div class="pf2-empty">No tienes reseñas todavía.</div>';
                 list.querySelectorAll('.pf2-pick-row').forEach(function (el) {
-                    el.addEventListener('click', function () { cur = el.dataset.k; paint(); });
+                    el.addEventListener('click', function () {
+                        cur = el.dataset.k;
+                        list.querySelectorAll('.pf2-pick-row').forEach(function (e) { e.classList.toggle('on', e === el); });
+                    });
                 });
             };
             input.addEventListener('input', paint);
@@ -1443,7 +1508,8 @@
                     el.addEventListener('click', function () {
                         var id = +el.dataset.id, k = sel.indexOf(id);
                         if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(id);
-                        paint();
+                        markPicks(grid, 'id', sel, Number);
+                        if (info) info.textContent = sel.length + ' de ' + max;
                     });
                 });
                 if (info) info.textContent = sel.length + ' de ' + max;
