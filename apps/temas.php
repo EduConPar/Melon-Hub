@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
+require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: botón "Probar" de los haros */
 
 $userKey = $_SESSION['user'] ?? null;
 if (!$userKey || !isset($loginUsers[$userKey])) {
@@ -301,6 +302,18 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             color:var(--titlebar-text, #fff);
             letter-spacing:1px;
         }
+        /* Botón "Probar" (solo dev) a la derecha del título de Haros:
+           compacto para no hacer más alta la barra del título. */
+        .pers-section-title.has-action { display:flex; align-items:center; }
+        .pers-title-btn {
+            margin-left:auto;
+            min-width:0;
+            min-height:0;
+            padding:1px 8px;
+            font-size:11px;
+            letter-spacing:0;
+            font-weight:normal;
+        }
         .pers-grid {
             display:grid;
             grid-template-columns:repeat(auto-fill, minmax(110px, 1fr));
@@ -553,7 +566,8 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                 <div class="pers-grid" id="pers-icons-grid"></div>
             </section>
             <section class="pers-section">
-                <h3 class="pers-section-title"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros</h3>
+                <?php $_devHaroTest = defined('MELON_DEV_BUILD') && MELON_DEV_BUILD; ?>
+                <h3 class="pers-section-title<?= $_devHaroTest ? ' has-action' : '' ?>"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros<?php if ($_devHaroTest): ?><button type="button" class="pers-title-btn" id="pers-haro-test" title="Saca una notificación de prueba con el haro activo (solo dev)">Probar</button><?php endif; ?></h3>
                 <div class="pers-grid" id="pers-haros-grid"></div>
             </section>
             <section class="pers-section">
@@ -1784,6 +1798,19 @@ function buildPersItem(opts) {
     });
     return el;
 }
+
+/* Botón "Probar" de los haros (solo dev, ver MELON_DEV_BUILD): Temas va
+   en un iframe, así que le pide al escritorio que saque la notificación
+   de prueba (lo atiende assets/dev/dev-desktop.php, también solo dev). */
+(function(){
+    var btn = document.getElementById('pers-haro-test');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'dev-haro-test' }, location.origin);
+        }
+    });
+})();
 
 function setActiveHaro(item) {
     fetch('../assets/personalize/api.php?action=set-active-haro', {

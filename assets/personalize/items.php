@@ -30,7 +30,16 @@ function personalizeEnsureItems(PDO $pdo): void {
         try {
             $stmt = $pdo->prepare("SELECT id FROM tienda_items WHERE categoria = ? AND slug = ? LIMIT 1");
             $stmt->execute([$categoria, $slug]);
-            if ($stmt->fetchColumn()) return;
+            $id = $stmt->fetchColumn();
+            if ($id) {
+                /* Ya existe: se le ponen los datos del código, para que
+                   cambiar aquí el precio o el nombre llegue a la tienda.
+                   `activo` no se toca (se puede retirar uno a mano). Si
+                   nada cambia, MariaDB no escribe la fila. */
+                $upd = $pdo->prepare("UPDATE tienda_items SET nombre = ?, descripcion = ?, precio = ?, orden = ? WHERE id = ?");
+                $upd->execute([$nombre, $desc, $precio, $orden, $id]);
+                return;
+            }
             $ins = $pdo->prepare("INSERT INTO tienda_items (nombre, slug, descripcion, precio, icono, activo, orden, categoria)
                                   VALUES (?, ?, ?, ?, '', 1, ?, ?)");
             $ins->execute([$nombre, $slug, $desc, $precio, $orden, $categoria]);
