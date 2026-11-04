@@ -339,9 +339,6 @@ if ($_perfilStandalone) {
                 <?php /* Botón solo visible en standalone (iframe del perfil ajeno).
                           Resetea la vista al perfil principal del visitado. */ ?>
                 <button class="button" id="profile-go-home" style="display:none;">Volver al perfil</button>
-                <button class="button" id="profile-info-edit-btn">✏ Editar perfil</button>
-                <button class="button" id="profile-info-edit-save-btn" style="display:none;">💾 Guardar</button>
-                <button class="button" id="profile-info-edit-cancel-btn" style="display:none;">Cancelar</button>
                 <input type="file" id="profile-photo-input" accept="image/*" style="display:none;">
             </div>
         </div>
@@ -349,40 +346,49 @@ if ($_perfilStandalone) {
         <div id="profile-main">
             <!-- VISTA POR DEFECTO -->
             <div id="profile-view-default">
-                <div id="profile-top">
-                    <div id="profile-avatar-col">
-                        <div class="profile-avatar-frame">
-                            <?php $profileImg = getUserImage($desktopLabel); ?>
-                            <?php if ($profileImg): ?>
-                            <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
-                            <?php else: ?>
-                            <div class="profile-avatar-placeholder">👤</div>
-                            <?php endif; ?>
+                <!-- Perfil nuevo estilo Steam (fase 1): cabecera, expositores,
+                     comentarios del muro y columna lateral. Los datos nuevos
+                     (`v2` de get-profile / view-user) los pinta
+                     assets/js/perfil-v2.js; la cabecera reutiliza los mismos
+                     elementos de antes (foto, datos, bio, redes, seguir,
+                     campana y edición). -->
+                <div id="pf2-scroll">
+                    <div id="pf2-head">
+                        <div id="profile-avatar-col">
+                            <div class="profile-avatar-frame">
+                                <?php $profileImg = getUserImage($desktopLabel); ?>
+                                <?php if ($profileImg): ?>
+                                <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
+                                <?php else: ?>
+                                <div class="profile-avatar-placeholder">👤</div>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                        <div id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></div>
-                        <button class="button" id="profile-follow-btn" style="display:none;font-size:9px;margin-top:5px;">+ Seguir</button>
-                    </div>
-                    <div id="profile-info-col">
-                        <div id="profile-info-row">
+                        <div class="pf2-id">
+                            <div class="pf2-name"><span id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></span></div>
+                            <div class="pf2-status" id="pf2-status"></div>
                             <div id="profile-info-meta"></div>
                             <div id="profile-info-bio" class="pinfo-bio"></div>
-                            <div id="profile-info-links"></div>
+                        </div>
+                        <div id="profile-info-links"></div>
+                        <div class="pf2-head-btns">
+                            <button type="button" id="profile-notif-btn" title="Notificaciones">
+                                <span class="profile-notif-icon"><img src="assets/img/appIcons/bellIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;display:block;margin:auto;"></span>
+                                <span class="profile-notif-badge" id="profile-notif-badge" style="display:none;">0</span>
+                            </button>
+                            <button class="button" id="profile-follow-btn" style="display:none;">+ Seguir</button>
+                            <button class="button" id="profile-info-edit-btn"><img src="assets/img/appIcons/drawingIcon.png" alt="" class="pf2-ic" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;">Personalizar</button>
+                            <button class="button" id="profile-info-edit-save-btn" style="display:none;">✓ Guardar</button>
+                            <button class="button" id="profile-info-edit-cancel-btn" style="display:none;">Cancelar</button>
                         </div>
                     </div>
-                </div>
-                <div id="profile-posts-area">
-                    <div id="profile-posts-header">
-                        <span>Posts</span>
-                        <button type="button" id="profile-notif-btn" title="Notificaciones">
-                            <span class="profile-notif-icon"><img src="assets/img/appIcons/bellIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;display:block;margin:auto;"></span>
-                            <span class="profile-notif-badge" id="profile-notif-badge" style="display:none;">0</span>
-                        </button>
+                    <div class="pf2-body">
+                        <div class="pf2-col-l">
+                            <div id="pf2-showcases"></div>
+                            <div class="pf2-panel" id="pf2-comments"></div>
+                        </div>
+                        <div class="pf2-col-r" id="pf2-side"></div>
                     </div>
-                    <div id="profile-new-post">
-                        <textarea id="profile-post-input" placeholder="Escribe algo..."></textarea>
-                        <button class="button" id="profile-post-btn">Publicar</button>
-                    </div>
-                    <div id="profile-posts-list"></div>
                 </div>
             </div>
             <!-- VISTA DE CATEGORÍA -->
@@ -946,6 +952,8 @@ if ($_perfilStandalone) {
     <img id="profile-post-lightbox-img" src="" alt="" referrerpolicy="no-referrer">
 </div>
 
+<!-- Perfil nuevo (expositores, comentarios, columna lateral): window.PerfilV2. -->
+<script src="assets/js/perfil-v2.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/perfil-v2.js'); ?>"></script>
 <script>
 /* =========================
    PROFILE
@@ -2461,6 +2469,9 @@ var PROFILE_USERS = <?php
         }
         lists[addDialogCat].push(newItem);
         saveCategory(addDialogCat);
+        if (typeof window.__pf2AfterAdd === 'function') {
+            try { window.__pf2AfterAdd(addDialogCat, newItem); } catch (_) {}
+        }
         updateCounts();
         if (currentCat) { renderCatView(currentCat); renderCatEncurso(currentCat); }
         closeAddDialog();
@@ -2556,8 +2567,8 @@ var PROFILE_USERS = <?php
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && !data.error) {
-                    renderPosts(data.posts || []);
                     renderProfileInfo(data);
+                    if (window.PerfilV2) PerfilV2.render(data.v2, { own: true, userKey: currentSessionUser, label: <?php echo json_encode($desktopLabel); ?> });
                     ownFollowing = Array.isArray(data.following) ? data.following : [];
                     loadMyFollowers(function() { renderFollowedNav(); });
                 }
@@ -2631,8 +2642,14 @@ var PROFILE_USERS = <?php
         var age = data.birthday ? edadDesdeCumple(data.birthday) : data.age;
         if (data.pronouns) metaEl.appendChild(line(data.pronouns));
         if (age !== '' && age != null) metaEl.appendChild(line(age + ' años'));
-        if (data.birthday) metaEl.appendChild(line('🎂 ' + cumpleLegible(data.birthday)));
-        if (data.country)  metaEl.appendChild(line('📍 ' + data.country));
+        /* Sin emojis de interfaz (perfil nuevo): el cumpleaños lleva el
+           icono del calendario del pack del tema; el país, sin icono. */
+        if (data.birthday) {
+            var bdl = line(cumpleLegible(data.birthday));
+            bdl.insertAdjacentHTML('afterbegin', '<img class="pf2-ic" src="assets/img/appIcons/calendarioIcon.png" alt="" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;">');
+            metaEl.appendChild(bdl);
+        }
+        if (data.country)  metaEl.appendChild(line(data.country));
         /* Clip para copiar el enlace del perfil, debajo del país, en el
            color del tema (--accent). No sale al editar: buildMetaInputs
            vacía esta columna. */
@@ -5063,7 +5080,7 @@ var PROFILE_USERS = <?php
                 var nameEl = document.getElementById('profile-username');
                 if (nameEl) nameEl.textContent = data.label;
                 renderProfileInfo(data.profile);
-                renderPosts(data.profile.posts || []);
+                if (window.PerfilV2) PerfilV2.render(data.v2, { own: false, userKey: data.userKey, label: data.label });
                 updateCounts();
                 document.getElementById('profile-view-social').style.display = 'none';
                 document.getElementById('profile-view-cat').style.display     = 'none';
@@ -5109,6 +5126,23 @@ var PROFILE_USERS = <?php
             });
     }
 
+    /* Lo que perfil-v2.js necesita de aquí: mis listas (para elegir
+       juegos, reseñas y música), el diálogo de añadir (crear un juego que
+       no está), reproducir un disco/canción y abrir un perfil. */
+    window.__pf2Bridge = {
+        ownLists:      function () { return viewingUser ? (ownLists || {}) : (lists || {}); },
+        openAddDialog: function (cat) { openAddDialog(cat); },
+        playMusicItem: function (item) { playMusicItem(item); },
+        openProfile:   function (key) {
+            if (key === currentSessionUser) { if (viewingUser && !window.__PERFIL_STANDALONE) { exitViewingUser(); showDefaultView(); } return; }
+            if (typeof window.openProfileAtUser === 'function') window.openProfileAtUser(key);
+        },
+        relTime:       function (ts) { return relTime(ts); },
+        presence:      function (key) {
+            return lastDndSet[key] ? 'dnd' : lastAwaySet[key] ? 'away' : lastOnlineSet[key] ? 'online' : 'offline';
+        }
+    };
+
     /* Clip de la columna de datos (renderProfileInfo): copia el enlace del
        perfil que se está viendo (el mío si no). */
     (function () {
@@ -5148,6 +5182,7 @@ var PROFILE_USERS = <?php
             dot.classList.toggle('dnd',    !!lastDndSet[k]);
         });
         applyNowPlaying();
+        if (window.PerfilV2) PerfilV2.refreshStatus();
     }
     /* Marquee clonado tal cual de apps/reproductor.php — el texto
        arranca en su posición natural (visible desde el principio),
@@ -7013,11 +7048,11 @@ var PROFILE_USERS = <?php
             row('pronouns', 'pronombres (él/ella/elle...)', 'text',   30);
             /* Cumpleaños (la edad sale de aquí). Un <input type="date">
                vacío no enseña el placeholder, así que vacío va como texto
-               ("🎂 cumpleaños", igual que "📍 país") y pasa a fecha al
+               ("cumpleaños", igual que "país") y pasa a fecha al
                entrar. No vuelve a texto al salir: el selector de fecha
                puede quitar el foco y se cerraría. */
             var hoyD = new Date();
-            var bdInp = row('birthday', '🎂 cumpleaños', d.birthday ? 'date' : 'text');
+            var bdInp = row('birthday', 'cumpleaños', d.birthday ? 'date' : 'text');
             bdInp.title = 'Cumpleaños';
             bdInp.min = '1900-01-01';
             bdInp.max = hoyD.getFullYear() + '-' + String(hoyD.getMonth() + 1).padStart(2, '0') + '-' + String(hoyD.getDate()).padStart(2, '0');
@@ -7026,7 +7061,7 @@ var PROFILE_USERS = <?php
                 this.type = 'date';
                 try { this.showPicker(); } catch (e) {}
             });
-            row('country',  '📍 país',                        'text',   50);
+            row('country',  'país',                           'text',   50);
         }
 
         function buildBioTextarea(d) {
@@ -7136,6 +7171,9 @@ var PROFILE_USERS = <?php
                     buildMetaInputs(draft);
                     buildBioTextarea(draft);
                     buildSocialEditable(draft);
+                    /* Expositores: arrastrar, añadir, quitar y elegir su
+                       contenido (assets/js/perfil-v2.js). */
+                    if (window.PerfilV2) PerfilV2.setEditing(true, data.v2);
                 })
                 .catch(function() {});
         }
@@ -7149,6 +7187,7 @@ var PROFILE_USERS = <?php
             /* Restaurar layout del meta */
             var metaEl = document.getElementById('profile-info-meta');
             if (metaEl) { metaEl.style.flexDirection = ''; metaEl.style.gap = ''; }
+            if (window.PerfilV2) PerfilV2.setEditing(false);
             /* Re-renderizar con datos finales (draft si guardado, recarga si cancelado) */
             if (saved) {
                 renderProfileInfo(draft);
@@ -7169,6 +7208,14 @@ var PROFILE_USERS = <?php
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(function(r) { return r.json(); });
+            /* Los expositores se guardan a la vez; si fallan, el error sale
+               como el de los datos. */
+            if (window.PerfilV2) {
+                var scPromise = PerfilV2.save();
+                infoPromise = Promise.all([infoPromise, scPromise]).then(function(r) {
+                    return (r[1] && r[1].error) ? r[1] : r[0];
+                });
+            }
 
             var photoPromise = Promise.resolve(null);
             if (newPhotoFile) {
@@ -7543,7 +7590,7 @@ var PROFILE_USERS = <?php
             'position: fixed;' +
             'left: calc(8vw + ' + offsetPx + 'px);' +
             'top:  calc(4vh + ' + offsetPx + 'px);' +
-            'width: 860px;' +
+            'width: 1000px;' +   /* perfil nuevo: más ancho */
             'height: 900px;' +
             'z-index: 500;' +
             'display: block;' +

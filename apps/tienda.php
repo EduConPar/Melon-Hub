@@ -545,6 +545,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
         <div class="tienda-tab"        data-view="principal" data-cat="interfaces"><img src="../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Interfaces</div>
         <div class="tienda-tab"        data-view="principal" data-cat="mascotas"><img src="../assets/img/appIcons/mascotaIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Mascotas</div>
         <div class="tienda-tab"        data-view="principal" data-cat="haros"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros</div>
+        <div class="tienda-tab"        data-view="principal" data-cat="perfil"><img src="../assets/img/appIcons/profileIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Perfil</div>
         <div id="tienda-donar-footer">
             <button type="button" class="button" id="tienda-donar-btn" data-view="donaciones">☕ Donaciones</button>
         </div>
@@ -647,6 +648,7 @@ function renderBalance(){
     document.querySelectorAll('[data-buy-id]').forEach(function(btn){
         var id = btn.dataset.buyId | 0;
         if (_owned[id]) { btn.disabled = true; btn.textContent = '✓ Ya lo tienes'; return; }
+        if (btn.dataset.locked) { btn.disabled = true; return; }   /* falta Discord o el hueco anterior */
         var p = parseInt(btn.dataset.price, 10);
         btn.disabled = p > _balance;
     });
@@ -690,10 +692,20 @@ function renderItems(){
         var needsDiscord = !!it.discord_role_name;
         var discordLinked = window.__DISCORD_LINKED__ === true;
         var locked = needsDiscord && !discordLinked && !owned;
-        var btnLabel = owned    ? '✓ Ya lo tienes'
-                     : locked   ? 'Vincula Discord'
-                                : 'Comprar';
-        var btnAttrs = locked ? ' disabled title="Vincula tu Discord (sidebar) para comprar este item"' : '';
+        /* Huecos de expositor del perfil: en orden (el 4 pide el 3…). */
+        var SLOT_SLUGS = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
+        var slotIdx = SLOT_SLUGS.indexOf(it.slug || '');
+        var needsPrev = false;
+        if (slotIdx > 0 && !owned) {
+            var prev = _items.filter(function(x){ return x.slug === SLOT_SLUGS[slotIdx - 1]; })[0];
+            needsPrev = !prev || !_owned[prev.id|0];
+        }
+        var btnLabel = owned     ? '✓ Ya lo tienes'
+                     : locked    ? 'Vincula Discord'
+                     : needsPrev ? 'Antes, el hueco ' + (slotIdx + 2)
+                                 : 'Comprar';
+        var btnAttrs = locked ? ' disabled data-locked="1" title="Vincula tu Discord (sidebar) para comprar este item"'
+                     : needsPrev ? ' disabled data-locked="1"' : '';
         /* Para los haros el icono es el PNG del último frame del gif
            (convención: assets/vids/{slug}Haro-last.png). Para el resto
            se cae al emoji del campo `icono`. */
@@ -706,6 +718,9 @@ function renderItems(){
                 + ' src="../assets/img/haro/' + esc(it.slug) + 'Haro-preview.png"'
                 + ' onerror="this.onerror=null;this.src=\'../assets/vids/' + esc(it.slug) + 'Haro-last.png\';"'
                 + ' alt="">';
+        } else if (it.categoria === 'perfil') {
+            /* Huecos de expositor: icono del perfil del pack del tema. */
+            iconHtml = '<img class="tienda-card-icon-img" src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">';
         } else {
             iconHtml = esc(it.icono || '🎁');
         }
@@ -1049,14 +1064,14 @@ if (document.readyState === 'loading') {
                     <div>
                         <strong>Mensajes en cualquier canal</strong>
                         <span class="th-help-amt">+1 <img src="../assets/img/appIcons/puntosAutismo.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:-1px;"></span>
-                        <div class="th-help-sub">Cooldown anti-spam de 2 s por usuario.</div>
+                        <div class="th-help-sub">Cooldown anti-spam de 10 s por usuario.</div>
                     </div>
                 </li>
                 <li class="th-help-item">
                     <span class="th-help-icon">🎙</span>
                     <div>
                         <strong>Tiempo en canales de voz</strong>
-                        <span class="th-help-amt">+1 <img src="../assets/img/appIcons/puntosAutismo.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:-1px;"> cada 2 min</span>
+                        <span class="th-help-amt">+1 <img src="../assets/img/appIcons/puntosAutismo.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:-1px;"> cada 5 min</span>
                         <div class="th-help-sub">Se contabiliza al salir del canal; intervalos sueltos no cuentan.</div>
                     </div>
                 </li>

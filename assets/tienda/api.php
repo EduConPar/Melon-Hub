@@ -42,6 +42,10 @@ switch ($action) {
 
 /* Estado completo: balance del usuario + items activos + historial. */
 case 'state': {
+    /* Los huecos de expositor del perfil (pestaña "Perfil") se crean aquí
+       si aún no existen (assets/profile/perfil2.php). */
+    require_once dirname(__DIR__) . '/profile/perfil2.php';
+    pf2_ensureStoreItems($pdo);
     /* Solo items comprables (precio > 0). Los de precio 0 son "base"
        — todos los usuarios los tienen sin necesidad de comprarlos, y
        aparecen solo en la vista de personalización. */
@@ -116,7 +120,7 @@ case 'buy': {
     $discord = ['attempted' => false];
     $pdo->beginTransaction();
     try {
-        $itStmt = $pdo->prepare('SELECT id, nombre, precio, discord_role_id FROM tienda_items WHERE id = ? AND activo = 1 FOR UPDATE');
+        $itStmt = $pdo->prepare('SELECT id, nombre, slug, precio, discord_role_id FROM tienda_items WHERE id = ? AND activo = 1 FOR UPDATE');
         $itStmt->execute([$itemId]);
         $item = $itStmt->fetch(PDO::FETCH_ASSOC);
         if (!$item) { $pdo->rollBack(); jsonError('Item no disponible', 404); }
@@ -127,6 +131,20 @@ case 'buy': {
         if ($ownChk->fetchColumn()) {
             $pdo->rollBack();
             jsonError('Ya tienes este item', 409);
+        }
+
+        /* Huecos de expositor del perfil: en orden (el 4 pide el 3, el 5
+           pide el 4). */
+        $slotSlugs = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
+        $slotIdx = array_search((string)($item['slug'] ?? ''), $slotSlugs, true);
+        if ($slotIdx !== false && $slotIdx > 0) {
+            $prevChk = $pdo->prepare('SELECT 1 FROM tienda_compras c JOIN tienda_items i ON i.id = c.item_id
+                                      WHERE c.user_id = ? AND i.slug = ? LIMIT 1');
+            $prevChk->execute([$userId, $slotSlugs[$slotIdx - 1]]);
+            if (!$prevChk->fetchColumn()) {
+                $pdo->rollBack();
+                jsonError('Compra antes el hueco ' . ($slotIdx + 2) . '.', 409);
+            }
         }
 
         /* Los items que conceden un rol de Discord requieren vinculación

@@ -102,3 +102,6 @@ CLAUDE.local.md
 # desde la BD si faltan.
 /uploads/covers/*
 !/uploads/covers/.gitkeep
+# Capturas del perfil (expositor "Capturas"; copia en la BD, profile_screenshots)
+/uploads/screenshots/*
+!/uploads/screenshots/.gitkeep

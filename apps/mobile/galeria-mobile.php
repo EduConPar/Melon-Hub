@@ -767,7 +767,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             <label for="gal-pub-text">Texto adjunto <small style="color:var(--text-muted);">(opcional, máx 1000)</small></label>
             <textarea id="gal-pub-text" maxlength="1000" rows="3" placeholder="Escribe algo sobre la imagen…" style="resize:vertical;min-height:60px;"></textarea>
         </div>
-        <p style="font-size:10px;color:var(--text-faint);margin:8px 0 0;">Se publicará en tu perfil y en Discord (Melon Hub) a la vez.</p>
+        <p style="font-size:10px;color:var(--text-faint);margin:8px 0 0;">Se publicará en Discord (Melon Hub).</p>
         <p id="gal-pub-status" style="font-size:11px;margin:6px 0 0;min-height:14px;"></p>
         <div class="field-row" style="justify-content:flex-end;gap:4px;margin-top:8px;">
             <button class="button" id="gal-pub-cancel">Cancelar</button>
@@ -2148,68 +2148,18 @@ async function submitPublish() {
     try {
         await _ensureDrivePublic(f.id);
         var publicUrl = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.id) + '&sz=w1920';
-        /* Publicamos en paralelo en perfil + Discord. Si una falla, la
-           otra puede haber tirado igualmente — mostramos el detalle. */
+        /* Solo Discord: el perfil nuevo ya no tiene posts
+           (assets/profile/perfil2.php). */
         st.textContent = 'Publicando…';
-        var [perfilResult, discordResult] = await Promise.allSettled([
-            fetch('../../assets/profile/api.php?action=add-post', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text, image_url: publicUrl })
-            }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.error) throw new Error(d.error);
-                return d;
-            }),
-            fetch('../../assets/profile/api.php?action=discord-publish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image_url: publicUrl, caption: text })
-            }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.error) {
-                    /* Preservamos `code` en el throw para distinguir
-                       "Discord no configurado" (no es un fallo real,
-                       solo el admin no ha puesto la var) de errores de
-                       red u otros. */
-                    var err = new Error(d.error);
-                    err.code = d.code || '';
-                    throw err;
-                }
-                return d;
-            }),
-        ]);
-
-        var perfilOk  = perfilResult.status  === 'fulfilled';
-        var discordOk = discordResult.status === 'fulfilled';
-        var discordReason = discordResult.reason || {};
-        var discordDisabled = discordReason.code === 'discordNotConfigured';
-
-        if (perfilOk) {
-            /* Avisar al desktop (donde vive perfil.php) para que recargue
-               los posts sin esperar a un refresh manual. */
-            try { window.parent.postMessage({ type: 'profile-post-added' }, '*'); } catch (e) {}
-        }
-
-        if (perfilOk && discordOk) {
-            st.style.color = ''; st.textContent = '✔ Publicado en perfil y Discord.';
-            setTimeout(closePublishDialog, 1100);
-        } else if (perfilOk && discordDisabled) {
-            /* Discord no configurado por el admin: tratamos el post como
-               éxito completo y NO mostramos el alarmante "Discord falló".
-               El perfil ES el destino principal; Discord es opcional. */
-            st.style.color = ''; st.textContent = '✔ Publicado en perfil.';
-            setTimeout(closePublishDialog, 1100);
-        } else if (perfilOk && !discordOk) {
-            st.style.color = 'var(--warning-text)';
-            st.textContent = '✔ Publicado en perfil. ⚠ Discord falló: ' + (discordReason.message || 'error');
-        } else if (!perfilOk && discordOk) {
-            st.style.color = 'var(--warning-text)';
-            st.textContent = '✔ Publicado en Discord. ⚠ Perfil falló: ' + (perfilResult.reason && perfilResult.reason.message || 'error');
-        } else {
-            throw new Error(
-                'Perfil: ' + ((perfilResult.reason  && perfilResult.reason.message)  || 'error') +
-                ' / Discord: ' + ((discordResult.reason && discordResult.reason.message) || 'error')
-            );
-        }
+        var r = await fetch('../../assets/profile/api.php?action=discord-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: publicUrl, caption: text })
+        });
+        var d = await r.json();
+        if (d.error) throw new Error(d.code === 'discordNotConfigured' ? 'Discord no está configurado en la web.' : d.error);
+        st.style.color = ''; st.textContent = '✔ Publicado en Discord.';
+        setTimeout(closePublishDialog, 1100);
     } catch (e) {
         st.textContent = 'Error: ' + e.message;
         st.style.color = 'var(--error-text)';

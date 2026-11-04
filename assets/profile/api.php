@@ -18,6 +18,13 @@
    POST  ?action=add-post              { text }
    POST  ?action=delete-post           { id }
    POST  ?action=save-quote            { quote }
+   POST  ?action=wall-comment          { user, text }        (perfil nuevo: perfil2.php)
+   POST  ?action=delete-wall-comment   { id }
+   POST  ?action=save-showcases        { showcases: [{type, config}] }
+   GET   ?action=game-catalog&q=…
+   GET   ?action=my-screenshots
+   POST  ?action=upload-screenshot     multipart { file, caption, game }
+   POST  ?action=delete-screenshot     { id }
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
    POST  ?action=toggle-follow         { targetUser }
@@ -596,7 +603,8 @@ switch ($action) {
 case 'get-profile': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonResponse(pf_emptyProfile());
-    jsonResponse(pf_buildFullProfile($pdo, $uid));
+    require_once __DIR__ . '/perfil2.php';
+    jsonResponse(pf_buildFullProfile($pdo, $uid) + ['v2' => pf2_profile($pdo, $uid, $uid)]);
 }
 
 case 'add-post': {
@@ -2261,13 +2269,136 @@ case 'view-user': {
     $stmt->execute([$uid, $tid]);
     $isFollowing = (bool)$stmt->fetch();
 
+    require_once __DIR__ . '/perfil2.php';
     jsonResponse([
         'userKey'     => $target,
         'label'       => $loginUsers[$target]['label'],
         'profile'     => $profile,
         'lists'       => $lists,
         'isFollowing' => $isFollowing,
+        'v2'          => pf2_profile($pdo, $tid, $uid),
     ]);
+}
+
+/* ─── Perfil nuevo (perfil2.php): muro, expositores, capturas ───── */
+
+/* Comentario en el muro de alguien (cualquiera con cuenta; el dueño
+   también escribe en el suyo). */
+case 'wall-comment': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $b = jsonBody();
+    $target = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($b['user'] ?? ''));
+    $tid = $target !== '' ? pf_uid($pdo, $target) : null;
+    if (!$tid) jsonError('Usuario no encontrado', 404);
+    $text = mb_substr(trim((string)($b['text'] ?? '')), 0, 500);
+    if ($text === '') jsonError('El comentario está vacío');
+    $pdo->prepare("INSERT INTO profile_comments (profile_user_id, author_id, text) VALUES (?, ?, ?)")
+        ->execute([$tid, $uid, $text]);
+    jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, $tid, $uid)]);
+}
+
+/* Borrar: el dueño del muro (cualquiera) o quien lo escribió. Borrado en
+   blando para que el paso de posts a comentarios no lo vuelva a crear. */
+case 'delete-wall-comment': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    $id  = (int)(jsonBody()['id'] ?? 0);
+    $st = $pdo->prepare("SELECT profile_user_id, author_id FROM profile_comments WHERE id = ? AND deleted_at IS NULL");
+    $st->execute([$id]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c) jsonError('Comentario no encontrado', 404);
+    if ((int)$c['profile_user_id'] !== $uid && (int)$c['author_id'] !== $uid) jsonError('No puedes borrar este comentario', 403);
+    $pdo->prepare("UPDATE profile_comments SET deleted_at = NOW() WHERE id = ?")->execute([$id]);
+    jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, (int)$c['profile_user_id'], $uid)]);
+}
+
+/* Guarda los expositores propios (tipo + configuración, en orden). */
+case 'save-showcases': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $r = pf2_saveShowcases($pdo, $uid, (array)(jsonBody()['showcases'] ?? []));
+    if (!$r['ok']) jsonError($r['error']);
+    jsonResponse(['ok' => true, 'showcases' => pf2_showcases($pdo, $uid), 'slots' => pf2_slots($pdo, $uid)]);
+}
+
+/* Juegos registrados en las listas/reseñas de todos (para "Juegos
+   favoritos"), con búsqueda por título. */
+case 'game-catalog': {
+    require_once __DIR__ . '/perfil2.php';
+    jsonResponse(['ok' => true, 'games' => pf2_gameCatalog($pdo, (string)($_GET['q'] ?? ''))]);
+}
+
+/* Mis capturas (para elegir las del expositor). */
+case 'my-screenshots': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    $st = $pdo->prepare("SELECT id, caption, game_title FROM profile_screenshots WHERE user_id = ? ORDER BY created_at DESC, id DESC");
+    $st->execute([$uid]);
+    jsonResponse(['ok' => true, 'shots' => array_map(fn($r) => [
+        'id' => (int)$r['id'], 'url' => 'assets/profile/screenshot.php?id=' . (int)$r['id'],
+        'caption' => $r['caption'], 'game' => $r['game_title'],
+    ], $st->fetchAll(PDO::FETCH_ASSOC))]);
+}
+
+/* Subir una captura (multipart: file, caption, game). Se reduce a 1920 px
+   de ancho como mucho (si el servidor tiene GD) y se guarda en
+   uploads/screenshots/ con copia en la BD. */
+case 'upload-screenshot': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $f = $_FILES['file'] ?? null;
+    if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) jsonError('No llegó la imagen');
+    if ($f['size'] > 10 * 1024 * 1024) jsonError('La imagen pasa de 10 MB');
+    $info = @getimagesize($f['tmp_name']);
+    $mimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    if (!$info || !isset($mimes[$info['mime']])) jsonError('Formato no válido (JPG, PNG, WEBP o GIF)');
+    $mime = $info['mime'];
+    $bin  = file_get_contents($f['tmp_name']);
+    if ($mime !== 'image/gif' && function_exists('imagecreatefromstring') && $info[0] > 1920) {
+        $src = @imagecreatefromstring($bin);
+        if ($src) {
+            $w = 1920; $h = (int)round($info[1] * 1920 / $info[0]);
+            $dst = imagecreatetruecolor($w, $h);
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $w, $h, $info[0], $info[1]);
+            ob_start(); imagejpeg($dst, null, 86); $bin = ob_get_clean();
+            $mime = 'image/jpeg';
+        }
+    }
+    if (strlen($bin) > 6 * 1024 * 1024) jsonError('La imagen es demasiado grande');
+    $file = $uid . '_' . bin2hex(random_bytes(6)) . '.' . $mimes[$mime];
+    $dir = dirname(__DIR__, 2) . '/uploads/screenshots';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    @file_put_contents($dir . '/' . $file, $bin);
+    $pdo->prepare("INSERT INTO profile_screenshots (user_id, file, mime, data, caption, game_title) VALUES (?, ?, ?, ?, ?, ?)")
+        ->execute([$uid, $file, $mime, $bin,
+                   mb_substr(trim((string)($_POST['caption'] ?? '')), 0, 200),
+                   mb_substr(trim((string)($_POST['game'] ?? '')), 0, 200)]);
+    $id = (int)$pdo->lastInsertId();
+    jsonResponse(['ok' => true, 'shot' => ['id' => $id, 'url' => 'assets/profile/screenshot.php?id=' . $id,
+        'caption' => mb_substr(trim((string)($_POST['caption'] ?? '')), 0, 200), 'game' => mb_substr(trim((string)($_POST['game'] ?? '')), 0, 200)]]);
+}
+
+case 'delete-screenshot': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    $id  = (int)(jsonBody()['id'] ?? 0);
+    $st = $pdo->prepare("SELECT file FROM profile_screenshots WHERE id = ? AND user_id = ?");
+    $st->execute([$id, $uid]);
+    $file = $st->fetchColumn();
+    if (!$file) jsonError('Captura no encontrada', 404);
+    $pdo->prepare("DELETE FROM profile_screenshots WHERE id = ?")->execute([$id]);
+    @unlink(dirname(__DIR__, 2) . '/uploads/screenshots/' . basename($file));
+    jsonResponse(['ok' => true]);
 }
 
 /* ─── Capítulos de series (compartidos por título) ─────────────── */
