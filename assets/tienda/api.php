@@ -153,17 +153,19 @@ case 'buy': {
             jsonError('Ya tienes este item', 409);
         }
 
-        /* Huecos de expositor del perfil: en orden (el 4 pide el 3, el 5
-           pide el 4). */
-        $slotSlugs = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-        $slotIdx = array_search((string)($item['slug'] ?? ''), $slotSlugs, true);
-        if ($slotIdx !== false && $slotIdx > 0) {
+        /* Compras en cadena del perfil (huecos de expositor, mejoras de
+           Media favorita y filas de logros de Steam): en orden, el 4 pide
+           el 3… (tiendaPrevSlug en catalogo.php). */
+        require_once __DIR__ . '/catalogo.php';
+        $prevSlug = tiendaPrevSlug((string)($item['slug'] ?? ''));
+        if ($prevSlug !== null) {
             $prevChk = $pdo->prepare('SELECT 1 FROM tienda_compras c JOIN tienda_items i ON i.id = c.item_id
                                       WHERE c.user_id = ? AND i.slug = ? LIMIT 1');
-            $prevChk->execute([$userId, $slotSlugs[$slotIdx - 1]]);
+            $prevChk->execute([$userId, $prevSlug]);
             if (!$prevChk->fetchColumn()) {
                 $pdo->rollBack();
-                jsonError('Compra antes el hueco ' . ($slotIdx + 2) . '.', 409);
+                jsonError(preg_match('/^expositor-hueco-(\d)$/', $prevSlug, $m)
+                    ? 'Compra antes el hueco ' . $m[1] . '.' : 'Compra antes la mejora anterior.', 409);
             }
         }
 
