@@ -46,6 +46,10 @@ case 'state': {
        si aún no existen (assets/profile/perfil2.php). */
     require_once dirname(__DIR__) . '/profile/perfil2.php';
     pf2_ensureStoreItems($pdo);
+    /* Igual con los haros y mascotas (assets/personalize/items.php):
+       sin esto un haro nuevo no salía hasta que alguien abría Temas. */
+    require_once dirname(__DIR__) . '/personalize/items.php';
+    personalizeEnsureItems($pdo);
     /* Solo items comprables (precio > 0). Los de precio 0 son "base"
        — todos los usuarios los tienen sin necesidad de comprarlos, y
        aparecen solo en la vista de personalización. */
