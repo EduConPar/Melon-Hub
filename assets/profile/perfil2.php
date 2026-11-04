@@ -11,7 +11,10 @@
      blando" (deleted_at) para que esa copia no los vuelva a crear.
    - Expositores (profile_showcases): cada usuario elige cuáles y en qué
      orden. Huecos: 2 de serie + los comprados en la tienda (hueco 3, 4
-     y 5, en orden). Tipos: games, shots, review, music.
+     y 5, en orden). Tipos: games, shots, review, music, steam_rare,
+     steam_ach, movies / series / books (favoritos, como games),
+     game_feat (Juego destacado), playlist (Playlist destacada) y text
+     (Texto libre).
    - Capturas (profile_screenshots): imágenes de la Galería del usuario
      (su Google Drive). El navegador las hace públicas en Drive y aquí solo
      se guarda el enlace (drive_id + url), su pie de foto y el juego. Las
@@ -27,9 +30,14 @@ require_once __DIR__ . '/steam.php';                     /* fase 2: horas y logr
 
 const PF2_BASE_SLOTS   = 2;
 const PF2_SLOT_SLUGS   = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
-const PF2_TYPES        = ['games', 'shots', 'review', 'music', 'steam_rare', 'steam_ach'];
+const PF2_TYPES        = ['games', 'shots', 'review', 'music', 'steam_rare', 'steam_ach',
+                          'movies', 'series', 'books', 'game_feat', 'playlist', 'text'];
+const PF2_FAV_CATS     = ['games', 'movies', 'series', 'books'];   /* "<lo que sea> favoritos" */
 const PF2_MAX_STEAM_ACH = 8;
-const PF2_MAX_GAMES    = 4;
+const PF2_MAX_GAMES    = 4;                                        /* también películas, series y libros */
+const PF2_MAX_FEAT_ACH = 8;
+const PF2_MAX_TEXT     = 1000;
+const PF2_PLAYLIST_TRACKS = 5;
 const PF2_MAX_SHOTS    = 3;
 const PF2_MAX_MUSIC    = 5;
 
@@ -237,11 +245,13 @@ function pf2_friends(PDO $pdo, int $uid): array {
     return $out;
 }
 
-/* ── Catálogo de juegos (los registrados en las reseñas/listas) ────── */
-function pf2_gameCatalog(PDO $pdo, string $q, int $limit = 30): array {
+/* ── Catálogo de juegos (los registrados en las reseñas/listas) ──────
+   También el de películas, series y libros (sus "favoritos"). */
+function pf2_gameCatalog(PDO $pdo, string $q, int $limit = 30, string $cat = 'games'): array {
+    if (!in_array($cat, PF2_FAV_CATS, true)) return [];
     $q = trim($q);
-    $args = [];
-    $where = "category = 'games' AND title <> ''";
+    $args = [$cat];
+    $where = "category = ? AND title <> ''";
     if ($q !== '') { $where .= " AND title LIKE ?"; $args[] = '%' . $q . '%'; }
     try {
         /* Un juego por título (sin distinguir mayúsculas); la imagen, la
@@ -254,10 +264,11 @@ function pf2_gameCatalog(PDO $pdo, string $q, int $limit = 30): array {
     } catch (Throwable $e) { return []; }
 }
 
-/* Imagen de un juego por título: la del dueño o, si no tiene, cualquiera. */
-function pf2_gameImage(PDO $pdo, int $uid, string $title): string {
-    $img = pf2_one($pdo, "SELECT image FROM list_items WHERE owner_id = ? AND category = 'games' AND LOWER(title) = LOWER(?) AND image <> '' LIMIT 1", [$uid, $title]);
-    if (!$img) $img = pf2_one($pdo, "SELECT image FROM list_items WHERE category = 'games' AND LOWER(title) = LOWER(?) AND image <> '' LIMIT 1", [$title]);
+/* Imagen de un juego (o película, serie, libro) por título: la del dueño
+   o, si no tiene, cualquiera. */
+function pf2_gameImage(PDO $pdo, int $uid, string $title, string $cat = 'games'): string {
+    $img = pf2_one($pdo, "SELECT image FROM list_items WHERE owner_id = ? AND category = ? AND LOWER(title) = LOWER(?) AND image <> '' LIMIT 1", [$uid, $cat, $title]);
+    if (!$img) $img = pf2_one($pdo, "SELECT image FROM list_items WHERE category = ? AND LOWER(title) = LOWER(?) AND image <> '' LIMIT 1", [$cat, $title]);
     return (string)($img ?: '');
 }
 
@@ -279,8 +290,19 @@ function pf2_cleanConfig(string $type, $cfg): array {
     $cfg = is_array($cfg) ? $cfg : [];
     switch ($type) {
         case 'games':
+        case 'movies':
+        case 'series':
+        case 'books':
             $t = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 200), (array)($cfg['titles'] ?? [])), 'strlen'));
             return ['titles' => array_slice(array_values(array_unique($t)), 0, PF2_MAX_GAMES)];
+        case 'game_feat':
+            $ach = array_values(array_unique(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 120), (array)($cfg['ach'] ?? [])), 'strlen')));
+            return ['title' => mb_substr(trim((string)($cfg['title'] ?? '')), 0, 200), 'ach' => array_slice($ach, 0, PF2_MAX_FEAT_ACH)];
+        case 'playlist':
+            return ['id' => max(0, (int)($cfg['id'] ?? 0))];
+        case 'text':
+            $t = str_replace(["\r\n", "\r"], "\n", (string)($cfg['text'] ?? ''));
+            return ['text' => mb_substr(trim($t), 0, PF2_MAX_TEXT)];
         case 'shots':
             return ['ids' => array_slice(array_values(array_unique(array_map('intval', (array)($cfg['ids'] ?? [])))), 0, PF2_MAX_SHOTS)];
         case 'review':
@@ -364,6 +386,37 @@ function pf2_showcases(PDO $pdo, int $uid): array {
                     ];
                 }
                 break;
+            case 'movies':
+            case 'series':
+            case 'books':
+                foreach ($cfg['titles'] as $t) {
+                    $rev = pf2_ownReview($pdo, $uid, $s['type'], $t);
+                    $data[] = [
+                        'title' => $t,
+                        'image' => pf2_gameImage($pdo, $uid, $t, $s['type']),
+                        'stars' => $rev ? (float)$rev['stars'] : null,
+                    ];
+                }
+                break;
+            case 'game_feat':
+                if ($cfg['title'] !== '') {
+                    $rev = pf2_ownReview($pdo, $uid, 'games', $cfg['title']);
+                    $data = [
+                        'title'   => $cfg['title'],
+                        'image'   => pf2_gameImage($pdo, $uid, $cfg['title']),
+                        'stars'   => $rev ? (float)$rev['stars'] : null,
+                        'comment' => $rev ? (string)$rev['comment'] : '',
+                        /* null = sin Steam; inSteam false = no está en su biblioteca. */
+                        'steam'   => $sid !== '' ? steam_featured($sid, $owned, $cfg['title'], $cfg['ach']) : null,
+                    ];
+                }
+                break;
+            case 'playlist':
+                if ($cfg['id']) $data = pf2_playlist($pdo, $uid, $cfg['id']) ?? [];
+                break;
+            case 'text':
+                if ($cfg['text'] !== '') $data = ['text' => $cfg['text']];
+                break;
             case 'shots':
                 if ($cfg['ids']) {
                     $ph = implode(',', array_fill(0, count($cfg['ids']), '?'));
@@ -428,6 +481,76 @@ function pf2_showcases(PDO $pdo, int $uid): array {
         $out[] = ['type' => $s['type'], 'config' => $cfg, 'data' => $data];
     }
     return $out;
+}
+
+/* Playlist destacada: una propia o en la que colabora (si deja de
+   serlo, o la borran, el expositor sale vacío). Nombre, portada (la suya
+   o la miniatura de la primera canción, como el visor de playlists),
+   número de canciones y las primeras, con las correcciones de canciones
+   (song_album_overrides) como en las playlists. */
+function pf2_playlist(PDO $pdo, int $uid, int $id): ?array {
+    try {
+        $st = $pdo->prepare("SELECT p.id, p.name, p.owner_id, u.user_key, u.username, u.label
+                               FROM playlists p JOIN usuarios u ON u.id = p.owner_id
+                              WHERE p.id = ? AND (p.owner_id = ? OR EXISTS (
+                                    SELECT 1 FROM playlist_collaborators c WHERE c.playlist_id = p.id AND c.user_id = ?))");
+        $st->execute([$id, $uid, $uid]);
+        $pl = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$pl) return null;
+        $image = '';
+        try { $image = (string)pf2_one($pdo, "SELECT image_url FROM playlists WHERE id = ?", [$id]); } catch (Throwable $e) { /* sin columna aún */ }
+        $count = (int)pf2_one($pdo, "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?", [$id]);
+        $st = $pdo->prepare("SELECT video_id AS videoId, title, artist, duration FROM playlist_tracks
+                              WHERE playlist_id = ? ORDER BY position ASC LIMIT " . PF2_PLAYLIST_TRACKS);
+        $st->execute([$id]);
+        $tracks = $st->fetchAll(PDO::FETCH_ASSOC);
+        if ($tracks) {
+            try {
+                $vids = array_column($tracks, 'videoId');
+                $ph = implode(',', array_fill(0, count($vids), '?'));
+                $o = $pdo->prepare("SELECT video_id, new_video_id, song_title, song_artist FROM song_album_overrides WHERE video_id IN ($ph)");
+                $o->execute($vids);
+                $ov = [];
+                foreach ($o->fetchAll(PDO::FETCH_ASSOC) as $r) $ov[(string)$r['video_id']] = $r;
+                foreach ($tracks as &$t) {
+                    $r = $ov[(string)$t['videoId']] ?? null;
+                    if (!$r) continue;
+                    if ((string)$r['song_title'] !== '')  $t['title']  = $r['song_title'];
+                    if ((string)$r['song_artist'] !== '') $t['artist'] = $r['song_artist'];
+                    if (strlen((string)$r['new_video_id']) === 11) $t['videoId'] = $r['new_video_id'];
+                }
+                unset($t);
+            } catch (Throwable $e) { /* sin tabla de correcciones */ }
+        }
+        foreach ($tracks as &$t) $t['duration'] = (int)$t['duration'];
+        unset($t);
+        if ($image === '' && $tracks) $image = 'https://i.ytimg.com/vi/' . $tracks[0]['videoId'] . '/mqdefault.jpg';
+        $own = (int)$pl['owner_id'] === $uid;
+        return [
+            'id'     => (int)$pl['id'],
+            'name'   => (string)$pl['name'],
+            'image'  => $image,
+            'count'  => $count,
+            /* De quién es, si no es suya (colabora en ella). */
+            'owner'  => $own ? '' : pf2_label($pl),
+            'tracks' => $tracks,
+        ];
+    } catch (Throwable $e) { return null; }
+}
+
+/* Playlists que puede elegir (propias y en las que colabora). */
+function pf2_myPlaylists(PDO $pdo, int $uid): array {
+    try {
+        $st = $pdo->prepare("SELECT p.id FROM playlists p WHERE p.owner_id = ?
+                              UNION SELECT c.playlist_id FROM playlist_collaborators c WHERE c.user_id = ?");
+        $st->execute([$uid, $uid]);
+        $out = [];
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            $pl = pf2_playlist($pdo, $uid, (int)$id);
+            if ($pl) $out[] = $pl;
+        }
+        return $out;
+    } catch (Throwable $e) { return []; }
 }
 
 /* URL de una captura: la de Drive (Galería) o, si es de las subidas de

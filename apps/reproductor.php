@@ -2869,6 +2869,36 @@ function _playSharedPlaylistFrom(i) {
     closeAlbumViewer();
 }
 
+/* Reproduce una playlist por su id desde la canción `index` sin abrir el
+   visor (expositor "Playlist destacada" del perfil). Si es mía o colaboro
+   en ella, como desde Mis playlists (queda como playlist actual); si es
+   de otro, como cola suelta, igual que el visor de playlists compartidas. */
+async function melonPlayPlaylistById(playlistId, index) {
+    let pl;
+    try {
+        const r = await fetch('assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(playlistId));
+        pl = await r.json();
+    } catch (_) { pl = null; }
+    if (!pl || !pl.ok) { alert((pl && pl.error) || 'No se pudo abrir la playlist.'); return; }
+    const tracks = (pl.tracks || []).filter(t => t && t.videoId);
+    if (!tracks.length) return;
+    const start = Math.max(0, Math.min(index | 0, tracks.length - 1));
+    if (pl.mine && typeof window.melonTrackAction === 'function') {
+        window.melonTrackAction('play-playlist', { playlistId: pl.id, index: start });
+        return;
+    }
+    window.__melonLinkPlayed = true;
+    currentPlaylistId = null;
+    currentPlaylistHasCollabs = false;
+    playlist.length = 0;
+    tracks.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist, duration: t.duration || 0 }));
+    currentTrack = start;
+    updatePlayerTitle(pl.name || 'Playlist');
+    updateTrackUI(start);
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') ytPlayer.loadVideoById(playlist[start].videoId);
+}
+window.melonPlayPlaylistById = melonPlayPlaylistById;
+
 /* Copia la playlist (nombre, imagen y canciones) en una nueva mía. */
 function _saveSharedPlaylist(pl, tracks, btn) {
     btn.disabled = true;

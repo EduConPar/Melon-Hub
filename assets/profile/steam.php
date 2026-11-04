@@ -178,6 +178,23 @@ function steam_gameStats(string $sid, ?array $owned, string $title): ?array {
             'achieved' => $got, 'total' => count($ach)];
 }
 
+/* Juego destacado: horas, logros (conseguidos / total) y los logros
+   elegidos a mano (por apiname, en ese orden; solo los que tiene). */
+function steam_featured(string $sid, ?array $owned, string $title, array $apinames): ?array {
+    if ($owned === null) return null;
+    $g = steam_match($owned, $title);
+    if (!$g) return ['inSteam' => false];
+    $ach = steam_achievements($sid, $g['appid']);
+    $byApi = [];
+    foreach ($ach as $a) $byApi[$a['apiname']] = $a;
+    $items = [];
+    foreach ($apinames as $api) {
+        if (isset($byApi[$api]) && $byApi[$api]['achieved']) $items[] = $byApi[$api] + ['appid' => $g['appid'], 'game' => $g['name']];
+    }
+    return ['inSteam' => true, 'appid' => $g['appid'], 'name' => $g['name'], 'hours' => round($g['minutes'] / 60, 1),
+            'achieved' => count(array_filter($ach, fn($a) => $a['achieved'])), 'total' => count($ach), 'items' => $items];
+}
+
 /* Resumen para debajo de los expositores de logros. */
 function steam_totals(?array $owned): array {
     if ($owned === null) return ['games' => 0, 'hours' => 0];

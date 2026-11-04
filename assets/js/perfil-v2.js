@@ -3,9 +3,10 @@
    ──────────────────────────────────────────────────────────────────────
    Pinta lo que devuelve `v2` en get-profile / view-user
    (assets/profile/perfil2.php):
-     - expositores (Juegos favoritos, Capturas —de la Galería, en Google
-       Drive—, Reseña destacada, Música favorita) en el orden que elige el
-       usuario;
+     - expositores (Juegos / Películas / Series / Libros favoritos,
+       Capturas —de la Galería, en Google Drive—, Reseña destacada, Música
+       favorita, logros de Steam, Juego destacado, Playlist destacada y
+       Texto libre) en el orden que elige el usuario;
      - comentarios del muro (sustituyen a los posts);
      - columna lateral: nivel, medallas, amigos y actividad;
      - estado (en línea / ausente / no molestar / desconectado).
@@ -27,8 +28,42 @@
         music:  { label: 'Música favorita',  icon: 'musicaIcon' },
         steam_rare: { label: 'Logros raros de Steam', icon: 'steamIcon' },
         steam_ach:  { label: 'Logros de Steam',       icon: 'steamIcon' },
+        movies:    { label: 'Películas favoritas', icon: 'pelisIcon' },
+        series:    { label: 'Series favoritas',    icon: 'melonArchiveIcon' },
+        books:     { label: 'Libros favoritos',    icon: 'booksIcon' },
+        game_feat: { label: 'Juego destacado',     icon: 'juegosIcon' },
+        playlist:  { label: 'Playlist destacada',  icon: 'songIcon' },
+        text:      { label: 'Texto libre',         icon: 'newsIcon' },
     };
-    var MAX = { games: 4, shots: 3, music: 5, steam_ach: 8 };
+    var MAX = { games: 4, movies: 4, series: 4, books: 4, shots: 3, music: 5, steam_ach: 8, game_feat: 8, text: 1000 };
+    /* Favoritos (juegos, películas, series, libros): cómo se nombra cada
+       cosa en su selector ([singular, plural, femenino]). */
+    var FAV_NOUN = {
+        games:  ['juego', 'juegos', false],
+        movies: ['película', 'películas', true],
+        series: ['serie', 'series', true],
+        books:  ['libro', 'libros', false],
+    };
+    /* Config y datos de un expositor recién añadido (vacío). */
+    function blankShowcase(t) {
+        if (t === 'review') return { config: { category: '', title: '' }, data: {} };
+        if (FAV_NOUN[t]) return { config: { titles: [] }, data: [] };
+        if (t === 'steam_rare') return { config: {}, data: {} };
+        if (t === 'steam_ach') return { config: { items: [] }, data: {} };
+        if (t === 'game_feat') return { config: { title: '', ach: [] }, data: {} };
+        if (t === 'playlist') return { config: { id: 0 }, data: {} };
+        if (t === 'text') return { config: { text: '' }, data: {} };
+        return { config: { ids: [] }, data: [] };
+    }
+    function isEmpty(sc) {
+        var d = sc.data;
+        if (!d) return true;
+        if (Array.isArray(d)) return !d.length;
+        if (sc.type.indexOf('steam_') === 0) return !(d.items || []).length;
+        if (sc.type === 'playlist') return !d.id;
+        if (sc.type === 'text') return !d.text;
+        return !d.title;
+    }
     var CAT_LABEL = { movies: 'Película', series: 'Serie', books: 'Libro', games: 'Juego', music: 'Música' };
     var TIERS = [
         null,
@@ -40,7 +75,7 @@
     var S = {
         v2: null, ctx: null, editing: false,
         draft: [],            /* expositores en edición: { type, config, data } */
-        catalog: {},          /* título de juego (minúsculas) → imagen */
+        catalog: {},          /* "<categoría>|<título en minúsculas>" → imagen */
         myShots: null,
     };
 
@@ -107,7 +142,7 @@
         box.innerHTML = '';
         var own = !!S.ctx.own;
         S.draft.forEach(function (sc, i) {
-            var empty = !sc.data || (Array.isArray(sc.data) ? !sc.data.length : (sc.type.indexOf('steam_') === 0 ? !(sc.data.items || []).length : !sc.data.title));
+            var empty = isEmpty(sc);
             if (empty && !own) return;            /* a los demás no se les enseña un expositor vacío */
             var sub = '';
             if (sc.type === 'games' && !own) sub = '';
@@ -264,28 +299,121 @@
                 g.appendChild(d);
             });
         },
+        /* Películas, series y libros favoritos: como los juegos (sin Steam). */
+        movies: function (body, data) { RENDER.games(body, data); },
+        series: function (body, data) { RENDER.games(body, data); },
+        books:  function (body, data) { RENDER.games(body, data); },
+        /* Juego destacado: portada grande; con Steam, horas, logros X / Y y
+           los logros elegidos en grande; sin Steam, la reseña. */
+        game_feat: function (body, g) {
+            var st = g.steam;
+            var right = '<div class="pf2-feat-t">' + esc(g.title) + '</div>';
+            if (st && st.inSteam) {
+                var pct = st.total ? Math.round(100 * st.achieved / st.total) : 0;
+                right += '<div class="pf2-feat-hours">' + ic('steamIcon', 12, 3) + '<b>' + st.hours.toLocaleString('es') + ' h</b> jugadas</div>';
+                if (st.total) {
+                    right += '<div class="pf2-feat-prog">Logros <b>' + st.achieved + ' / ' + st.total + '</b><span>' + pct + ' %</span></div>' +
+                        '<div class="pf2-bar"><i style="width:' + pct + '%"></i></div>';
+                }
+                if ((st.items || []).length) right += '<div class="pf2-feat-achs">' + st.items.map(function (a, i) {
+                    return '<div class="pf2-feat-ach' + (i % 8 >= 4 ? ' flip' : '') + '"><img src="' + esc(a.icon) + '" alt="">' +
+                        '<div class="pf2-mtip"><b>' + esc(a.name) + '</b>' + (a.desc ? '<br>' + esc(a.desc) : '') +
+                        (a.percent != null ? '<br>Lo tiene el ' + String(a.percent).replace('.', ',') + ' % de los jugadores' : '') + '</div></div>';
+                }).join('') + '</div>';
+            } else {
+                if (st && !st.inSteam) right += '<div class="pf2-feat-hours" style="opacity:.8;">' + ic('steamIcon', 12, 3) + 'No está en su Steam</div>';
+                right += '<div class="pf2-feat-rev">Reseña ' + (g.stars != null ? '<span class="pf2-stars">' + stars(g.stars) + '</span>' : '<b>Sin reseña</b>') + '</div>' +
+                    (g.comment ? '<div class="pf2-review-txt">' + esc(g.comment) + '</div>' : '');
+            }
+            body.innerHTML = '<div class="pf2-feat"><div class="pf2-feat-cover">' +
+                (g.image ? '<img src="' + esc(g.image) + '" alt="">' : '<div class="pf2-game-noimg">' + esc(g.title) + '</div>') +
+                '</div><div class="pf2-feat-main">' + right + '</div></div>';
+        },
+        /* Playlist destacada: portada, nombre, nº de canciones, Reproducir,
+           Copiar enlace y las primeras canciones (clic derecho → Reproducir
+           desde esa). */
+        playlist: function (body, pl) {
+            var canPlay = typeof window.melonPlayPlaylistById === 'function';
+            var fmt = function (sec) { sec = sec | 0; return sec ? Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2) : ''; };
+            body.innerHTML = '<div class="pf2-pl">' +
+                (pl.image ? '<img class="pf2-pl-cover" src="' + esc(pl.image) + '" alt="">' : '<div class="pf2-pl-cover"></div>') +
+                '<div class="pf2-pl-main">' +
+                    '<div class="pf2-pl-name">' + esc(pl.name) + '</div>' +
+                    '<div class="pf2-pl-meta">' + pl.count + (pl.count === 1 ? ' canción' : ' canciones') + (pl.owner ? ' · playlist de ' + esc(pl.owner) : '') + '</div>' +
+                    '<div class="pf2-pl-btns">' +
+                        (canPlay && pl.count ? '<button type="button" class="button" data-a="play"><svg viewBox="0 0 8 8" width="8" height="8" style="fill:var(--btn-text);margin-right:4px;vertical-align:0;"><path d="M1 0l6 4-6 4z"/></svg>Reproducir</button>' : '') +
+                        (typeof window.melonCopyLink === 'function' ? '<button type="button" class="button" data-a="link">Copiar enlace</button>' : '') +
+                    '</div>' +
+                    '<div class="pf2-pl-tracks">' + (pl.tracks || []).map(function (t, i) {
+                        return '<div class="pf2-pl-row" data-i="' + i + '"><span class="pf2-pl-n">' + (i + 1) + '</span>' +
+                            '<span class="pf2-pl-tt"><b>' + esc(t.title) + '</b>' + (t.artist ? ' — ' + esc(t.artist) : '') + '</span>' +
+                            '<span class="pf2-pl-d">' + fmt(t.duration) + '</span></div>';
+                    }).join('') + '</div>' +
+                '</div></div>';
+            var pb = body.querySelector('[data-a="play"]');
+            if (pb) pb.addEventListener('click', function () { window.melonPlayPlaylistById(pl.id, 0); });
+            var lb = body.querySelector('[data-a="link"]');
+            if (lb) lb.addEventListener('click', function () { window.melonCopyLink('playlist', String(pl.id)); });
+            if (canPlay) body.querySelectorAll('.pf2-pl-row').forEach(function (row) {
+                row.addEventListener('contextmenu', function (e) {
+                    e.preventDefault();
+                    showMenu(e, [{ label: '▶ Reproducir', fn: function () { window.melonPlayPlaylistById(pl.id, +row.dataset.i); } }]);
+                });
+            });
+        },
+        text: function (body, d) {
+            body.innerHTML = '<div class="pf2-text"></div>';
+            body.firstChild.textContent = d.text;
+        },
     };
 
     /* Portada del ÁLBUM (no la miniatura del vídeo): la busca find-album,
        que la deja en caché en el servidor; aquí también en localStorage. */
-    function albumCover(it, el) {
-        var key = 'pf2:cover:' + (it.ytId || (it.title + '|' + it.artist));
-        var cached = null;
-        try { cached = localStorage.getItem(key); } catch (_) {}
-        var put = function (url) {
-            if (!url) return;
-            var ph = el.querySelector('.pf2-album-ph');
-            if (ph) ph.outerHTML = '<img src="' + esc(url) + '" alt="">';
-        };
-        if (cached) { put(cached); return; }
+    /* Una sola petición por canción aunque el selector se repinte a cada
+       clic (los repintados mientras tanto esperan a la misma promesa). */
+    var _coverReq = {};
+    function coverKey(it) { return 'pf2:cover:' + (it.ytId || (it.title + '|' + it.artist)); }
+    function cachedCover(it) {
+        try { return localStorage.getItem(coverKey(it)) || ''; } catch (_) { return ''; }
+    }
+    function findCover(it) {
+        var key = coverKey(it);
+        var cached = cachedCover(it);
+        if (cached) return Promise.resolve(cached);
+        if (_coverReq[key]) return _coverReq[key];
         var q = 'assets/music/api.php?action=find-album&title=' + encodeURIComponent(it.title || '') +
             '&artist=' + encodeURIComponent(it.artist || '') + (it.ytId ? '&videoId=' + encodeURIComponent(it.ytId) : '');
-        fetch(q, { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
-            var url = d && (d.albumImage || d.image);
+        _coverReq[key] = fetch(q, { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+            var url = (d && (d.albumImage || d.image)) || '';
+            if (url) { try { localStorage.setItem(key, url); } catch (_) {} }
+            return url;
+        }).catch(function () { delete _coverReq[key]; return ''; });
+        return _coverReq[key];
+    }
+    function albumCover(it, el, phSel) {
+        findCover(it).then(function (url) {
             if (!url) return;
-            try { localStorage.setItem(key, url); } catch (_) {}
-            put(url);
-        }).catch(function () {});
+            var ph = el.querySelector(phSel || '.pf2-album-ph');
+            if (ph) ph.outerHTML = '<img src="' + esc(url) + '" alt="">';
+        });
+    }
+    /* En el selector la lista puede ser larga: se pide la portada cuando
+       la casilla entra en la vista, no todas de golpe. */
+    var _coverIO = null, _coverPending = new WeakMap();
+    function coverWhenVisible(it, el) {
+        if (!('IntersectionObserver' in window)) { albumCover(it, el, '.pf2-pick-ph'); return; }
+        if (!_coverIO) {
+            _coverIO = new IntersectionObserver(function (entries) {
+                entries.forEach(function (en) {
+                    if (!en.isIntersecting) return;
+                    _coverIO.unobserve(en.target);
+                    var item = _coverPending.get(en.target);
+                    if (item) albumCover(item, en.target, '.pf2-pick-ph');
+                });
+            }, { rootMargin: '100px' });
+        }
+        _coverPending.set(el, it);
+        _coverIO.observe(el);
     }
     function play(it) {
         var b = bridge();
@@ -567,9 +695,8 @@
         var used = S.draft.map(function (s) { return s.type; });
         var items = Object.keys(TYPES).filter(function (t) { return used.indexOf(t) < 0; }).map(function (t) {
             return { label: TYPES[t].label, fn: function () {
-                var cfg = t === 'review' ? { category: '', title: '' } : t === 'games' ? { titles: [] }
-                        : t === 'steam_rare' ? {} : t === 'steam_ach' ? { items: [] } : { ids: [] };
-                S.draft.push({ type: t, config: cfg, data: (t === 'review' || t.indexOf('steam_') === 0) ? {} : [] });
+                var b = blankShowcase(t);
+                S.draft.push({ type: t, config: b.config, data: b.data });
                 renderShowcases();
                 /* Los raros se calculan solos al guardar. */
                 if (t !== 'steam_rare') openPicker(S.draft.length - 1);
@@ -729,47 +856,197 @@
         });
     }
 
+    /* Imagen de un título del catálogo (juegos, películas, series, libros). */
+    function catImg(cat, t) { return S.catalog[cat + '|' + String(t).toLowerCase()]; }
+    function setCatImg(cat, t, img) { if (img) S.catalog[cat + '|' + String(t).toLowerCase()] = img; }
+
+    /* Favoritos (juegos, películas, series, libros): del catálogo de las
+       reseñas/listas de todos; "＋ Crear …" abre el mismo diálogo que
+       añadir uno pendiente a la lista. */
+    function favPicker(sc, cat) {
+        var noun = FAV_NOUN[cat], fem = noun[2];
+        var max = MAX[cat];
+        var sel = (sc.config.titles || []).slice();
+        var body = pickerWindow(TYPES[cat].label);
+        body.innerHTML =
+            '<div style="font-size:11px;">' + (fem ? 'Elegidas' : 'Elegidos') + ' (máx. ' + max + '):</div>' +
+            '<div class="pf2-pick-list" data-r="sel" style="max-height:150px;"><div class="pf2-pick-grid"></div></div>' +
+            '<div style="display:flex;gap:4px;"><input type="text" placeholder="Buscar ' + noun[0] + '…" style="flex:1;"><button type="button" class="button" data-a="new">＋ Crear ' + noun[0] + '</button></div>' +
+            '<div class="pf2-pick-list" data-r="res"><div class="pf2-pick-grid"></div></div>';
+        var input = body.querySelector('input');
+        var selG = body.querySelector('[data-r="sel"] .pf2-pick-grid'), resG = body.querySelector('[data-r="res"] .pf2-pick-grid');
+        var info;
+        var tile = function (t, on, n) {
+            var img = catImg(cat, t);
+            return '<div class="pf2-pick portrait' + (on ? ' on' : '') + '" data-t="' + esc(t) + '">' +
+                (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '<div class="pf2-pick-ph"></div>') +
+                (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
+                '<div class="pf2-pick-t">' + esc(t) + '</div></div>';
+        };
+        var paintSel = function () {
+            selG.innerHTML = sel.length ? sel.map(function (t, i) { return tile(t, true, i + 1); }).join('') : '<div class="pf2-empty">' + (fem ? 'Ninguna' : 'Ninguno') + ' todavía.</div>';
+            selG.querySelectorAll('.pf2-pick').forEach(function (el) {
+                el.title = 'Quitar';
+                el.addEventListener('click', function () { sel.splice(sel.indexOf(el.dataset.t), 1); paintSel(); paintRes(lastRes); });
+            });
+            if (info) info.textContent = sel.length + ' de ' + max;
+        };
+        var lastRes = [];
+        var paintRes = function (games) {
+            lastRes = games;
+            resG.innerHTML = games.length ? games.map(function (g) {
+                return tile(g.title, sel.indexOf(g.title) >= 0, 0);
+            }).join('') : '<div class="pf2-empty">No hay ' + noun[1] + ' con ese nombre. Puedes ' + (fem ? 'crearla' : 'crearlo') + '.</div>';
+            resG.querySelectorAll('.pf2-pick').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    var t = el.dataset.t, k = sel.indexOf(t);
+                    if (k >= 0) sel.splice(k, 1);
+                    else if (sel.length < max) sel.push(t);
+                    paintSel(); paintRes(lastRes);
+                });
+            });
+        };
+        var timer = null;
+        var search = function () {
+            api('game-catalog&cat=' + cat + '&q=' + encodeURIComponent(input.value.trim())).then(function (d) {
+                var g = (d && d.games) || [];
+                g.forEach(function (x) { setCatImg(cat, x.title, x.image); });
+                paintRes(g);
+                paintSel();
+            });
+        };
+        input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 250); });
+        body.querySelector('[data-a="new"]').addEventListener('click', function () {
+            var b = bridge();
+            if (!b.openAddDialog) return;
+            window.__pf2AfterAdd = function (c, item) {
+                if (c !== cat) return;
+                setCatImg(cat, item.title, item.image);
+                if (sel.indexOf(item.title) < 0 && sel.length < max) sel.push(item.title);
+                paintSel(); search();
+            };
+            b.openAddDialog(cat);
+            var dlg = $('profile-add-dialog');
+            if (dlg) dlg.style.zIndex = 3000;
+        });
+        info = pickerFoot(body, '', function () {
+            var prev = sc.data || [];
+            sc.config = { titles: sel.slice() };
+            sc.data = sel.map(function (t) {
+                var rv = ownReview(cat, t);
+                var own = ownList(cat).find(function (x) { return x.title.toLowerCase() === t.toLowerCase(); });
+                /* Los datos de Steam de los juegos que ya estaban se
+                   conservan hasta guardar (el servidor los recalcula). */
+                var old = prev.find(function (x) { return x && x.title === t; });
+                var d = { title: t, image: catImg(cat, t) || (own && own.image) || '', stars: rv ? rv.stars : null };
+                if (old && old.steam !== undefined) d.steam = old.steam;
+                return d;
+            });
+        });
+        sel.forEach(function (t) {
+            var own = ownList(cat).find(function (x) { return x.title.toLowerCase() === t.toLowerCase(); });
+            if (own && own.image && !catImg(cat, t)) setCatImg(cat, t, own.image);
+        });
+        (sc.data || []).forEach(function (d) { setCatImg(cat, d.title, d.image); });
+        search();
+        input.focus();
+    }
+
     var PICK = {
-        /* Juegos: del catálogo de juegos de las reseñas/listas; "Crear juego"
-           abre el mismo diálogo que añadir un juego pendiente. */
-        games: function (sc) {
-            var sel = (sc.config.titles || []).slice();
-            var body = pickerWindow('Juegos favoritos');
+        games:  function (sc) { favPicker(sc, 'games'); },
+        movies: function (sc) { favPicker(sc, 'movies'); },
+        series: function (sc) { favPicker(sc, 'series'); },
+        books:  function (sc) { favPicker(sc, 'books'); },
+
+        /* Juego destacado: un juego del catálogo y, si tiene Steam y el
+           juego está en su biblioteca, hasta 8 de sus logros conseguidos
+           (elegidos a mano). */
+        game_feat: function (sc) {
+            var cur = sc.config.title || '';
+            var ach = (sc.config.ach || []).slice();
+            var st = S.v2.steam || {};
+            var steamOn = !!(st.configured && st.linked && !st['private']);
+            var match = null;            /* lo que devuelve steam-game-match del juego elegido */
+            var achList = [];            /* logros conseguidos de ese juego */
+            var body = pickerWindow('Juego destacado');
             body.innerHTML =
-                '<div style="font-size:11px;">Elegidos (máx. ' + MAX.games + '):</div>' +
-                '<div class="pf2-pick-list" data-r="sel" style="max-height:150px;"><div class="pf2-pick-grid"></div></div>' +
                 '<div style="display:flex;gap:4px;"><input type="text" placeholder="Buscar juego…" style="flex:1;"><button type="button" class="button" data-a="new">＋ Crear juego</button></div>' +
-                '<div class="pf2-pick-list" data-r="res"><div class="pf2-pick-grid"></div></div>';
+                '<div class="pf2-pick-list" data-r="res" style="max-height:170px;"><div class="pf2-pick-grid"></div></div>' +
+                '<div style="font-size:11px;" data-r="ach-h"></div>' +
+                '<div class="pf2-pick-list" data-r="sel" style="max-height:80px;"><div class="pf2-ach-list"></div></div>' +
+                '<div class="pf2-pick-list" data-r="ach" style="height:150px;"></div>';
             var input = body.querySelector('input');
-            var selG = body.querySelector('[data-r="sel"] .pf2-pick-grid'), resG = body.querySelector('[data-r="res"] .pf2-pick-grid');
-            var info;
-            var tile = function (t, on, n) {
-                var img = S.catalog[t.toLowerCase()];
+            var resG = body.querySelector('[data-r="res"] .pf2-pick-grid');
+            var achH = body.querySelector('[data-r="ach-h"]'), selL = body.querySelector('[data-r="sel"] .pf2-ach-list');
+            var selBox = body.querySelector('[data-r="sel"]'), achL = body.querySelector('[data-r="ach"]');
+            var info, lastRes = [];
+            var tile = function (t, on) {
+                var img = catImg('games', t);
                 return '<div class="pf2-pick portrait' + (on ? ' on' : '') + '" data-t="' + esc(t) + '">' +
                     (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '<div class="pf2-pick-ph"></div>') +
-                    (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
                     '<div class="pf2-pick-t">' + esc(t) + '</div></div>';
             };
-            var paintSel = function () {
-                selG.innerHTML = sel.length ? sel.map(function (t, i) { return tile(t, true, i + 1); }).join('') : '<div class="pf2-empty">Ninguno todavía.</div>';
-                selG.querySelectorAll('.pf2-pick').forEach(function (el) {
-                    el.title = 'Quitar';
-                    el.addEventListener('click', function () { sel.splice(sel.indexOf(el.dataset.t), 1); paintSel(); paintRes(lastRes); });
-                });
-                if (info) info.textContent = sel.length + ' de ' + MAX.games;
-            };
-            var lastRes = [];
             var paintRes = function (games) {
                 lastRes = games;
-                resG.innerHTML = games.length ? games.map(function (g) {
-                    return tile(g.title, sel.indexOf(g.title) >= 0, 0);
-                }).join('') : '<div class="pf2-empty">No hay juegos con ese nombre. Puedes crearlo.</div>';
+                /* El elegido sale primero aunque la búsqueda no lo traiga. */
+                var titles = games.map(function (g) { return g.title; });
+                if (cur && titles.indexOf(cur) < 0) titles.unshift(cur);
+                resG.innerHTML = titles.length ? titles.map(function (t) { return tile(t, t === cur); }).join('')
+                    : '<div class="pf2-empty">No hay juegos con ese nombre. Puedes crearlo.</div>';
                 resG.querySelectorAll('.pf2-pick').forEach(function (el) {
                     el.addEventListener('click', function () {
-                        var t = el.dataset.t, k = sel.indexOf(t);
-                        if (k >= 0) sel.splice(k, 1);
-                        else if (sel.length < MAX.games) sel.push(t);
-                        paintSel(); paintRes(lastRes);
+                        if (el.dataset.t === cur) return;
+                        cur = el.dataset.t; ach = [];
+                        paintRes(lastRes); loadSteam();
+                    });
+                });
+            };
+            var paintSel = function () {
+                var picked = ach.map(function (api) { return achList.find(function (a) { return a.apiname === api; }); }).filter(Boolean);
+                selL.innerHTML = picked.length ? picked.map(function (a, i) {
+                    return '<div class="pf2-ach-it" data-api="' + esc(a.apiname) + '" title="Quitar: ' + esc(a.name) + '" style="cursor:pointer;"><img src="' + esc(a.icon) + '" alt=""><div>' + (i + 1) + '</div></div>';
+                }).join('') : '<div class="pf2-empty">Ninguno todavía.</div>';
+                selL.querySelectorAll('.pf2-ach-it').forEach(function (el) {
+                    el.addEventListener('click', function () { ach.splice(ach.indexOf(el.dataset.api), 1); paintSel(); paintAch(); });
+                });
+                if (info) info.textContent = match && match.inSteam ? ach.length + ' de ' + MAX.game_feat + ' logros' : '';
+            };
+            var paintAch = function () {
+                achL.innerHTML = achList.length ? achList.map(function (a) {
+                    return '<div class="pf2-pick-row' + (ach.indexOf(a.apiname) >= 0 ? ' on' : '') + '" data-api="' + esc(a.apiname) + '">' +
+                        '<img src="' + esc(a.icon) + '" alt=""><span style="flex:1;"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc) + '</small></span>' +
+                        (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+                }).join('') : '<div class="pf2-empty">' + (match && match.total ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>';
+                achL.querySelectorAll('.pf2-pick-row').forEach(function (el) {
+                    el.addEventListener('click', function () {
+                        var k = ach.indexOf(el.dataset.api);
+                        if (k >= 0) ach.splice(k, 1); else if (ach.length < MAX.game_feat) ach.push(el.dataset.api);
+                        paintSel(); paintAch();
+                    });
+                });
+            };
+            /* Parte de Steam: según haya Steam y el juego esté en él. */
+            var showSteam = function (on) { selBox.style.display = achL.style.display = on ? '' : 'none'; };
+            var loadSteam = function () {
+                match = null; achList = [];
+                showSteam(false);
+                if (info) info.textContent = '';
+                if (!cur) { achH.textContent = ''; return; }
+                if (!steamOn) { achH.textContent = emptyText('steam_ach') + ' Sin Steam se enseñan la portada y tu reseña.'; return; }
+                var t = cur;
+                achH.textContent = 'Buscando el juego en tu Steam…';
+                api('steam-game-match&title=' + encodeURIComponent(t)).then(function (d) {
+                    if (t !== cur) return;
+                    match = d && d.steam;
+                    if (!match || !match.inSteam) { achH.textContent = 'Este juego no está en tu Steam: se enseñan la portada y tu reseña.'; return; }
+                    achH.textContent = 'Logros que se enseñan (máx. ' + MAX.game_feat + ') · ' + match.hours.toLocaleString('es') + ' h jugadas:';
+                    showSteam(true);
+                    achL.innerHTML = '<div class="pf2-empty">Cargando logros…</div>';
+                    return api('steam-game-achievements&appid=' + match.appid).then(function (r) {
+                        if (t !== cur) return;
+                        achList = (r && r.achievements) || [];
+                        ach = ach.filter(function (x) { return achList.some(function (a) { return a.apiname === x; }); });
+                        paintSel(); paintAch();
                     });
                 });
             };
@@ -777,40 +1054,92 @@
             var search = function () {
                 api('game-catalog&q=' + encodeURIComponent(input.value.trim())).then(function (d) {
                     var g = (d && d.games) || [];
-                    g.forEach(function (x) { if (x.image) S.catalog[x.title.toLowerCase()] = x.image; });
+                    g.forEach(function (x) { setCatImg('games', x.title, x.image); });
                     paintRes(g);
-                    paintSel();
                 });
             };
             input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 250); });
             body.querySelector('[data-a="new"]').addEventListener('click', function () {
                 var b = bridge();
                 if (!b.openAddDialog) return;
-                window.__pf2AfterAdd = function (cat, item) {
-                    if (cat !== 'games') return;
-                    if (item.image) S.catalog[item.title.toLowerCase()] = item.image;
-                    if (sel.indexOf(item.title) < 0 && sel.length < MAX.games) sel.push(item.title);
-                    paintSel(); search();
+                window.__pf2AfterAdd = function (c, item) {
+                    if (c !== 'games') return;
+                    setCatImg('games', item.title, item.image);
+                    cur = item.title; ach = [];
+                    search(); loadSteam();
                 };
                 b.openAddDialog('games');
                 var dlg = $('profile-add-dialog');
                 if (dlg) dlg.style.zIndex = 3000;
             });
             info = pickerFoot(body, '', function () {
-                sc.config = { titles: sel.slice() };
-                sc.data = sel.map(function (t) {
-                    var rv = ownReview('games', t);
-                    var own = ownList('games').find(function (x) { return x.title.toLowerCase() === t.toLowerCase(); });
-                    return { title: t, image: S.catalog[t.toLowerCase()] || (own && own.image) || '', stars: rv ? rv.stars : null };
-                });
+                if (!cur) return;
+                var rv = ownReview('games', cur);
+                var own = ownList('games').find(function (x) { return x.title.toLowerCase() === cur.toLowerCase(); });
+                var inSteam = !!(match && match.inSteam);
+                sc.config = { title: cur, ach: inSteam ? ach.slice() : [] };
+                sc.data = {
+                    title: cur, image: catImg('games', cur) || (own && own.image) || '',
+                    stars: rv ? rv.stars : null, comment: (rv && rv.comment) || '',
+                    steam: !steamOn ? null : !inSteam ? { inSteam: false } : {
+                        inSteam: true, appid: match.appid, hours: match.hours, achieved: match.achieved, total: match.total,
+                        items: ach.map(function (api) { return achList.find(function (a) { return a.apiname === api; }); }).filter(Boolean),
+                    },
+                };
             });
-            sel.forEach(function (t) {
-                var own = ownList('games').find(function (x) { return x.title.toLowerCase() === t.toLowerCase(); });
-                if (own && own.image && !S.catalog[t.toLowerCase()]) S.catalog[t.toLowerCase()] = own.image;
-            });
-            (sc.data || []).forEach(function (d) { if (d.image) S.catalog[d.title.toLowerCase()] = d.image; });
+            if (sc.data && sc.data.image) setCatImg('games', sc.data.title, sc.data.image);
             search();
+            loadSteam();
             input.focus();
+        },
+
+        /* Playlist destacada: una de mis playlists (propias o en las que
+           colaboro). */
+        playlist: function (sc) {
+            var cur = sc.config.id || 0;
+            var body = pickerWindow('Playlist destacada');
+            body.innerHTML = '<input type="text" placeholder="Buscar…"><div class="pf2-pick-list"><div class="pf2-empty">Cargando tus playlists…</div></div>';
+            var list = body.querySelector('.pf2-pick-list'), input = body.querySelector('input');
+            var all = [];
+            var paint = function () {
+                var q = input.value.trim().toLowerCase();
+                var r = all.filter(function (p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; });
+                list.innerHTML = r.length ? r.map(function (p) {
+                    return '<div class="pf2-pick-row' + (p.id === cur ? ' on' : '') + '" data-id="' + p.id + '">' +
+                        (p.image ? '<img src="' + esc(p.image) + '" alt="">' : '<span style="width:32px;"></span>') +
+                        '<span style="flex:1;">' + esc(p.name) + (p.owner ? ' <small>(de ' + esc(p.owner) + ')</small>' : '') + '</span>' +
+                        '<small>' + p.count + (p.count === 1 ? ' canción' : ' canciones') + '</small></div>';
+                }).join('') : '<div class="pf2-empty">' + (all.length ? 'Ninguna con ese nombre.' : 'No tienes playlists todavía.') + '</div>';
+                list.querySelectorAll('.pf2-pick-row').forEach(function (el) {
+                    el.addEventListener('click', function () { cur = +el.dataset.id; paint(); });
+                });
+            };
+            input.addEventListener('input', paint);
+            pickerFoot(body, '', function () {
+                var p = all.find(function (x) { return x.id === cur; });
+                if (!p) return;
+                sc.config = { id: p.id };
+                sc.data = p;
+            });
+            api('my-playlists').then(function (d) { all = (d && d.playlists) || []; paint(); });
+            input.focus();
+        },
+
+        /* Texto libre: un texto con saltos de línea, sin formato. */
+        text: function (sc) {
+            var body = pickerWindow('Texto libre');
+            body.innerHTML = '<textarea rows="10" maxlength="' + MAX.text + '" style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>';
+            var ta = body.querySelector('textarea');
+            ta.value = sc.config.text || '';
+            var info = pickerFoot(body, '', function () {
+                var t = ta.value.replace(/\r\n?/g, '\n').trim().slice(0, MAX.text);
+                sc.config = { text: t };
+                sc.data = { text: t };
+            });
+            var count = function () { info.textContent = ta.value.length + ' / ' + MAX.text; };
+            ta.addEventListener('input', count);
+            count();
+            ta.focus();
         },
 
         /* Capturas: de la Galería (Google Drive). Sin Drive conectado, pide
@@ -1041,13 +1370,19 @@
                 var r = items.filter(function (it) { return !q || (it.title + ' ' + (it.artist || '')).toLowerCase().indexOf(q) >= 0; });
                 grid.innerHTML = r.length ? r.map(function (it) {
                     var n = sel.indexOf(+it.id) + 1;
-                    var img = isYtThumb(it.image) ? '' : it.image;
+                    var img = isYtThumb(it.image) ? cachedCover(it) : it.image;
                     return '<div class="pf2-pick square' + (n ? ' on' : '') + '" data-id="' + it.id + '" title="' + esc(it.title + (it.artist ? ' — ' + it.artist : '')) + '">' +
                         (img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '<div class="pf2-pick-ph"></div>') +
                         (n ? '<span class="pf2-pick-n">' + n + '</span>' : '') +
                         '<div class="pf2-pick-t">' + esc(it.title) + '</div></div>';
                 }).join('') : '<div class="pf2-empty">No tienes música en tu lista.</div>';
                 grid.querySelectorAll('.pf2-pick').forEach(function (el) {
+                    /* Sin portada guardada (o era la miniatura de YouTube):
+                       la del álbum, como en el expositor, solo al verse. */
+                    if (el.querySelector('.pf2-pick-ph')) {
+                        var it = items.find(function (x) { return String(x.id) === el.dataset.id; });
+                        if (it) coverWhenVisible(it, el);
+                    }
                     el.addEventListener('click', function () {
                         var id = +el.dataset.id, k = sel.indexOf(id);
                         if (k >= 0) sel.splice(k, 1); else if (sel.length < MAX.music) sel.push(id);
@@ -1065,7 +1400,7 @@
                     var prev = (sc.data || []).find(function (d) { return d && d.id === id; });
                     return { id: id, title: it.title, artist: it.artist || '', type: it.type || 'song', ytId: it.ytId || '',
                              ytPlaylistId: it.ytPlaylistId || '', spotifyAlbumId: it.spotifyAlbumId || '',
-                             cover: (prev && prev.cover) || (isYtThumb(it.image) ? '' : (it.image || '')) };
+                             cover: (prev && prev.cover) || (isYtThumb(it.image) ? cachedCover(it) : (it.image || '')) };
                 }).filter(Boolean);
             });
             paint();

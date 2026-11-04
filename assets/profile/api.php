@@ -21,7 +21,9 @@
    POST  ?action=wall-comment          { user, text }        (perfil nuevo: perfil2.php)
    POST  ?action=delete-wall-comment   { id }
    POST  ?action=save-showcases        { showcases: [{type, config}] }
-   GET   ?action=game-catalog&q=…
+   GET   ?action=game-catalog&q=…[&cat=movies|series|books]
+   GET   ?action=my-playlists          (Playlist destacada)
+   GET   ?action=steam-game-match&title=…   (Juego destacado)
    GET   ?action=my-screenshots
    POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
    POST  ?action=steam-disconnect      {}                    (Steam: steam.php)
@@ -2357,10 +2359,28 @@ case 'save-showcases': {
 }
 
 /* Juegos registrados en las listas/reseñas de todos (para "Juegos
-   favoritos"), con búsqueda por título. */
+   favoritos"), con búsqueda por título. Con &cat=movies|series|books, lo
+   mismo para películas, series y libros favoritos. */
 case 'game-catalog': {
     require_once __DIR__ . '/perfil2.php';
-    jsonResponse(['ok' => true, 'games' => pf2_gameCatalog($pdo, (string)($_GET['q'] ?? ''))]);
+    $cat = (string)($_GET['cat'] ?? 'games');
+    jsonResponse(['ok' => true, 'games' => pf2_gameCatalog($pdo, (string)($_GET['q'] ?? ''), 30, $cat)]);
+}
+
+/* Mis playlists (propias y en las que colaboro), para "Playlist destacada". */
+case 'my-playlists': {
+    require_once __DIR__ . '/perfil2.php';
+    jsonResponse(['ok' => true, 'playlists' => pf2_myPlaylists($pdo, pf_uid($pdo, $userKey))]);
+}
+
+/* Juego destacado: el juego de mi Steam que corresponde a un título del
+   catálogo (para elegir sus logros). */
+case 'steam-game-match': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '' || steam_key() === '') jsonResponse(['ok' => true, 'steam' => null]);
+    jsonResponse(['ok' => true, 'steam' => steam_featured($sid, steam_owned($sid), (string)($_GET['title'] ?? ''), [])]);
 }
 
 /* Mis capturas (para elegir las del expositor). */
