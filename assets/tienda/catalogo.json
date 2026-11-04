@@ -15,6 +15,11 @@
     { "id": "perfil",     "nombre": "Perfil",     "icono": "assets/img/appIcons/profileIcon.png" }
   ],
   "objetos": [
+    { "categoria": "discord", "slug": "discord-1", "nombre": "Tulon",                     "descripcion": "Placeholder de prueba — primer item de la tienda.", "precio": 200,  "icono": "🎁", "discord_role_id": "858965703708639262" },
+    { "categoria": "discord", "slug": "discord-2", "nombre": "Mentalidad de Asperger",    "descripcion": "Placeholder de prueba — segundo item de la tienda.", "precio": 500,  "icono": "🧩", "discord_role_id": "873153444528132107" },
+    { "categoria": "discord", "slug": "discord-3", "nombre": "Mentalidad de Speedrunner", "descripcion": "Placeholder de prueba — tercer item de la tienda.", "precio": 1000, "icono": "⭐", "discord_role_id": "873152655269195826" },
+    { "categoria": "discord", "slug": "discord-4", "nombre": "La Forma Final",            "descripcion": "Placeholder de prueba — cuarto item de la tienda.", "precio": 2000, "icono": "🏆", "discord_role_id": "1233425443244347492" },
+
     { "categoria": "haros", "slug": "green",  "nombre": "Verde",    "descripcion": "Haro verde clásico. Lo tienes por defecto.", "precio": 0 },
     { "categoria": "haros", "slug": "yellow", "nombre": "Amarillo", "descripcion": "Haro amarillo", "precio": 200 },
     { "categoria": "haros", "slug": "purple", "nombre": "Morado",   "descripcion": "Haro Morado",   "precio": 200 },
