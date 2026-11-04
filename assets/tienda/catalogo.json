@@ -20,6 +20,8 @@
     { "categoria": "discord", "slug": "discord-3", "nombre": "Mentalidad de Speedrunner", "descripcion": "Placeholder de prueba — tercer item de la tienda.", "precio": 1000, "icono": "⭐", "discord_role_id": "873152655269195826" },
     { "categoria": "discord", "slug": "discord-4", "nombre": "La Forma Final",            "descripcion": "Placeholder de prueba — cuarto item de la tienda.", "precio": 2000, "icono": "🏆", "discord_role_id": "1233425443244347492" },
 
+     {"categoria": "interfaces", "slug": "kawaii", "nombre": "MelonOS Overdose", "descripcion": "Interfaz kawaii completa: melones, sakura, glitter y cero arrepentimientos. Reemplaza todo el look del sistema.", "precio": 1000, "icono": "🍉"},
+
     { "categoria": "haros", "slug": "green",  "nombre": "Verde",    "descripcion": "Haro verde clásico. Lo tienes por defecto.", "precio": 0 },
     { "categoria": "haros", "slug": "yellow", "nombre": "Amarillo", "descripcion": "Haro amarillo", "precio": 200 },
     { "categoria": "haros", "slug": "purple", "nombre": "Morado",   "descripcion": "Haro Morado",   "precio": 200 },
