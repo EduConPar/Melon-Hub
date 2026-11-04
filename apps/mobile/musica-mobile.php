@@ -118,6 +118,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="../../assets/css/98.css">
     <link rel="stylesheet" href="../../assets/css/tokens.css">
     <link rel="stylesheet" href="../../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <script src="../../assets/js/icon-pack.js"></script>
     <script src="../../assets/js/melon-links.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-links.js') ?>"></script>
@@ -200,6 +203,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                  2px  2px 0 var(--bezel-light-2, #dfdfdf);
         }
         .mu-pl-collab-av:last-child { margin-left: 0; }
+        /* Con foto va dentro de .mu-pl-collab-wrap (lleva el marco de
+           perfil): el solape pasa al envoltorio. */
+        .mu-pl-collab-wrap { margin-left: -10px; }
+        .mu-pl-collab-wrap:last-child { margin-left: 0; }
+        .mu-pl-collab-wrap > .mu-pl-collab-av { margin-left: 0; }
         .mu-pl-collab-more {
             background: var(--btn-bg, silver);
             color: var(--text, #000);
@@ -1567,7 +1575,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 
         <!-- Header: icono música + título + contador de playlists -->
         <div class="mh-userbar">
-            <div class="mh-userbar-avatar">
+            <div class="mh-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil (melon-marcos.js) */ ?>
                 <?php if ($userImg): ?>
                     <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                 <?php else: ?>
@@ -1876,6 +1884,14 @@ function userAvatarByLabel(label) {
     }
     return null;
 }
+/* user_key por LABEL (track.addedBy): para el marco de perfil de su foto. */
+function userKeyByLabel(label) {
+    if (!label) return '';
+    for (var i = 0; i < USERS.length; i++) {
+        if (USERS[i].label === label) return USERS[i].key || '';
+    }
+    return '';
+}
 function userAvatarByKey(key) {
     if (!key) return null;
     for (var i = 0; i < USERS.length; i++) {
@@ -2003,7 +2019,7 @@ function renderPlaylists() {
                 var img = userAvatarByKey(ck);
                 var lbl = userLabelByKey(ck);
                 avatarsHtml += img
-                    ? '<img class="mu-pl-collab-av" src="' + esc(img) + '" alt="' + esc(lbl) + '" title="' + esc(lbl) + '">'
+                    ? '<span class="mh-marco-av mu-pl-collab-wrap" data-marco-user="' + esc(ck) + '"><img class="mu-pl-collab-av" src="' + esc(img) + '" alt="' + esc(lbl) + '" title="' + esc(lbl) + '"></span>'
                     : '<div class="mu-pl-collab-av mu-pl-collab-av-ph" title="' + esc(lbl) + '">' + esc(lbl.substring(0, 1)) + '</div>';
             });
             if (avatarsToShow.length > 4) {
@@ -2043,7 +2059,7 @@ function renderPlaylists() {
                 var addImg = userAvatarByLabel(tr.addedBy);
                 addedByHtml = '<div class="mu-track-addedby" title="Añadido por ' + esc(tr.addedBy) + '">' +
                               (addImg
-                                ? '<img class="mu-track-addedby-av" src="' + esc(addImg) + '" alt="">'
+                                ? '<span class="mh-marco-av" data-marco-user="' + esc(userKeyByLabel(tr.addedBy)) + '"><img class="mu-track-addedby-av" src="' + esc(addImg) + '" alt=""></span>'
                                 : '<span class="mu-track-addedby-av mu-track-addedby-av-ph">' + esc(tr.addedBy.substring(0,1)) + '</span>') +
                               '</div>';
             }
@@ -4073,7 +4089,7 @@ function muOpenCollabs(idx) {
         var img = u.img;
         bodyHtml += '<div class="mu-modal-list-item">' +
                       (img
-                        ? '<img class="item-icon" src="' + esc(img) + '" alt="">'
+                        ? '<span class="mh-marco-av" data-marco-user="' + esc(u.key) + '"><img class="item-icon" src="' + esc(img) + '" alt=""></span>'
                         : '<div class="item-icon">' + esc(u.label.substring(0,1)) + '</div>') +
                       '<div class="item-main">' + esc(u.label) + '</div>' +
                       (isCollab

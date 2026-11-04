@@ -2051,6 +2051,8 @@ window.notifSystem = (function() {
             var topRow = document.createElement('div');
             topRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;';
             var avWrap = document.createElement('div'); avWrap.className = 'collab-avatar-wrap';
+            /* opts.senderKey (user_key de quien lo manda): su marco de perfil. */
+            if (opts.senderKey) avWrap.setAttribute('data-marco-user', opts.senderKey);
             var avImg = document.createElement('img'); avImg.className = 'collab-avatar-img';
             avImg.src = opts.senderImage;
             avWrap.appendChild(avImg); topRow.appendChild(avWrap);

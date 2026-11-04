@@ -2525,6 +2525,7 @@ function updateTrackUI(index)
         if (adderInfo && adderInfo.img) {
             var wrap = document.createElement('div');
             wrap.className = 'player-addedby-wrap';
+            wrap.setAttribute('data-marco-user', adderInfo.key);   /* marco (melon-marcos.js) */
             wrap.title = adderInfo.label;
             var img = document.createElement('img');
             img.className = 'player-addedby-img';
@@ -6042,6 +6043,7 @@ var addTrackCallback = null;
                     row.className = 'collab-user-row';
                     var avatarWrap = document.createElement('div');
                     avatarWrap.className = 'collab-avatar-wrap';
+                    avatarWrap.setAttribute('data-marco-user', u.key);   /* marco (melon-marcos.js) */
                     var uInfo = usersInfo[u.key];
                     if (uInfo && uInfo.img) {
                         var avatarImg = document.createElement('img');
@@ -6463,6 +6465,7 @@ function relTime(sentAt) {
                 title:    TITLES[inv.type] || 'Invitación de playlist',
                 message:  messageFor(inv),
                 senderImage: senderImg,
+                senderKey:   inv.fromUser,            /* su marco */
                 sentAt:   inv.sentAt,
                 onAccept: function() {
                     serverPost(inv.id, 'accept')

@@ -71,6 +71,9 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
     <link rel="stylesheet" href="../assets/css/98.css">
     <link rel="stylesheet" href="../assets/css/tokens.css">
     <link rel="stylesheet" href="../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/css/marcos.css') ?>">
+    <script src="../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <!-- Icon pack swap — debe cargar antes del primer render. -->
     <script src="../assets/js/icon-pack.js"></script>
@@ -260,6 +263,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                  2px  2px 0 var(--bezel-light-2);
             margin:2px;
         }
+        /* Con foto, va dentro de .lib-author-av, que lleva el marco de
+           perfil del autor (data-marco-user, melon-marcos.js). */
+        .lib-author-av { display:block; width:24px; height:24px; margin:2px; flex-shrink:0; }
+        .lib-author-av > .lib-author-img { margin:0; }
         .lib-author-ph {
             width:24px; height:24px; flex-shrink:0; display:flex;
             align-items:center; justify-content:center; font-size:14px;
@@ -1947,7 +1954,7 @@ function loadLibrary(){
                 author.className = 'lib-author';
                 author.title = 'Ver el perfil de ' + it.label;
                 var imgHtml = it.image
-                    ? '<img class="lib-author-img" src="../' + it.image + '" alt="">'
+                    ? '<span class="lib-author-av" data-marco-user="' + escapeHtml(it.userKey || '') + '"><img class="lib-author-img" src="../' + it.image + '" alt=""></span>'
                     : '<span class="lib-author-ph">👤</span>';
                 author.innerHTML = imgHtml + '<span class="lib-author-name">' + escapeHtml(it.label) + '</span>';
                 author.addEventListener('click', function(e){

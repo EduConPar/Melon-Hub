@@ -1366,6 +1366,7 @@ var PROFILE_USERS = <?php
                         if (!uInfo) return;
                         var avFrame = document.createElement('div');
                         avFrame.className = 'profile-avatar-frame';
+                        avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                         avFrame.title = uInfo.label;
                         if (uInfo.image) {
                             var avImg = document.createElement('img');
@@ -1540,6 +1541,7 @@ var PROFILE_USERS = <?php
                 title:       ITEM_TITLES[notif.type] || 'Notificación',
                 message:     msg,
                 senderImage: senderImg,
+                senderKey:   notif.fromUser,          /* su marco */
                 sentAt:      notif.sentAt,
                 onAccept: function() {
                     postItemAction(notif.id, 'accept')
@@ -1583,6 +1585,7 @@ var PROFILE_USERS = <?php
         row.className = 'collab-user-row';
         var avWrap = document.createElement('div');
         avWrap.className = 'collab-avatar-wrap';
+        avWrap.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
         if (uInfo.image) {
             var avImg = document.createElement('img');
             avImg.className = 'collab-avatar-img';
@@ -2179,6 +2182,7 @@ var PROFILE_USERS = <?php
                     if (!uInfo) return;
                     var avFrame = document.createElement('div');
                     avFrame.className = 'profile-avatar-frame';
+                    avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                     avFrame.title = uInfo.label;
                     if (uInfo.image) {
                         var avImg = document.createElement('img');
@@ -2952,6 +2956,7 @@ var PROFILE_USERS = <?php
             row.className = 'profile-notif-row' + (n.read ? '' : ' unread');
             var avFrame = document.createElement('div');
             avFrame.className = 'profile-avatar-frame profile-notif-av';
+            avFrame.setAttribute('data-marco-user', n.fromUser);   /* marco (melon-marcos.js) */
             if (u.image) {
                 var img = document.createElement('img');
                 img.src = u.image; img.alt = u.label;
@@ -4343,6 +4348,7 @@ var PROFILE_USERS = <?php
                     row.className = 'melon-detail-row';
                     var avFrame = document.createElement('div');
                     avFrame.className = 'profile-avatar-frame melon-detail-av';
+                    if (rev.user) avFrame.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
                     if (rev.userImg) { var img = document.createElement('img'); img.src = rev.userImg; img.alt = rev.userLabel; avFrame.appendChild(img); }
                     else { avFrame.innerHTML = '<div class="profile-avatar-placeholder">👤</div>'; }
                     row.appendChild(avFrame);
@@ -4718,6 +4724,7 @@ var PROFILE_USERS = <?php
             row.className = 'melon-detail-row';
             var avFrame = document.createElement('div');
             avFrame.className = 'profile-avatar-frame melon-detail-av';
+            if (rev.user) avFrame.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
             if (rev.userImg) {
                 var img = document.createElement('img');
                 img.src = rev.userImg; img.alt = rev.userLabel;
@@ -6429,6 +6436,7 @@ var PROFILE_USERS = <?php
                     collabKeys.forEach(function(uKey) {
                         var uInfo = PROFILE_USERS[uKey]; if (!uInfo) return;
                         var avFrame = document.createElement('div'); avFrame.className = 'profile-avatar-frame'; avFrame.title = uInfo.label;
+                        avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                         if (uInfo.image) { var avImg = document.createElement('img'); avImg.src = uInfo.image; avImg.alt = uInfo.label; avFrame.appendChild(avImg); }
                         strip.appendChild(avFrame);
                     });
@@ -6625,6 +6633,7 @@ var PROFILE_USERS = <?php
                 collabKeys.forEach(function(uKey) {
                     var uInfo = PROFILE_USERS[uKey]; if (!uInfo) return;
                     var av = document.createElement('div'); av.className = 'profile-avatar-frame music-list-av'; av.title = uInfo.label;
+                    av.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                     if (uInfo.image) { var avImg = document.createElement('img'); avImg.src = uInfo.image; avImg.alt = uInfo.label; av.appendChild(avImg); }
                     strip.appendChild(av);
                 });

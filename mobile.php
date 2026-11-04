@@ -310,6 +310,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="assets/css/98.css">
     <link rel="stylesheet" href="assets/css/tokens.css">
     <link rel="stylesheet" href="assets/css/base.css?v=<?= filemtime(__DIR__ . '/assets/css/base.css') ?>">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?= @filemtime(__DIR__ . '/assets/css/marcos.css') ?>">
+    <script src="assets/js/melon-marcos.js?v=<?= @filemtime(__DIR__ . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <!-- Icon pack swap — debe cargar antes del primer render. -->
     <script src="assets/js/icon-pack.js"></script>
@@ -1230,7 +1233,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 
         <!-- Header: avatar + saludo + reloj -->
         <div class="mh-userbar">
-            <div class="mh-userbar-avatar">
+            <div class="mh-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil (melon-marcos.js) */ ?>
                 <?php if ($userImg): ?>
                     <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                 <?php else: ?>

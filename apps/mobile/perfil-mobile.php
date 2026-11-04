@@ -167,6 +167,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="../../assets/css/98.css">
     <link rel="stylesheet" href="../../assets/css/tokens.css">
     <link rel="stylesheet" href="../../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <?php /* Override del icon pack ANTES de cargar icon-pack.js. Sólo
               cuando visitamos a otro user. */ ?>
@@ -1480,7 +1483,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <div class="mh-userbar pf-userbar">
             <button class="button pf-hamburger" id="pf-hamburger" type="button" aria-label="Menú">☰</button>
             <div class="pf-userbar-left">
-                <div class="mh-userbar-avatar" id="pf-userbar-avatar">
+                <div class="mh-userbar-avatar" id="pf-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil: cambia con el perfil que se ve */ ?>
                     <?php if ($userImg): ?>
                         <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                     <?php else: ?>
@@ -2709,7 +2712,7 @@ function openEpReviewsModal(ep) {
                 if (src && src.indexOf('/') !== 0 && src.indexOf('http') !== 0 && src.indexOf('../') !== 0) src = '../../' + src;
                 var av = src ? '<img src="' + esc(src) + '" alt="">' : '👤';
                 return '<div class="pf-melon-review-row">' +
-                    '<div class="pf-melon-review-av">' + av + '</div>' +
+                    '<div class="pf-melon-review-av" data-marco-user="' + esc(rev.user || '') + '">' + av + '</div>' +
                     '<div class="pf-melon-review-info">' +
                         '<div class="pf-melon-review-hdr"><strong>' + esc(rev.userLabel || '') + '</strong> ' + makeStarsHtml(rev.stars, 5) + ' <span class="pf-melon-review-num">' + rev.stars + '</span></div>' +
                         (rev.comment ? '<div class="pf-melon-review-comment">" ' + esc(rev.comment) + ' "</div>' : '') +
@@ -3056,6 +3059,7 @@ function openCollabDialog(item, origIdx, cat) {
         row.className = 'pf-collab-row';
         var av = document.createElement('div');
         av.className = 'pf-collab-av';
+        av.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
         if (uInfo.image) {
             var im = document.createElement('img');
             im.src = uInfo.image; im.alt = uInfo.label;
@@ -4230,6 +4234,7 @@ function showMelonDetails(item) {
 
         var av = document.createElement('div');
         av.className = 'pf-melon-review-av';
+        if (rev.user) av.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
         if (rev.userImg) {
             /* getUserImage devuelve la ruta relativa al root del proyecto
                ("assets/img/Sami.jpg"); perfil-mobile vive en /apps/mobile/
@@ -4686,7 +4691,7 @@ function renderSocial() {
            lo gestiona. Solo dejamos el avatar + nombre + presencia. */
         html +=
             '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                '<div class="pf-friend-av has-presence-dot">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
+                '<div class="pf-friend-av has-presence-dot" data-marco-user="' + esc(uKey) + '">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
                 '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
             '</div>';
     });
@@ -4729,7 +4734,7 @@ function openExploreDialog() {
                 : '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
             listHtml +=
                 '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                    '<div class="pf-friend-av has-presence-dot">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
+                    '<div class="pf-friend-av has-presence-dot" data-marco-user="' + esc(uKey) + '">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
                     '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
                 '</div>';
         });
@@ -4843,6 +4848,7 @@ function updateHeaderForViewing() {
             avatarEl.innerHTML = '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
         }
         attachPresenceDot(avatarEl, STATE.viewingUser);
+        avatarEl.setAttribute('data-marco-user', STATE.viewingUser);   /* marco (melon-marcos.js) */
     } else {
         nameEl.textContent  = USER_LABEL;
         greetEl.textContent = 'Perfil de';
@@ -4853,6 +4859,7 @@ function updateHeaderForViewing() {
             avatarEl.innerHTML = '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
         }
         attachPresenceDot(avatarEl, USER_KEY);
+        avatarEl.setAttribute('data-marco-user', USER_KEY);   /* marco (melon-marcos.js) */
     }
     toggleProfileActions();
 }
@@ -4918,7 +4925,7 @@ function openChat(uKey) {
         '<div class="window pf-modal pf-chat-modal">' +
             '<div class="title-bar">' +
                 '<div class="title-bar-text" style="display:flex;align-items:center;gap:6px;">' +
-                    '<span id="pf-chat-title-av" style="position:relative;width:18px;height:18px;display:inline-block;background:var(--inset-bg,#fff);box-shadow:-1px -1px 0 var(--bezel-dark-1,#0a0a0a), 1px 1px 0 var(--bezel-light-1,#fff);flex-shrink:0;">' + avHtml + '</span>' +
+                    '<span id="pf-chat-title-av" data-marco-user="' + esc(uKey) + '" style="position:relative;width:18px;height:18px;display:inline-block;background:var(--inset-bg,#fff);box-shadow:-1px -1px 0 var(--bezel-dark-1,#0a0a0a), 1px 1px 0 var(--bezel-light-1,#fff);flex-shrink:0;">' + avHtml + '</span>' +
                     '<span>' + esc(uInfo.label) + '</span>' +
                 '</div>' +
                 '<div class="title-bar-controls">' +
