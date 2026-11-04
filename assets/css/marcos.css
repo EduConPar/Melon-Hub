@@ -7,9 +7,16 @@
    choca con el ::after (el ✏ del perfil en edición).
    Los de imagen solo necesitan esta base: el background-image lo añade
    melon-marcos.js. Los de CSS ("marco": "css" en catalogo.json) tienen
-   su regla aquí abajo, con el slug. */
+   su regla aquí abajo, con el slug.
+
+   Cuánto sobresale cada marco por arriba / derecha / abajo / izquierda
+   va en --mk-t / --mk-r / --mk-b / --mk-l (fracción del lado de la foto;
+   de serie 0.14). El ::before se coloca con ellas y los sitios que
+   tienen que dejarle hueco (cabecera del perfil, selector de marco en
+   perfil.css) las usan para sus márgenes: así no se corta ni tapa nada. */
 
 [data-marco] {
+    --mk-t: .14; --mk-r: .14; --mk-b: .14; --mk-l: .14;
     /* El marco sale por fuera del contenedor: si recortara, no se vería. */
     overflow: visible !important;
 }
@@ -18,9 +25,10 @@
 [data-marco]::before {
     content: '';
     position: absolute;
-    /* El hueco de la foto ocupa el centro y el marco sobresale un 14 %
-       por cada lado (el % es del ancho del contenedor). */
-    top: -14%; left: -14%; right: -14%; bottom: -14%;
+    /* El hueco de la foto ocupa el centro y el marco sobresale lo que
+       digan --mk-* (las fotos son cuadradas: el % vale igual en alto). */
+    top: calc(var(--mk-t) * -100%); right: calc(var(--mk-r) * -100%);
+    bottom: calc(var(--mk-b) * -100%); left: calc(var(--mk-l) * -100%);
     pointer-events: none;
     z-index: 2;
     background: center / 100% 100% no-repeat;
@@ -54,6 +62,8 @@
     -webkit-mask-composite: xor;
             mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
+[data-marco="marco-bi"], [data-marco="marco-gay"], [data-marco="marco-trans"],
+[data-marco="marco-nobinario"], [data-marco="marco-lesbiana"] { --mk-t: .08; --mk-r: .08; --mk-b: .08; --mk-l: .08; }
 /* Bisexual: 40 / 20 / 40. */
 [data-marco="marco-bi"]::before {
     background: linear-gradient(#d60270 0 40%, #9b4f96 40% 60%, #0038a8 60% 100%);
@@ -88,45 +98,38 @@
    (barra de título) y la derecha (barra de desplazamiento). Medidas de
    marco-paint.png: hueco de 120 px y bordes 16 / 13 / 26 / 34 px.
    Encoge suave: a píxeles se perderían rayas al hacerse pequeño. */
-[data-marco="marco-paint"]::before {
-    top: -13.33%; right: -10.83%; bottom: -21.67%; left: -28.33%;
-    image-rendering: auto;
-}
+[data-marco="marco-paint"] { --mk-t: .1333; --mk-r: .1083; --mk-b: .2167; --mk-l: .2833; }
+[data-marco="marco-paint"]::before { image-rendering: auto; }
 
 /* Polaroid: borde de abajo más ancho, otra polaroid detrás, clip arriba
    y cinta en la esquina (marco-polaroid.png: hueco de 150 px y bordes
    28 / 26 / 52 / 22 px). La cinta y el clip tapan un poco la foto. */
-[data-marco="marco-polaroid"]::before {
-    top: -18.67%; right: -17.33%; bottom: -34.67%; left: -14.67%;
-    image-rendering: auto;
-}
+[data-marco="marco-polaroid"] { --mk-t: .1867; --mk-r: .1733; --mk-b: .3467; --mk-l: .1467; }
+[data-marco="marco-polaroid"]::before { image-rendering: auto; }
 
 /* Ventana Win98: barra de título alta arriba y bordes finos
    (marco-98.png: hueco de 150 px y bordes 32 / 6 / 6 / 6 px). */
-[data-marco="marco-98"]::before {
-    top: -21.33%; right: -4%; bottom: -4%; left: -4%;
-    image-rendering: auto;
-}
+[data-marco="marco-98"] { --mk-t: .2133; --mk-r: .04; --mk-b: .04; --mk-l: .04; }
+[data-marco="marco-98"]::before { image-rendering: auto; }
 
 /* Ventana de MelonOS Overdose (interfaz kawaii): borde morado, franja
    lavanda y la barra de título y el cuerpo como dos tarjetas
    (marco-overdose.png: hueco de 150 px y bordes 42 / 8 / 8 / 8 px). */
-[data-marco="marco-overdose"]::before {
-    top: -28%; right: -5.33%; bottom: -5.33%; left: -5.33%;
-    image-rendering: auto;
-}
+[data-marco="marco-overdose"] { --mk-t: .28; --mk-r: .0533; --mk-b: .0533; --mk-l: .0533; }
+[data-marco="marco-overdose"]::before { image-rendering: auto; }
 
 /* Gatito (pixel art): orejas que salen por arriba y bigotes por los
    lados (marco-gatito.png: hueco de 100 px y bordes 23 / 17 / 7 / 17 px).
    Encoge suave: a píxeles se perderían el contorno y los bigotes. */
-[data-marco="marco-gatito"]::before {
-    top: -23%; right: -17%; bottom: -7%; left: -17%;
-    image-rendering: auto;
-}
+[data-marco="marco-gatito"] { --mk-t: .23; --mk-r: .17; --mk-b: .07; --mk-l: .17; }
+[data-marco="marco-gatito"]::before { image-rendering: auto; }
 
 /* Fantasma (animado, solo CSS): un fantasma de sábana que da la vuelta
    entera a la foto, siempre de pie (sin girar en las esquinas). El SVG lleva dentro su propia animación (flota arriba y
-   abajo, ondea el bajo de la sábana y parpadea). */
+   abajo, ondea el bajo de la sábana y parpadea). Su recorrido (centro
+   a un 6 % de la foto, 36 × 41 % de tamaño) sobresale hasta ~27 % por
+   arriba y abajo y ~24 % por los lados. */
+[data-marco="marco-fantasma"] { --mk-t: .27; --mk-r: .24; --mk-b: .27; --mk-l: .24; }
 [data-marco="marco-fantasma"]::before {
     right: auto; bottom: auto;
     left: 0; top: -6%;

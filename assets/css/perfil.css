@@ -2647,6 +2647,12 @@
 #pf2-head .profile-avatar-frame { width: 84px; height: 84px; padding: 3px; box-sizing: border-box; background: var(--win-bg);
     box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
 #pf2-head .profile-avatar-img { width: 100%; height: 100%; }
+/* Con marco (assets/css/marcos.css): la foto llena el hueco (sin el borde
+   hundido, que se veía entre el marco y la foto) y se le deja alrededor
+   lo que sobresale el marco (--mk-*), para que no se corte por arriba ni
+   tape el nombre. */
+#pf2-head .profile-avatar-frame[data-marco] { padding: 0; background: none; box-shadow: none;
+    margin: calc(84px * var(--mk-t)) calc(84px * var(--mk-r)) calc(84px * var(--mk-b)) calc(84px * var(--mk-l)); }
 #pf2-head .profile-avatar-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
 .pf2-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 /* Hueco para los botones de arriba a la derecha (solo en las dos primeras líneas). */
@@ -2822,11 +2828,17 @@
     max-width: 240px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000; }
 #pf2-steam-ctl .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; text-shadow: none; }
 .pf2-marco-btn { order: -1; }
-/* Selector de marco: la foto con cada marco (que sobresale: más hueco). */
-.pf2-marco-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px; padding: 12px; }
-.pf2-marco-prev { display: block; width: 64px; height: 64px; margin: 0 auto 14px; }
+/* Selector de marco: la foto con cada marco. Todas las fotos a la misma
+   altura, con sitio arriba y abajo para el marco que más sobresale
+   (Overdose 28 % por arriba, polaroid 35 % por abajo, de 64 px), y cada
+   una movida a un lado lo justo para que su marco quede centrado en la
+   tarjeta (--mk-l / --mk-r de marcos.css). */
+.pf2-marco-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px; padding: 12px; }
+.pf2-marco-prev { display: block; width: 64px; height: 64px; margin: 0 auto 26px; }
+.pf2-marco-prev[data-marco] { margin-left: calc(50% - 32px + 32px * (var(--mk-l) - var(--mk-r))); margin-right: 0; }
 .pf2-marco-prev > img, .pf2-marco-prev > .pf2-pick-ph { width: 64px; height: 64px; object-fit: cover; }
-.pf2-pick-marco { text-align: center; padding: 10px 2px 2px; }
+.pf2-pick-marco { text-align: center; padding: 20px 2px 2px; }
+.pf2-pick-marco .pf2-pick-t { white-space: normal; overflow: visible; }
 .pf2-steam-warn { width: 100%; text-align: right; color: #ffd34d; }
 .pf2-ach { display: flex; gap: 8px; align-items: flex-start; }
 .pf2-ach-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
