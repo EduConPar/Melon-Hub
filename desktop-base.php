@@ -879,7 +879,7 @@ window.DesktopState.whenReady = function(cb){
 </div>
 
 <!-- JUEGOS WINDOW (apps/juegos.php: de momento, Wordelon) -->
-<div class="window" id="juegos-window" style="display:none; position:fixed; left:calc(50vw - 230px); top:6vh; width:460px; height:640px; max-height:90vh; z-index:500; flex-direction:column;">
+<div class="window" id="juegos-window" style="display:none; position:fixed; left:calc(50vw - 250px); top:6vh; width:500px; height:640px; max-height:90vh; z-index:500; flex-direction:column;">
     <div class="title-bar" id="juegos-titlebar">
         <div class="title-bar-text"><?php echo appTitleIcon('juegosIcon', '🎮'); ?>Juegos</div>
         <div class="title-bar-controls">

@@ -94,9 +94,14 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 
         /* ── Wordelon ─────────────────────────────────────────────── */
         #jg-wordelon { padding: 8px 12px 12px; align-items: center; }
-        .wd-top { display: flex; align-items: center; gap: 8px; width: 100%; }
+        /* Tres columnas: las de los lados iguales (1fr) para que el título
+           quede en el centro de la ventana aunque "< Juegos" sea más ancho
+           que "?" (con flex se iba a la derecha). */
+        .wd-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; width: 100%; }
         .wd-top button { min-width: 0; }
-        .wd-head { flex: 1; text-align: center; }
+        #wd-back, #st-back { justify-self: start; }
+        .wd-top-right { justify-self: end; display: flex; gap: 4px; }
+        .wd-head { text-align: center; }
         .wd-title { font-weight: bold; font-size: 13px; }
         .wd-date  { color: var(--text-muted, #444); margin-top: 2px; }
         .wd-help  { width: 23px; padding: 0; }
@@ -160,6 +165,19 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .wd-end b { font-size: 12px; }
         .pt-ic { width: 14px; height: 14px; object-fit: contain; image-rendering: pixelated; vertical-align: middle; }
 
+        /* ── Estadísticas de hoy: la misma imagen que publica el bot
+           (assets/juegos/wordelon-img.php), cada tarjeta con la interfaz
+           y el tema de su jugador. 2 por fila = 464 px, cabe sin encoger
+           en la ventana de 500. */
+        /* Sin margen a los lados en la zona de la imagen: con la barra de
+           scroll (16 px) quedan 476 px para los 464 de la imagen. */
+        #jg-stats { padding: 8px 0 0; align-items: center; }
+        #jg-stats .wd-top { padding: 0 12px; box-sizing: border-box; }
+        .st-sum { margin: 8px 12px; text-align: center; font-weight: bold; }
+        .st-scroll { flex: 1; overflow: auto; width: 100%; text-align: center; }
+        .st-scroll img { display: block; margin: 0 auto; image-rendering: pixelated; }
+        .st-empty { margin-top: 30px; text-align: center; color: var(--text-muted, #444); }
+
         /* Ventanita Win98 de "Cómo se juega". */
         .wd-modal-bg {
             display: none; position: fixed; inset: 0; z-index: 50;
@@ -201,12 +219,31 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             <div class="wd-title" id="wd-title">Wordelon</div>
             <div class="wd-date" id="wd-date"></div>
         </div>
-        <button type="button" class="wd-help" id="wd-help" title="Cómo se juega" aria-label="Cómo se juega">?</button>
+        <div class="wd-top-right">
+            <button type="button" id="wd-stats">Estadísticas</button>
+            <button type="button" class="wd-help" id="wd-help" title="Cómo se juega" aria-label="Cómo se juega">?</button>
+        </div>
     </div>
     <div class="wd-msg" id="wd-msg"></div>
     <div class="wd-board" id="wd-board"></div>
     <div class="wd-kb" id="wd-kb"></div>
     <div class="wd-end" id="wd-end"></div>
+</div>
+
+<!-- ESTADÍSTICAS DE HOY -->
+<div class="jg-view" id="jg-stats">
+    <div class="wd-top">
+        <button type="button" id="st-back">&lt; Wordelon</button>
+        <div class="wd-head">
+            <div class="wd-title" id="st-title">Wordelon</div>
+            <div class="wd-date" id="st-date"></div>
+        </div>
+        <div class="wd-top-right">
+            <button type="button" id="st-reload">Actualizar</button>
+        </div>
+    </div>
+    <div class="st-sum" id="st-sum"></div>
+    <div class="st-scroll" id="st-scroll"></div>
 </div>
 
 <div class="wd-modal-bg" id="wd-modal">
@@ -246,7 +283,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     var $ = function (id) { return document.getElementById(id); };
 
     function show(view) {
-        ['jg-home', 'jg-wordelon'].forEach(function (id) { $(id).classList.toggle('on', id === view); });
+        ['jg-home', 'jg-wordelon', 'jg-stats'].forEach(function (id) { $(id).classList.toggle('on', id === view); });
     }
 
     function api(action, body) {
@@ -450,6 +487,38 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             paintAll();
         });
     }
+
+    /* ── Estadísticas de hoy ── */
+    function cargarStats() {
+        var box = $('st-scroll');
+        $('st-sum').textContent = 'Cargando…';
+        box.innerHTML = '';
+        api('wordelon-hoy').then(function (r) {
+            if (!r || !r.ok) { $('st-sum').textContent = 'No se han podido cargar'; return; }
+            $('st-title').textContent = 'Wordelon #' + r.numero;
+            $('st-date').textContent = fecha(r.dia);
+            $('st-sum').textContent = r.texto;
+            if (!r.jugadores) {
+                box.innerHTML = '<div class="st-empty">Todavía no ha terminado nadie la partida de hoy.</div>';
+                return;
+            }
+            if (!r.imagen) {
+                box.innerHTML = '<div class="st-empty">El servidor no puede dibujar las tarjetas.</div>';
+                return;
+            }
+            var img = new Image();
+            img.alt = 'Resultados de hoy';
+            /* A su tamaño (no se escala): las letras pixel quedan nítidas. */
+            img.onload = function () { img.style.width = img.naturalWidth + 'px'; };
+            img.src = API + '?action=wordelon-hoy-img&cols=2&_=' + Date.now();
+            box.appendChild(img);
+        }).catch(function () { $('st-sum').textContent = 'Sin conexión, prueba otra vez'; });
+    }
+    function abrirStats() { show('jg-stats'); cargarStats(); }
+
+    $('wd-stats').addEventListener('click', abrirStats);
+    $('st-back').addEventListener('click', function () { show('jg-wordelon'); });
+    $('st-reload').addEventListener('click', cargarStats);
 
     $('jg-open-wordelon').addEventListener('click', abrirWordelon);
     $('jg-open-wordelon').addEventListener('keydown', function (e) { if (e.key === 'Enter') abrirWordelon(); });

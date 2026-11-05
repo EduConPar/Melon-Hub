@@ -262,13 +262,16 @@ function wimg_avatar(array $look, string $label, ?string $ruta): GdImage {
     return $out;
 }
 
-/* PNG con todas las tarjetas, o null si no se puede dibujar.
+/* PNG con todas las tarjetas, o null si no se puede dibujar. $porFila:
+   5 en Discord; la pantalla de Estadísticas de la app pide menos para
+   que quepan en la ventana sin encogerse.
    $jugadores: [{uid, label, ruta (foto o null), resultado, filas (pistas)}]. */
-function wimg_render(PDO $pdo, array $jugadores, int $maximo): ?string {
+function wimg_render(PDO $pdo, array $jugadores, int $maximo, int $porFila = WIMG_POR_FILA): ?string {
     if (!wimg_disponible() || !$jugadores) return null;
+    $porFila = max(1, min($porFila, WIMG_POR_FILA));
     $n = count($jugadores);
-    $cols = min($n, WIMG_POR_FILA);
-    $rows = (int)ceil($n / WIMG_POR_FILA);
+    $cols = min($n, $porFila);
+    $rows = (int)ceil($n / $porFila);
     $S = WIMG_ESCALA;
     $W = ($cols * WIMG_W + ($cols - 1) * WIMG_GAP) * $S;
     $H = ($rows * WIMG_H + ($rows - 1) * WIMG_GAP) * $S;
@@ -280,8 +283,8 @@ function wimg_render(PDO $pdo, array $jugadores, int $maximo): ?string {
     foreach (array_values($jugadores) as $i => $j) {
         $look = wimg_look($pdo, (int)$j['uid']);
         [$card, $ax, $ay] = wimg_tarjeta($look, (string)$j['label'], (string)$j['resultado'], $j['filas'], $maximo);
-        $ox = ($i % WIMG_POR_FILA) * (WIMG_W + WIMG_GAP) * $S;
-        $oy = intdiv($i, WIMG_POR_FILA) * (WIMG_H + WIMG_GAP) * $S;
+        $ox = ($i % $porFila) * (WIMG_W + WIMG_GAP) * $S;
+        $oy = intdiv($i, $porFila) * (WIMG_H + WIMG_GAP) * $S;
         imagealphablending($img, false);
         imagecopyresized($img, $card, $ox, $oy, 0, 0, WIMG_W * $S, WIMG_H * $S, WIMG_W, WIMG_H);
         imagedestroy($card);

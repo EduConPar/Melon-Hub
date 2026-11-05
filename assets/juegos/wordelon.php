@@ -243,19 +243,19 @@ function wordelon_fechaLarga(string $dia): string {
    tarjeta por jugador con su foto, su interfaz y su tema, por orden de
    llegada) el texto es corto: título, fecha y cuántos han jugado. Si el
    servidor no puede dibujarla (sin GD), va la clasificación en texto. */
-function wordelon_embed(PDO $pdo, string $dia): array {
-    require_once __DIR__ . '/wordelon-img.php';
+/* Los que han terminado ese día, por orden de llegada, listos para
+   wimg_render (también los usa la pantalla de Estadísticas de la app).
+   Devuelve [jugadores, cuántos han acertado]. */
+function wordelon_jugadores(PDO $pdo, string $dia): array {
     $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
-    $st = $pdo->prepare("SELECT p.user_id, p.intentos, p.acertado, p.updated_at, u.label, u.user_key
+    $st = $pdo->prepare("SELECT p.user_id, p.intentos, p.acertado, u.label, u.user_key
                            FROM wordelon_partidas p JOIN usuarios u ON u.id = p.user_id
                           WHERE p.dia = ? AND p.terminado = 1
                           ORDER BY p.updated_at ASC, p.user_id ASC");
     $st->execute([$dia]);
-    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-
     $jug = [];
     $aciertos = 0;
-    foreach ($rows as $r) {
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $int = json_decode((string)$r['intentos'], true) ?: [];
         if ((int)$r['acertado']) $aciertos++;
         $label = (string)($r['label'] ?: $r['user_key']);
@@ -270,15 +270,30 @@ function wordelon_embed(PDO $pdo, string $dia): array {
             'filas'     => array_map(fn($w) => wordelon_evaluar($w, $sol), $int),
         ];
     }
+    return [$jug, $aciertos];
+}
+
+/* Texto "N personas han jugado · M la han acertado". */
+function wordelon_resumenTexto(int $n, int $aciertos): string {
+    return $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
+         . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado');
+}
+
+/* Mensaje del día: [embed, png, n]. Con imagen (wordelon-img.php: una
+   tarjeta por jugador con su foto, su interfaz y su tema, por orden de
+   llegada) el texto es corto: título, fecha y cuántos han jugado. Si el
+   servidor no puede dibujarla (sin GD), va la clasificación en texto. */
+function wordelon_embed(PDO $pdo, string $dia): array {
+    require_once __DIR__ . '/wordelon-img.php';
+    $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
+    [$jug, $aciertos] = wordelon_jugadores($pdo, $dia);
 
     $png = null;
     try { $png = wimg_render($pdo, $jug, WORDELON_INTENTOS); }
     catch (Throwable $e) { error_log('[wordelon] imagen: ' . $e->getMessage()); }
 
-    $n = count($rows);
-    $desc = wordelon_fechaLarga($dia) . "\n"
-          . $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
-          . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado')
+    $n = count($jug);
+    $desc = wordelon_fechaLarga($dia) . "\n" . wordelon_resumenTexto($n, $aciertos)
           . "\n**[→ Jugar en Melon Hub](" . WORDELON_WEB . '/)**';
     $embed = [
         'title'       => WORDELON_NOMBRE . ' #' . wordelon_numero($dia),
