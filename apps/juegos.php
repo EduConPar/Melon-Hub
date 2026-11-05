@@ -167,8 +167,8 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 
         /* ── Estadísticas de hoy: la misma imagen que publica el bot
            (assets/juegos/wordelon-img.php), cada tarjeta con la interfaz
-           y el tema de su jugador. 2 por fila = 464 px, cabe sin encoger
-           en la ventana de 500. */
+           y el tema de su jugador, a 1x (tarjetas de 112 px) y con las
+           que quepan por fila. */
         /* Sin margen a los lados en la zona de la imagen: con la barra de
            scroll (16 px) quedan 476 px para los 464 de la imagen. */
         #jg-stats { padding: 8px 0 0; align-items: center; }
@@ -510,7 +510,10 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             img.alt = 'Resultados de hoy';
             /* A su tamaño (no se escala): las letras pixel quedan nítidas. */
             img.onload = function () { img.style.width = img.naturalWidth + 'px'; };
-            img.src = API + '?action=wordelon-hoy-img&cols=2&_=' + Date.now();
+            /* A 1x: tarjetas de 112 px + 8 de separación; tantas por
+               fila como quepan (4 en la ventana de 500). */
+            var cols = Math.max(1, Math.min(5, Math.floor((box.clientWidth - 16 + 8) / 120)));
+            img.src = API + '?action=wordelon-hoy-img&escala=1&cols=' + cols + '&_=' + Date.now();
             box.appendChild(img);
         }).catch(function () { $('st-sum').textContent = 'Sin conexión, prueba otra vez'; });
     }
