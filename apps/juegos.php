@@ -191,7 +191,11 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
            los recuadros (fondo plateado) y los desplegables (blanco). Con
            un tema oscuro no se leían. ── */
         fieldset legend { background: var(--win-bg, silver); color: var(--text, #000); }
-        select { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        /* themes.css usa el atajo `background`, que deja la imagen en
+           "repetir": al pulsar (98.css pone la flecha de :active) salía una
+           fila de flechas. La flecha, una y en la esquina. */
+        select { background-color: var(--input-bg, #fff); color: var(--input-text, #000);
+                 background-repeat: no-repeat; background-position: top 2px right 2px; }
         select option { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
         select:disabled { color: var(--text-muted, grey); }
 
@@ -218,11 +222,11 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         /* Infinito en el menú: tú a la izquierda, los 5 mejores a la derecha. */
         .bm-inf-cols { display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: start; }
         .bm-yo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-        .bm-yo .bm-av { width: 48px; height: 48px; }
+        .bm-yo .bm-av { --av: 48px; }
         /* Rankings: puesto, foto con marco, nombre y valor. */
         .bm-side-tit { font-weight: bold; margin-bottom: 4px; }
         .bm-rank { display: flex; flex-direction: column; gap: 2px; }
-        .bm-rk { display: grid; grid-template-columns: 22px 30px 1fr auto; align-items: center; gap: 6px; padding: 5px 6px; }
+        .bm-rk { display: grid; grid-template-columns: 22px auto 1fr auto; align-items: center; gap: 6px; padding: 5px 6px; }
         .bm-rk .bm-rk-n { text-align: right; color: var(--text-muted, #444); }
         .bm-rk .bm-rk-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .bm-rk .bm-rk-v { font-weight: bold; white-space: nowrap; }
@@ -231,8 +235,17 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .bm-rk-sep { text-align: center; color: var(--text-muted, #444); line-height: 1; }
         .bm-rank-vacio { color: var(--text-muted, #444); padding: 4px 6px; }
         .bm-av {
+            --av: 22px;
             position: relative; display: inline-flex; align-items: center; justify-content: center;
-            width: 22px; height: 22px; background: var(--accent, navy); color: var(--accent-text, #fff); font-weight: bold;
+            width: var(--av); height: var(--av); flex-shrink: 0;
+            background: var(--accent, navy); color: var(--accent-text, #fff); font-weight: bold;
+        }
+        /* Sitio para el marco: lo que sobresale por cada lado (--mk-* de
+           marcos.css, en fracción del lado de la foto), como la cabecera
+           del perfil. Así no se sale de la fila ni del recuadro. */
+        .bm-av[data-marco] {
+            margin: calc(var(--mk-t) * var(--av)) calc(var(--mk-r) * var(--av))
+                    calc(var(--mk-b) * var(--av)) calc(var(--mk-l) * var(--av));
         }
         .bm-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
         /* Al jugar: tablero a la izquierda (centrado) y ranking a la derecha. */
