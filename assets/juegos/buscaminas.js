@@ -520,30 +520,6 @@
         if (juego.estado !== 'jugando') pintaFinal({});
     }
 
-    /* ── Estadísticas ── */
-    function abrirStats() {
-        JG.show('jg-bm-stats');
-        cargarStats();
-    }
-    function cargarStats() {
-        var box = $('bms-scroll');
-        $('bms-sum').textContent = 'Cargando…';
-        box.innerHTML = '';
-        JG.api('bm-hoy').then(function (r) {
-            if (!r || !r.ok) { $('bms-sum').textContent = 'No se han podido cargar'; return; }
-            $('bms-date').textContent = JG.fecha(r.dia);
-            $('bms-sum').textContent = 'Tableros de hoy y récord del infinito';
-            if (!r.jugadores) { box.innerHTML = '<div class="st-empty">Todavía no ha jugado nadie hoy.</div>'; return; }
-            if (!r.imagen) { box.innerHTML = '<div class="st-empty">El servidor no puede dibujar las tarjetas.</div>'; return; }
-            var img = new Image();
-            img.alt = 'Resultados de hoy';
-            img.onload = function () { img.style.width = img.naturalWidth + 'px'; };
-            var cols = Math.max(1, Math.min(5, Math.floor((box.clientWidth - 16 + 8) / 120)));
-            img.src = JG.API + '?action=bm-hoy-img&escala=1&cols=' + cols + '&_=' + Date.now();
-            box.appendChild(img);
-        }).catch(function () { $('bms-sum').textContent = 'Sin conexión, prueba otra vez'; });
-    }
-
     /* Tema oscuro: si el fondo de ventana del tema es oscuro, los
        números van con colores más claros (clase jg-oscuro, juegos.php). */
     function revisarOscuro() {
@@ -578,9 +554,6 @@
     });
     $('bmj-nueva').addEventListener('click', function () { if (juego && juego.modo === 'libre') jugarLibre(juego.nivel); });
     $('bm-libre-jugar').addEventListener('click', function () { jugarLibre(+$('bm-libre-nivel').value); });
-    $('bm-stats').addEventListener('click', abrirStats);
-    $('bms-back').addEventListener('click', abrirMenu);
-    $('bms-reload').addEventListener('click', cargarStats);
     $('bm-help').addEventListener('click', function () { $('bm-modal').classList.add('on'); });
     $('bm-modal-x').addEventListener('click', function () { $('bm-modal').classList.remove('on'); });
     $('bm-modal-ok').addEventListener('click', function () { $('bm-modal').classList.remove('on'); });

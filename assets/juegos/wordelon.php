@@ -288,9 +288,16 @@ function wordelon_embed(PDO $pdo, string $dia): array {
     $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
     [$jug, $aciertos] = wordelon_jugadores($pdo, $dia);
 
+    /* Si la imagen falla, el mensaje sale en texto y el motivo queda en
+       $GLOBALS['wordelon_img_error'] (lo enseña ?action=wordelon-discord). */
     $png = null;
-    try { $png = wimg_render($pdo, $jug, WORDELON_INTENTOS); }
-    catch (Throwable $e) { error_log('[wordelon] imagen: ' . $e->getMessage()); }
+    $GLOBALS['wordelon_img_error'] = null;
+    if (!wimg_disponible()) $GLOBALS['wordelon_img_error'] = 'El PHP del servidor no tiene GD con FreeType';
+    try { $png = wimg_render($pdo, $jug, wimg_cfgWordelon(WORDELON_INTENTOS)); }
+    catch (Throwable $e) {
+        $GLOBALS['wordelon_img_error'] = $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')';
+        error_log('[wordelon] imagen: ' . $GLOBALS['wordelon_img_error']);
+    }
 
     $n = count($jug);
     $desc = wordelon_fechaLarga($dia) . "\n" . wordelon_resumenTexto($n, $aciertos)
@@ -393,6 +400,7 @@ function wordelon_discordResumen(PDO $pdo, string $dia): array {
                 $r = wordelon_discordResultado('PATCH', $code, $j, $err);
                 $r['mensaje'] = $msgId;
                 $r['imagen'] = $png !== null;
+                if ($png === null) $r['imagenError'] = $GLOBALS['wordelon_img_error'] ?? null;
                 return $r;
             }
         }
@@ -403,6 +411,7 @@ function wordelon_discordResumen(PDO $pdo, string $dia): array {
             $r['mensaje'] = (string)$j['id'];
         }
         $r['imagen'] = $png !== null;
+        if ($png === null) $r['imagenError'] = $GLOBALS['wordelon_img_error'] ?? null;
         return $r;
     } finally {
         $pdo->prepare("SELECT RELEASE_LOCK(?)")->execute([$lock]);

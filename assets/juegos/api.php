@@ -16,7 +16,6 @@
      GET  ?action=bm-rank-inf          → récords del infinito de todos
      GET  ?action=bm-rank-dia&nivel=N  → 3 mejores tiempos de hoy
      POST ?action=bm-inf-empezar | bm-inf-continuar | bm-inf-retirarse
-     GET  ?action=bm-hoy / bm-hoy-img&cols=N&escala=1|2 → Estadísticas
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
    dejó abierta pasada la medianoche) no se apunta el intento al día
    nuevo sin que lo vea, se devuelve la partida nueva con diaNuevo.
@@ -127,23 +126,6 @@ try {
 
         case 'bm-rank-dia':
             jsonResponse(['ok' => true] + bm_rankingDia($pdo, $uid, (int)($_GET['nivel'] ?? 0)));
-
-        case 'bm-hoy': {
-            require_once __DIR__ . '/wordelon-img.php';
-            bm_premiar($pdo);
-            $jug = bm_jugadoresHoy($pdo);
-            jsonResponse(['ok' => true, 'dia' => bm_hoy(), 'jugadores' => count($jug), 'imagen' => wimg_disponible() && count($jug) > 0]);
-        }
-
-        case 'bm-hoy-img': {
-            require_once __DIR__ . '/wordelon-img.php';
-            $png = wimg_render($pdo, bm_jugadoresHoy($pdo), bm_cfgImagen(), (int)($_GET['cols'] ?? 4), (int)($_GET['escala'] ?? 1));
-            if ($png === null) { http_response_code(404); exit; }
-            header('Content-Type: image/png');
-            header('Content-Length: ' . strlen($png));
-            echo $png;
-            exit;
-        }
 
         default:
             jsonError('Acción desconocida');

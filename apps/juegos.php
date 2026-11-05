@@ -201,8 +201,6 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 
         /* ── Buscaminas (assets/juegos/buscaminas.js) ────────────────── */
         #jg-bm, #jg-bm-juego { padding: 8px 12px 12px; align-items: center; }
-        #jg-bm-stats { padding: 8px 0 0; align-items: center; }
-        #jg-bm-stats .wd-top { padding: 0 12px; box-sizing: border-box; }
         .bm-menu { width: 100%; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
         .bm-menu fieldset { padding: 8px 10px; }
         .bm-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 3px 0; }
@@ -405,7 +403,6 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             <div class="wd-date" id="bm-date"></div>
         </div>
         <div class="wd-top-right">
-            <button type="button" id="bm-stats">Estadísticas</button>
             <button type="button" class="wd-help" id="bm-help" title="Cómo se juega" aria-label="Cómo se juega">?</button>
         </div>
     </div>
@@ -477,22 +474,6 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             <div class="bm-rank" id="bmj-rank"></div>
         </div>
     </div>
-</div>
-
-<!-- BUSCAMINAS: estadísticas de hoy -->
-<div class="jg-view" id="jg-bm-stats">
-    <div class="wd-top">
-        <button type="button" id="bms-back">&lt; Buscaminas</button>
-        <div class="wd-head">
-            <div class="wd-title">Buscaminas</div>
-            <div class="wd-date" id="bms-date"></div>
-        </div>
-        <div class="wd-top-right">
-            <button type="button" id="bms-reload">Actualizar</button>
-        </div>
-    </div>
-    <div class="st-sum" id="bms-sum"></div>
-    <div class="st-scroll" id="bms-scroll"></div>
 </div>
 
 <div class="wd-modal-bg" id="bm-modal">
