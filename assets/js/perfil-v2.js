@@ -674,7 +674,9 @@
             if (g.invitacion) lineas.push('Invitación cumplida: +' + g.invitacion + ' puntos');
             if (g.protector) lineas.push('Tu protector de racha la ha salvado');
             if (window.notifSystem) {
-                window.notifSystem.show({ type: 'success', title: 'Racha de ' + d.racha.current + (d.racha.current === 1 ? ' día' : ' días'), message: lineas.join(' · ') });
+                /* notifSystem.show (createCard de desktop-base.php) descarta
+                   los avisos sin id. */
+                window.notifSystem.show({ id: 'racha-' + Date.now(), type: 'info', sentAt: Math.floor(Date.now() / 1000), title: 'Racha de ' + d.racha.current + (d.racha.current === 1 ? ' día' : ' días'), message: lineas.join(' · ') });
             }
         }).catch(function () { S.claiming = false; });
     }

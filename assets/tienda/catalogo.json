@@ -9,11 +9,13 @@
     "Haros: los archivos van en assets/vids/<slug>Haro.gif, <slug>Haro-last.png, assets/img/haro/<slug>Haro-preview.png y assets/sound/<slug>Haro.mp3 (opcional)."
   ],
   "pestanas": [
-    { "id": "discord",    "nombre": "Discord",    "icono": "assets/img/appIcons/discordIcon.png" },
-    { "id": "interfaces", "nombre": "Interfaces", "icono": "assets/img/appIcons/interfaceIcon.png" },
-    { "id": "mascotas",   "nombre": "Mascotas",   "icono": "assets/img/appIcons/mascotaIcon.png", "proximamente": true },
+    { "id": "perfil",     "nombre": "Perfil",     "icono": "assets/img/appIcons/profileIcon.png" },
     { "id": "haros",      "nombre": "Haros",      "icono": "assets/img/appIcons/haroIcon.png" },
-    { "id": "perfil",     "nombre": "Perfil",     "icono": "assets/img/appIcons/profileIcon.png" }
+    { "id": "interfaces", "nombre": "Interfaces", "icono": "assets/img/appIcons/interfaceIcon.png" },
+    { "id": "discord",    "nombre": "Discord",    "icono": "assets/img/appIcons/discordIcon.png" },
+    { "id": "mascotas",   "nombre": "Mascotas",   "icono": "assets/img/appIcons/mascotaIcon.png", "proximamente": true }
+    
+    
   ],
   "objetos": [
     { "categoria": "discord", "slug": "discord-1", "nombre": "Tulon",                     "descripcion": "Placeholder de prueba — primer item de la tienda.", "precio": 250,  "icono": "🎁", "discord_role_id": "858965703708639262" },
