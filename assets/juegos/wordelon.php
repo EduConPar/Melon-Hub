@@ -20,7 +20,9 @@
      - Acertar da puntos de autismo según el intento (WORDELON_PUNTOS),
        una sola vez al día porque solo hay una partida por día.
      - El bot de Discord tiene UN mensaje por día en WORDELON_CANAL; se
-       edita (PATCH) con cada partida que acaba. Lleva una imagen con una
+       edita (PATCH) con CADA palabra que pone alguien (también salen los
+       que están a medias, "Jugando · 2/6"), después de contestar al
+       jugador (wordelon_despues). Lleva una imagen con una
        tarjeta por jugador (wordelon-img.php) y un texto corto; solo la
        cuadrícula de colores, sin letras, para no destripar la palabra.
    ────────────────────────────────────────────────────────────────────── */
@@ -57,6 +59,10 @@ function wordelon_ensure(PDO $pdo): void {
             INDEX idx_dia (dia, terminado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     } catch (Throwable $e) { /* sin permisos de CREATE: fallará al usarlas */ }
+    /* Cuándo puso la primera palabra: orden de las tarjetas (no cambia al
+       terminar). Las partidas de antes de la columna van por updated_at. */
+    try { $pdo->exec("ALTER TABLE wordelon_partidas ADD COLUMN IF NOT EXISTS empezada TIMESTAMP NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* sin permisos de ALTER */ }
 }
 
 function wordelon_hoy(): string {
@@ -189,7 +195,7 @@ function wordelon_intentar(PDO $pdo, int $uid, string $texto): array {
     $acaba   = false;
     $pdo->beginTransaction();
     try {
-        $pdo->prepare("INSERT IGNORE INTO wordelon_partidas (user_id, dia, intentos) VALUES (?, ?, '[]')")
+        $pdo->prepare("INSERT IGNORE INTO wordelon_partidas (user_id, dia, intentos, empezada) VALUES (?, ?, '[]', NOW())")
             ->execute([$uid, $dia]);
         $st = $pdo->prepare("SELECT * FROM wordelon_partidas WHERE user_id = ? AND dia = ? FOR UPDATE");
         $st->execute([$uid, $dia]);
@@ -214,12 +220,27 @@ function wordelon_intentar(PDO $pdo, int $uid, string $texto): array {
         throw $e;
     }
 
-    /* Discord después de guardar: si el bot falla, la partida ya cuenta. */
-    if ($acaba) {
+    /* Discord con cada palabra, después de guardar (si el bot falla, la
+       partida ya cuenta) y después de contestar al jugador. */
+    wordelon_despues(function () use ($pdo, $dia) {
         try { wordelon_discordResumen($pdo, $dia); }
         catch (Throwable $e) { error_log('[wordelon] discord: ' . $e->getMessage()); }
-    }
+    });
     return [wordelon_estado($pdo, $uid), $ganados];
+}
+
+/* Ejecuta $fn cuando la respuesta ya ha salido hacia el navegador: dibujar
+   la imagen y subirla a Discord tarda, y el jugador no tiene que esperar a
+   eso para ver los colores. LiteSpeed (Hostinger) y PHP-FPM cierran la
+   conexión con litespeed_finish_request / fastcgi_finish_request; si no
+   hay ninguna, se hace al final igualmente (el navegador espera algo más). */
+function wordelon_despues(callable $fn): void {
+    register_shutdown_function(function () use ($fn) {
+        ignore_user_abort(true);
+        if (function_exists('litespeed_finish_request')) litespeed_finish_request();
+        elseif (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        $fn();
+    });
 }
 
 /* ── Resumen del día en Discord ─────────────────────────────────────── */
@@ -248,15 +269,21 @@ function wordelon_fechaLarga(string $dia): string {
    Devuelve [jugadores, cuántos han acertado]. */
 function wordelon_jugadores(PDO $pdo, string $dia): array {
     $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
-    $st = $pdo->prepare("SELECT p.user_id, p.intentos, p.acertado, u.label, u.user_key
+    /* Todos los que han puesto alguna palabra hoy (terminados y a medias),
+       por cuándo empezó cada uno: la tarjeta no se mueve al terminar. */
+    $st = $pdo->prepare("SELECT p.user_id, p.intentos, p.acertado, p.terminado, u.label, u.user_key
                            FROM wordelon_partidas p JOIN usuarios u ON u.id = p.user_id
-                          WHERE p.dia = ? AND p.terminado = 1
-                          ORDER BY p.updated_at ASC, p.user_id ASC");
+                          WHERE p.dia = ? AND p.intentos <> '[]'
+                          ORDER BY COALESCE(p.empezada, p.updated_at) ASC, p.user_id ASC");
     $st->execute([$dia]);
     $jug = [];
     $aciertos = 0;
+    $terminados = 0;
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $int = json_decode((string)$r['intentos'], true) ?: [];
+        if (!$int) continue;
+        $fin = (int)$r['terminado'] === 1;
+        if ($fin) $terminados++;
         if ((int)$r['acertado']) $aciertos++;
         $label = (string)($r['label'] ?: $r['user_key']);
         $foto = function_exists('getUserImage') ? (string)getUserImage($label) : '';
@@ -264,19 +291,29 @@ function wordelon_jugadores(PDO $pdo, string $dia): array {
             'uid'       => (int)$r['user_id'],
             'label'     => $label,
             'ruta'      => $foto !== '' ? dirname(__DIR__, 2) . '/' . $foto : null,
-            'resultado' => ((int)$r['acertado'] ? count($int) : 'X') . '/' . WORDELON_INTENTOS,
+            'resultado' => $fin
+                ? ((int)$r['acertado'] ? count($int) : 'X') . '/' . WORDELON_INTENTOS
+                : 'Jugando · ' . count($int) . '/' . WORDELON_INTENTOS,
             'acertado'  => (int)$r['acertado'],
+            'terminado' => $fin,
             'intentos'  => $int,
             'filas'     => array_map(fn($w) => wordelon_evaluar($w, $sol), $int),
         ];
     }
-    return [$jug, $aciertos];
+    return [$jug, $aciertos, $terminados];
 }
 
-/* Texto "N personas han jugado · M la han acertado". */
-function wordelon_resumenTexto(int $n, int $aciertos): string {
-    return $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
-         . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado');
+/* Texto "N personas han jugado · M la han acertado (· K jugando)": N son
+   los que han terminado; los que están a medias van aparte. */
+function wordelon_resumenTexto(int $n, int $aciertos, int $jugando = 0): string {
+    $t = [];
+    /* Si aún no ha terminado nadie, solo "K jugando" (no "0 personas…"). */
+    if ($n > 0 || $jugando === 0) {
+        $t[] = $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
+             . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado');
+    }
+    if ($jugando > 0) $t[] = $jugando . ' jugando';
+    return implode(' · ', $t);
 }
 
 /* Mensaje del día: [embed, png, n]. Con imagen (wordelon-img.php: una
@@ -286,7 +323,7 @@ function wordelon_resumenTexto(int $n, int $aciertos): string {
 function wordelon_embed(PDO $pdo, string $dia): array {
     require_once __DIR__ . '/wordelon-img.php';
     $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
-    [$jug, $aciertos] = wordelon_jugadores($pdo, $dia);
+    [$jug, $aciertos, $terminados] = wordelon_jugadores($pdo, $dia);
 
     /* Si la imagen falla, el mensaje sale en texto y el motivo queda en
        $GLOBALS['wordelon_img_error'] (lo enseña ?action=wordelon-discord). */
@@ -300,14 +337,14 @@ function wordelon_embed(PDO $pdo, string $dia): array {
     }
 
     $n = count($jug);
-    $desc = wordelon_fechaLarga($dia) . "\n" . wordelon_resumenTexto($n, $aciertos)
+    $desc = wordelon_fechaLarga($dia) . "\n" . wordelon_resumenTexto($terminados, $aciertos, $n - $terminados)
           . "\n**[→ Jugar en Melon Hub](" . WORDELON_WEB . '/)**';
     $embed = [
         'title'       => WORDELON_NOMBRE . ' #' . wordelon_numero($dia),
         'url'         => WORDELON_WEB . '/',
         'description' => $desc,
         'color'       => 0x6AAA64,
-        'footer'      => ['text' => 'Se actualiza con cada partida · Melon Hub'],
+        'footer'      => ['text' => 'Se actualiza con cada palabra · Melon Hub'],
     ];
     if ($png !== null) {
         $embed['image'] = ['url' => 'attachment://wordelon.png'];
@@ -389,7 +426,7 @@ function wordelon_discordResumen(PDO $pdo, string $dia): array {
     if ((int)$st->fetchColumn() !== 1) return ['ok' => false, 'error' => 'Otra petición está publicando ahora mismo'];
     try {
         [$embed, $png, $n] = wordelon_embed($pdo, $dia);
-        if ($n === 0) return ['ok' => false, 'error' => 'Nadie ha terminado todavía la partida de hoy'];
+        if ($n === 0) return ['ok' => false, 'error' => 'Nadie ha jugado todavía hoy'];
         $st = $pdo->prepare("SELECT discord_message_id FROM wordelon_dias WHERE dia = ?");
         $st->execute([$dia]);
         $msgId = (string)$st->fetchColumn();

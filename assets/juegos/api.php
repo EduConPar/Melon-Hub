@@ -71,14 +71,14 @@ try {
         case 'wordelon-hoy': {
             require_once __DIR__ . '/wordelon-img.php';
             $dia = wordelon_hoy();
-            [$jug, $aciertos] = wordelon_jugadores($pdo, $dia);
+            [$jug, $aciertos, $terminados] = wordelon_jugadores($pdo, $dia);
             jsonResponse([
                 'ok'        => true,
                 'dia'       => $dia,
                 'numero'    => wordelon_numero($dia),
                 'jugadores' => count($jug),
                 'aciertos'  => $aciertos,
-                'texto'     => wordelon_resumenTexto(count($jug), $aciertos),
+                'texto'     => wordelon_resumenTexto($terminados, $aciertos, count($jug) - $terminados),
                 'imagen'    => wimg_disponible() && count($jug) > 0,
             ]);
         }
