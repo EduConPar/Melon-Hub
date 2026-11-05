@@ -13,6 +13,8 @@
      POST ?action=bm-dia-abrir         {nivel} → abre/retoma ese tablero
      POST ?action=bm-jugar             {id, tipo: abrir|acorde|bandera, celda}
      GET  ?action=bm-inf               → estado del modo infinito
+     GET  ?action=bm-rank-inf          → récords del infinito de todos
+     GET  ?action=bm-rank-dia&nivel=N  → 3 mejores tiempos de hoy
      POST ?action=bm-inf-empezar | bm-inf-continuar | bm-inf-retirarse
      GET  ?action=bm-hoy / bm-hoy-img&cols=N&escala=1|2 → Estadísticas
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
@@ -119,6 +121,12 @@ try {
 
         case 'bm-inf':
             jsonResponse(['ok' => true, 'infinito' => bm_infEstado($pdo, $uid)]);
+
+        case 'bm-rank-inf':
+            jsonResponse(['ok' => true] + bm_rankingInf($pdo, $uid));
+
+        case 'bm-rank-dia':
+            jsonResponse(['ok' => true] + bm_rankingDia($pdo, $uid, (int)($_GET['nivel'] ?? 0)));
 
         case 'bm-hoy': {
             require_once __DIR__ . '/wordelon-img.php';

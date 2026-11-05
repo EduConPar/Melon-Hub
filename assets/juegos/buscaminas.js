@@ -11,6 +11,10 @@
    El tablero se pinta siempre a partir de una "vista": una letra por
    casilla ('.' tapada, 'F' bandera, '0'…'8', 'M' mina, 'X' la que explotó,
    'W' bandera mal puesta), la misma que manda el servidor.
+   Tablero del día: cada uno elige UNA dificultad al día (desplegable con
+   la vista previa del tablero). Al jugar, a la derecha, un ranking: en el
+   del día los 3 mejores tiempos; en el infinito los 3 primeros y 5 a tu
+   alrededor (pintaRankInf). Fotos con el marco de perfil (avatar()).
    Usa window.JG (api, show, fecha, PT) de apps/juegos.php.
    ────────────────────────────────────────────────────────────────────── */
 (function () {
@@ -48,50 +52,83 @@
     }
     function contar(str, ch) { var n = 0; for (var i = 0; i < str.length; i++) if (str[i] === ch) n++; return n; }
 
+    /* ── Fotos y rankings ── */
+    /* Foto con el marco de perfil (data-marco-user → melon-marcos.js). */
+    function avatar(u) {
+        var dentro = u && u.foto
+            ? '<img src="../' + esc(u.foto) + '" alt="">'
+            : esc(((u && u.nombre) || '?').charAt(0).toUpperCase());
+        return '<span class="mh-marco-av bm-av"' + (u && u.key ? ' data-marco-user="' + esc(u.key) + '"' : '') + '>' + dentro + '</span>';
+    }
+    function filaRank(puesto, u, valor, yo) {
+        return '<div class="bm-rk' + (yo ? ' yo' : '') + '"><span class="bm-rk-n">' + puesto + '.</span>' + avatar(u) +
+            '<span class="bm-rk-nom">' + esc(u.nombre) + '</span><span class="bm-rk-v">' + esc(valor) + '</span></div>';
+    }
+
     /* ── Menú ── */
+    var diaInfo = null;    /* respuesta de bm-dia */
+
     function abrirMenu() {
         JG.show('jg-bm');
         pararReloj();
-        $('bm-dia-list').innerHTML = 'Cargando…';
+        pararRankDia();
+        $('bm-dia-info').textContent = 'Cargando…';
         $('bm-inf-box').innerHTML = '';
         JG.api('bm-dia').then(function (r) {
-            if (!r || !r.ok) { $('bm-dia-list').textContent = 'No se ha podido cargar'; return; }
+            if (!r || !r.ok) { $('bm-dia-info').textContent = 'No se ha podido cargar'; return; }
             $('bm-date').textContent = JG.fecha(r.dia);
-            pintaDia(r);
+            diaInfo = r;
+            pintaDia();
             estadoPortada(r);
-        }).catch(function () { $('bm-dia-list').textContent = 'Sin conexión'; });
-        JG.api('bm-inf').then(function (r) { if (r && r.ok) pintaInf(r.infinito); });
-    }
-
-    function pintaDia(r) {
-        var box = $('bm-dia-list');
-        box.innerHTML = '';
-        r.tableros.forEach(function (t) {
-            var row = document.createElement('div');
-            row.className = 'bm-row';
-            var est = '';
-            var btn = 'Jugar';
-            if (t.estado === 'jugando') { est = 'A medias'; btn = 'Continuar'; }
-            else if (t.estado === 'ganada') { est = tiempo(t.ms, true) + ' · ' + t.puesto + '.º · +' + t.puntos; btn = 'Ver'; }
-            else if (t.estado === 'perdida') { est = 'Mina · +' + t.puntos; btn = 'Ver'; }
-            else est = t.base + ' puntos';
-            row.innerHTML = '<div class="bm-row-name"><b>' + esc(t.nombre) + '</b><br>' + t.w + '×' + t.h + ', ' + t.m + ' minas</div>' +
-                '<div class="bm-row-state">' + esc(est) + '</div>';
-            var b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = btn;
-            b.addEventListener('click', function () { abrirDia(t.nivel); });
-            row.appendChild(b);
-            box.appendChild(row);
+        }).catch(function () { $('bm-dia-info').textContent = 'Sin conexión'; });
+        Promise.all([JG.api('bm-inf'), JG.api('bm-rank-inf')]).then(function (rs) {
+            if (rs[0] && rs[0].ok) pintaInf(rs[0].infinito, rs[1] && rs[1].ok ? rs[1] : null);
         });
     }
 
-    function pintaInf(inf) {
+    /* Tablero del día: uno al día. Sin elegir: desplegable libre y la
+       cuadrícula tapada del tamaño elegido. Ya elegido: el desplegable
+       fijo en ese y el tablero como lo dejó. */
+    function pintaDia() {
+        var r = diaInfo, sel = $('bm-dia-nivel'), btn = $('bm-dia-jugar'), info = $('bm-dia-info');
+        if (r.elegido) {
+            var t = r.tableros[r.elegido - 1];
+            sel.value = String(r.elegido);
+            sel.disabled = true;
+            if (t.estado === 'jugando') { info.textContent = 'Tu tablero de hoy: a medias'; btn.textContent = 'Continuar'; }
+            else if (t.estado === 'ganada') { info.textContent = 'Despejado en ' + tiempo(t.ms, true) + ' · vas ' + t.puesto + '.º · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
+            else { info.textContent = '¡Mina! · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
+            pintaPrevia(r.partida.w, r.partida.h, r.partida.vista);
+        } else {
+            sel.disabled = false;
+            var n = NIVELES[+sel.value];
+            info.textContent = n.nombre + ': ' + n.w + '×' + n.h + ', ' + n.m + ' minas';
+            btn.textContent = 'Jugar';
+            pintaPrevia(n.w, n.h, null);
+        }
+    }
+
+    function pintaPrevia(w, h, vista) {
+        var b = $('bm-dia-prev');
+        var ancho = $('jg-bm').clientWidth - 70;
+        /* Pequeña (hasta 13 px) para que el Infinito y el Libre quepan debajo. */
+        var cs = Math.max(8, Math.min(13, Math.floor(ancho / w)));
+        b.style.setProperty('--cs', cs + 'px');
+        b.style.gridTemplateColumns = 'repeat(' + w + ', ' + cs + 'px)';
+        var html = '';
+        for (var i = 0; i < w * h; i++) html += '<i class="' + claseCelda(vista ? vista[i] : '.') + '">' + (vista && /[1-8]/.test(vista[i]) ? vista[i] : '') + '</i>';
+        b.innerHTML = html;
+    }
+
+    function pintaInf(inf, rank) {
         var box = $('bm-inf-box');
         var s = inf.siguiente;
-        var html = '<div class="bm-inf-line">Récord: <b>' + (inf.mejor ? 'ronda ' + inf.mejor : 'ninguno') + '</b>';
-        if (inf.estado === 'jugando') html += '<br>Tienes una partida en la ronda ' + inf.ronda + ' (llevas ' + inf.pendientes + ' puntos).';
-        else if (inf.estado === 'superada') html += '<br>Has superado la ronda ' + inf.ronda + ' y llevas <b>' + inf.pendientes + '</b> puntos.';
+        var yo = rank && rank.yo;
+        var html = '<div class="bm-yo">' + avatar(yo || { nombre: '?' }) +
+            '<div>Tu récord<br><b style="font-size:13px">' + (inf.mejor ? 'Ronda ' + inf.mejor : 'Ninguno') + '</b></div></div>';
+        html += '<div class="bm-inf-line">';
+        if (inf.estado === 'jugando') html += 'Tienes una partida en la ronda ' + inf.ronda + ' (llevas ' + inf.pendientes + ' puntos).';
+        else if (inf.estado === 'superada') html += 'Has superado la ronda ' + inf.ronda + ' y llevas <b>' + inf.pendientes + '</b> puntos.';
         html += '</div>';
         box.innerHTML = html;
         var btns = document.createElement('div');
@@ -102,6 +139,12 @@
             btns.appendChild(boton('Retirarse con ' + inf.pendientes, function () { infRetirarse(); }));
         } else btns.appendChild(boton('Empezar', function () { infEmpezar(); }));
         box.appendChild(btns);
+        /* Los 5 mejores récords. */
+        var top = $('bm-inf-top');
+        var lista = rank ? rank.lista.slice(0, 5) : [];
+        top.innerHTML = lista.length
+            ? lista.map(function (u, k) { return filaRank(k + 1, u, 'ronda ' + u.valor, u.yo); }).join('')
+            : '<div class="bm-rank-vacio">Nadie tiene récord todavía.</div>';
     }
 
     function boton(txt, fn) {
@@ -113,15 +156,67 @@
     }
 
     function estadoPortada(r) {
-        var hechos = r.tableros.filter(function (t) { return t.estado === 'ganada' || t.estado === 'perdida'; }).length;
-        $('jg-bm-state').textContent = 'Hoy: ' + hechos + '/' + r.tableros.length;
+        var t = r.elegido ? r.tableros[r.elegido - 1] : null;
+        $('jg-bm-state').textContent = !t ? 'Sin jugar hoy' : t.estado === 'jugando' ? 'A medias' : 'Hoy: hecho';
+    }
+
+    /* ── Ranking de la derecha al jugar ── */
+    var rankDiaTimer = null;
+    var rankInf = null;    /* bm-rank-inf: récords de todos */
+
+    function pararRankDia() { if (rankDiaTimer) clearInterval(rankDiaTimer); rankDiaTimer = null; }
+
+    /* Del día: los 3 mejores tiempos de ese tablero (se refresca cada 15 s). */
+    function rankDia(nivel) {
+        $('bmj-rank-tit').textContent = 'Mejores tiempos de hoy';
+        var cargar = function () {
+            JG.api('bm-rank-dia&nivel=' + nivel).then(function (r) {
+                if (!r || !r.ok) return;
+                $('bmj-rank').innerHTML = r.lista.length
+                    ? r.lista.map(function (u, k) { return filaRank(k + 1, u, tiempo(u.valor, true), u.yo); }).join('')
+                    : '<div class="bm-rank-vacio">Nadie lo ha despejado todavía.</div>';
+            }).catch(function () {});
+        };
+        pararRankDia();
+        cargar();
+        rankDiaTimer = setInterval(cargar, 15000);
+        return cargar;
+    }
+
+    /* Infinito: los demás con su récord y tú con las rondas que llevas en
+       ESTA partida; los 3 primeros y luego 5 a tu alrededor (2 por encima,
+       tú, 2 por debajo). A igualdad, tú debajo: no has superado a nadie
+       hasta pasar su ronda. */
+    function pintaRankInf() {
+        if (!rankInf || !juego || juego.modo !== 'inf') return;
+        var p = juego.datos;
+        var llevo = p.estado === 'ganada' ? p.ronda : p.ronda - 1;
+        var yo = rankInf.yo || { nombre: 'Tú' };
+        var lista = rankInf.lista.filter(function (u) { return !u.yo; });
+        var k = 0;
+        while (k < lista.length && lista[k].valor >= llevo) k++;
+        lista.splice(k, 0, Object.assign({}, yo, { valor: llevo, yo: true }));
+        var fila = function (i) { var u = lista[i]; return filaRank(i + 1, u, 'ronda ' + u.valor, u.yo); };
+        var html = '';
+        for (var i = 0; i < Math.min(3, lista.length); i++) html += fila(i);
+        if (lista.length > 3) {
+            var ini = k < 3 ? 3 : Math.max(3, k - 2);
+            var fin = Math.min(lista.length, ini + 5);
+            ini = Math.max(3, fin - 5);
+            if (ini > 3) html += '<div class="bm-rk-sep">⋯</div>';
+            for (var j = ini; j < fin; j++) html += fila(j);
+        }
+        $('bmj-rank-tit').textContent = 'Ranking del infinito';
+        $('bmj-rank').innerHTML = html;
     }
 
     /* ── Tablero ── */
+    /* Lo que cabe en la zona del tablero (a la izquierda del ranking),
+       dejando sitio para los contadores y el panel del final. */
     function tamCasilla(w, h) {
-        var v = $('jg-bm-juego');
-        var anchoLibre = v.clientWidth - 24 - 8;
-        var altoLibre = v.clientHeight - 190;
+        var v = $('bmj-main');
+        var anchoLibre = v.clientWidth - 8;
+        var altoLibre = v.clientHeight - 150;
         return Math.max(14, Math.min(26, Math.floor(anchoLibre / w), Math.floor(altoLibre / h)));
     }
 
@@ -131,6 +226,8 @@
         var cs = tamCasilla(juego.w, juego.h);
         b.style.setProperty('--cs', cs + 'px');
         b.style.gridTemplateColumns = 'repeat(' + juego.w + ', ' + cs + 'px)';
+        /* Los contadores, del mismo ancho que el tablero (con su borde). */
+        document.querySelector('#bmj-main .bm-bar').style.width = (juego.w * cs + 6) + 'px';
         for (var i = 0; i < juego.w * juego.h; i++) {
             var c = document.createElement('i');
             c.dataset.i = i;
@@ -139,18 +236,21 @@
         pintar();
     }
 
+    function claseCelda(ch) {
+        if (ch === '.') return 'bm-c t';
+        if (ch === 'F') return 'bm-c t bm-flag';
+        if (ch === 'M') return 'bm-c a bm-mina';
+        if (ch === 'X') return 'bm-c a x bm-mina';
+        if (ch === 'W') return 'bm-c a bm-mal';
+        return 'bm-c a n' + ch;
+    }
+
     function pintar() {
         var celdas = $('bmj-board').children;
         var v = juego.vista;
         for (var i = 0; i < celdas.length; i++) {
-            var ch = v[i], c = celdas[i], cls = 'bm-c';
-            c.textContent = '';
-            if (ch === '.') cls += ' t';
-            else if (ch === 'F') cls += ' t bm-flag';
-            else if (ch === 'M') cls += ' a bm-mina';
-            else if (ch === 'X') cls += ' a x bm-mina';
-            else if (ch === 'W') cls += ' a bm-mal';
-            else { cls += ' a n' + ch; if (ch !== '0') c.textContent = ch; }
+            var ch = v[i], c = celdas[i], cls = claseCelda(ch);
+            c.textContent = /[1-8]/.test(ch) ? ch : '';
             if (juego.pulsada === i && ch === '.') cls += ' p';
             c.className = cls;
         }
@@ -200,6 +300,8 @@
         });
         if (r.infinito) juego.inf = r.infinito;
         pintar();
+        if (juego.modo === 'inf') pintaRankInf();
+        if (juego.modo === 'dia' && juego.estado !== 'jugando' && juego.rankCargar) juego.rankCargar();
         if (juego.estado === 'jugando') arrancarReloj(); else { pararReloj(); pintaReloj(); }
         /* Al acabar (o al abrir una ya acabada), el panel de abajo. */
         if (juego.estado !== 'jugando' && !$('bmj-end').classList.contains('on')) pintaFinal(r);
@@ -236,7 +338,10 @@
         }
     }
 
-    function abrirJuego(titulo, sub, nueva) {
+    function abrirJuego(titulo, sub, nueva, conRanking) {
+        pararRankDia();
+        $('bmj-side').style.display = conRanking ? '' : 'none';
+        $('bmj-rank').innerHTML = '';
         JG.show('jg-bm-juego');
         $('bmj-title').textContent = titulo;
         $('bmj-sub').textContent = sub || '';
@@ -295,11 +400,12 @@
     function abrirDia(nivel) {
         var n = NIVELES[nivel];
         juego = null;
-        abrirJuego(n.nombre + ' del día', n.w + '×' + n.h + ', ' + n.m + ' minas', false);
+        abrirJuego(n.nombre + ' del día', n.w + '×' + n.h + ', ' + n.m + ' minas', false, true);
         $('bmj-board').innerHTML = '';
+        var cargarRank = rankDia(nivel);
         JG.api('bm-dia-abrir', { nivel: nivel }).then(function (r) {
             if (!r || !r.ok) { $('bmj-info').textContent = (r && r.error) || 'No se ha podido abrir'; return; }
-            juego = null;
+            juego = { rankCargar: cargarRank };
             recibir(r);
             montarTablero();
         });
@@ -311,10 +417,12 @@
         infAntes = inf.pendientes;
         juego = null;
         var p = inf.partida;
-        abrirJuego('Infinito · Ronda ' + p.ronda, p.w + '×' + p.h + ', ' + p.minas + ' minas · ' + p.puntosRonda + (p.puntosRonda === 1 ? ' punto' : ' puntos'), false);
+        abrirJuego('Infinito · Ronda ' + p.ronda, p.w + '×' + p.h + ', ' + p.minas + ' minas · ' + p.puntosRonda + (p.puntosRonda === 1 ? ' punto' : ' puntos'), false, true);
         $('bmj-info').textContent = 'Llevas ' + inf.pendientes;
         recibir({ partida: p, infinito: inf });
         montarTablero();
+        /* Récords de los demás: se piden al empezar cada ronda. */
+        JG.api('bm-rank-inf').then(function (r) { if (r && r.ok) { rankInf = r; pintaRankInf(); } }).catch(function () {});
     }
     function infEmpezar() { infPedir('bm-inf-empezar'); }
     function infContinuar() { infPedir('bm-inf-continuar'); }
@@ -342,7 +450,7 @@
     /* ── Libre (todo aquí) ── */
     function jugarLibre(nivel) {
         var n = NIVELES[nivel];
-        abrirJuego('Libre · ' + n.nombre, n.w + '×' + n.h + ', ' + n.m + ' minas · sin puntos', true);
+        abrirJuego('Libre · ' + n.nombre, n.w + '×' + n.h + ', ' + n.m + ' minas · sin puntos', true, false);
         juego = {
             modo: 'libre', nivel: nivel, w: n.w, h: n.h, minas: n.m, estado: 'jugando',
             vista: new Array(n.w * n.h + 1).join('.'), mapa: null, inicio: 0, fin: 0
@@ -445,6 +553,10 @@
     $('bm-back').addEventListener('click', function () { JG.show('jg-home'); });
     $('bmj-back').addEventListener('click', function () {
         juego = null; abrirMenu();
+    });
+    $('bm-dia-nivel').addEventListener('change', function () { if (diaInfo) pintaDia(); });
+    $('bm-dia-jugar').addEventListener('click', function () {
+        abrirDia(diaInfo && diaInfo.elegido ? diaInfo.elegido : +$('bm-dia-nivel').value);
     });
     $('bmj-nueva').addEventListener('click', function () { if (juego && juego.modo === 'libre') jugarLibre(juego.nivel); });
     $('bm-libre-jugar').addEventListener('click', function () { jugarLibre(+$('bm-libre-nivel').value); });

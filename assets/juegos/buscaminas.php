@@ -3,8 +3,9 @@
    BUSCAMINAS (app Juegos; decidido así)
    ──────────────────────────────────────────────────────────────────────
    Tres modos:
-     - Tableros del día: tres (Principiante 9×9/10, Intermedio 16×16/40,
-       Experto 30×16/99), los mismos para todos, UN intento cada uno. Día
+     - Tablero del día: hay tres (Principiante 9×9/10, Intermedio
+       16×16/40, Experto 30×16/99), los mismos para todos, pero cada
+       persona ELIGE UNO al día (el primero que abre) y tiene UN intento. Día
        en hora de Madrid, como Wordelon. Despejarlo da BM_NIVELES[base]
        (50 / 100 / 200); si pisas una mina, la parte proporcional a las
        minas bien marcadas con bandera (5 de 10 → la mitad). Al acabar el
@@ -236,7 +237,11 @@ function bm_dia(PDO $pdo, int $uid): array {
             'puesto' => $p && $p['estado'] === 'ganada' ? bm_puesto($pdo, $hoy, $nv, (int)$p['ms'], (int)$p['fin_ms']) : null,
         ];
     }
-    return ['dia' => $hoy, 'tableros' => $out, 'premios' => BM_PREMIOS];
+    /* El que ha elegido hoy (solo se puede uno) y cómo lo dejó, para la
+       vista previa del menú. */
+    $elegido = null; $partida = null;
+    foreach ($mias as $nv => $p) { $elegido = $nv; $partida = bm_vista($pdo, $p); break; }
+    return ['dia' => $hoy, 'tableros' => $out, 'premios' => BM_PREMIOS, 'elegido' => $elegido, 'partida' => $partida];
 }
 
 /* Puesto entre los que han despejado ese tablero (por tiempo; a igualdad,
@@ -257,6 +262,11 @@ function bm_abrirDia(PDO $pdo, int $uid, int $nivel): array {
     $st->execute([$uid, $hoy, $nivel]);
     $id = (int)$st->fetchColumn();
     if (!$id) {
+        /* Uno al día: si ya eligió otra dificultad, no puede abrir esta. */
+        $ot = $pdo->prepare("SELECT nivel FROM bm_partidas WHERE user_id = ? AND dia = ? AND modo = 'dia' LIMIT 1");
+        $ot->execute([$uid, $hoy]);
+        $otro = $ot->fetchColumn();
+        if ($otro !== false) throw new InvalidArgumentException('Hoy ya has elegido el ' . BM_NIVELES[(int)$otro]['nombre']);
         try { $id = bm_crearPartida($pdo, $uid, 'dia', $tid, $hoy, $nivel, null); }
         catch (PDOException $e) {   /* doble clic: ya la creó la otra petición */
             $st->execute([$uid, $hoy, $nivel]);
@@ -474,6 +484,54 @@ function bm_infRetirarse(PDO $pdo, int $uid): array {
         throw $e;
     }
     return ['infinito' => bm_infEstado($pdo, $uid), 'ganados' => $ganados];
+}
+
+/* ── Rankings (menú y panel de la derecha al jugar) ───────────────── */
+
+/* Datos públicos de unos usuarios: user_key (para el marco con
+   data-marco-user), nombre y ruta de la foto (relativa a la raíz). */
+function bm_usuarios(PDO $pdo, array $ids): array {
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    if (!$ids) return [];
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare("SELECT id, label, user_key FROM usuarios WHERE id IN ($in)");
+    $st->execute($ids);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $u) {
+        $label = (string)($u['label'] ?: $u['user_key']);
+        $foto = function_exists('getUserImage') ? (string)getUserImage($label) : '';
+        $out[(int)$u['id']] = ['key' => (string)$u['user_key'], 'nombre' => $label, 'foto' => $foto !== '' ? $foto : null];
+    }
+    return $out;
+}
+
+/* Récords del infinito de todos (ronda más alta superada), de mayor a
+   menor; a igualdad, quien llegó antes. El navegador mete ahí la partida
+   en marcha del que juega para ver a quién va adelantando. */
+function bm_rankingInf(PDO $pdo, int $uid): array {
+    $rows = $pdo->query("SELECT user_id, mejor FROM bm_infinito WHERE mejor > 0 ORDER BY mejor DESC, mejor_en ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $us = bm_usuarios($pdo, array_merge(array_column($rows, 'user_id'), [$uid]));
+    $lista = [];
+    foreach ($rows as $r) {
+        if (!isset($us[(int)$r['user_id']])) continue;
+        $lista[] = $us[(int)$r['user_id']] + ['valor' => (int)$r['mejor'], 'yo' => (int)$r['user_id'] === $uid];
+    }
+    return ['lista' => $lista, 'yo' => $us[$uid] ?? null];
+}
+
+/* Los 3 mejores tiempos de hoy en un tablero del día. */
+function bm_rankingDia(PDO $pdo, int $uid, int $nivel): array {
+    $st = $pdo->prepare("SELECT user_id, ms FROM bm_partidas WHERE dia = ? AND nivel = ? AND modo = 'dia' AND estado = 'ganada'
+                          ORDER BY ms ASC, fin_ms ASC LIMIT 3");
+    $st->execute([bm_hoy(), $nivel]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    $us = bm_usuarios($pdo, array_column($rows, 'user_id'));
+    $lista = [];
+    foreach ($rows as $r) {
+        if (!isset($us[(int)$r['user_id']])) continue;
+        $lista[] = $us[(int)$r['user_id']] + ['valor' => (int)$r['ms'], 'yo' => (int)$r['user_id'] === $uid];
+    }
+    return ['lista' => $lista];
 }
 
 /* ── Estadísticas (tarjetas como Wordelon, wordelon-img.php) ──────── */

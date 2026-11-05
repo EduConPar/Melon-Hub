@@ -364,16 +364,55 @@
         md.mini.fit(Math.ceil(r.width), Math.ceil(r.height));
     }
 
-    /* ── Tamaño: el tirador de la esquina escala todo el flotante con
-       zoom (carátula, textos y botones a la vez, mismo diseño) y fit()
-       ajusta la ventana a lo que ocupa. Va todo en la página para que
-       también funcione con apps instaladas sin IPC nuevo. Se recuerda en
-       localStorage (es de este equipo, no de la cuenta). ── */
-    var SCALE_KEY = 'reproductor:mini-scale', MIN_SCALE = 0.6, MAX_SCALE = 1.6;
+    /* ── Tamaño: el tirador de la esquina cambia `scale` y fit() ajusta la
+       ventana a lo que ocupa. Va todo en la página para que también
+       funcione con apps instaladas sin IPC nuevo. Se recuerda en
+       localStorage (es de este equipo, no de la cuenta).
+       Al AGRANDAR (scale > 1) crece todo con zoom, mismo diseño.
+       Al ENCOGER (decidido así) lo primero es la carátula:
+         1) la ventana se estrecha con la carátula (ancho = 300 × scale)
+            y botones, textos y barras se quedan de su tamaño;
+         2) cuando los botones ya no caben más estrechos (anchoMin), la
+            ventana no se estrecha más y la carátula sigue encogiendo
+            sola, centrada, hasta COVER_MIN;
+         3) a partir de ahí encoge todo junto con zoom (hasta ZOOM_MIN). ── */
+    var SCALE_KEY = 'reproductor:mini-scale', MAX_SCALE = 1.6;
+    var BASE_W = 300, BODY_PAD = 16, COVER_MIN = 64, ZOOM_MIN = 0.6;
+    var S_COVER_MIN = (COVER_MIN + BODY_PAD) / BASE_W;   /* scale en que la carátula llega al mínimo */
+    var MIN_SCALE = S_COVER_MIN * ZOOM_MIN;
     var scale = 1;
+    /* Ancho mínimo de la ventana sin encoger nada más que la carátula: la
+       fila de botones (la más ancha que no se puede recortar) + el marco
+       y el relleno de la ventana. Se mide cada vez: depende de la
+       interfaz y del tamaño de letra. */
+    function anchoMin() {
+        var bs = document.querySelectorAll('.mp-controls > *');
+        if (!bs.length) return 240;
+        var fila = bs[bs.length - 1].getBoundingClientRect().right - bs[0].getBoundingClientRect().left;
+        var cuerpo = $('mp-body').clientWidth - BODY_PAD;
+        var marco = $('mp').getBoundingClientRect().width - cuerpo;
+        return Math.ceil(fila + marco);
+    }
     function setScale(s) {
         scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s || 1));
-        document.body.style.zoom = scale === 1 ? '' : String(scale);
+        var mp = $('mp'), cov = document.querySelector('.mp-cover');
+        if (scale >= 1) {
+            mp.style.width = ''; cov.style.width = ''; cov.style.margin = '';
+            document.body.style.zoom = scale === 1 ? '' : String(scale);
+            return;
+        }
+        document.body.style.zoom = '';
+        var min = anchoMin();
+        if (scale >= S_COVER_MIN) {
+            var w = BASE_W * scale;
+            mp.style.width = Math.max(min, Math.round(w)) + 'px';
+            cov.style.width = Math.max(COVER_MIN, Math.round(w - BODY_PAD)) + 'px';
+        } else {
+            mp.style.width = min + 'px';
+            cov.style.width = COVER_MIN + 'px';
+            document.body.style.zoom = String(Math.round(scale / S_COVER_MIN * 100) / 100);
+        }
+        cov.style.margin = '0 auto';
     }
     try { setScale(parseFloat(localStorage.getItem(SCALE_KEY))); } catch (_) {}
     (function() {
@@ -384,17 +423,25 @@
             grip.setPointerCapture(e.pointerId);
             /* screenX/Y: la ventana cambia de tamaño bajo el ratón y las
                coordenadas de la página se moverían con ella. */
-            var x0 = e.screenX, y0 = e.screenY, s0 = scale;
+            var x0 = e.screenX, y0 = e.screenY;
             var r = $('mp').getBoundingClientRect();
+            /* El tamaño no es proporcional a scale (al encoger, primero solo
+               la carátula): se busca la escala que deja la ventana a la
+               altura pedida. La altura crece siempre con scale (en las tres
+               fases), el ancho no (en la 2.ª se queda fijo). Si el ratón se
+               mueve más en horizontal, se pasa a altura con la forma. */
+            function altoCon(s) { setScale(s); return $('mp').getBoundingClientRect().height; }
             function move(ev) {
-                var fx = (r.width + ev.screenX - x0) / r.width;
-                var fy = (r.height + ev.screenY - y0) / r.height;
-                /* Manda el eje que más se ha movido: así se mantiene la forma. */
-                var f = Math.abs(fx - 1) > Math.abs(fy - 1) ? fx : fy;
-                var next = Math.round(s0 * f * 100) / 100;
-                if (next === scale) return;
+                var dx = ev.screenX - x0, dy = ev.screenY - y0;
+                var objetivo = r.height + (Math.abs(dx) > Math.abs(dy) ? dx * r.height / r.width : dy);
+                var lo = MIN_SCALE, hi = MAX_SCALE, antes = scale;
+                for (var k = 0; k < 14; k++) {
+                    var mid = (lo + hi) / 2;
+                    if (altoCon(mid) < objetivo) lo = mid; else hi = mid;
+                }
+                var next = Math.round(lo * 100) / 100;
                 setScale(next);
-                fit();
+                if (next !== antes) fit();
             }
             function end() {
                 grip.removeEventListener('pointermove', move);
@@ -1356,8 +1403,9 @@
         var overrides = $('mini-overrides');
         var pending = (look.css || []).length;
         /* Las fuentes de la interfaz (la pixel de Kawaii viene de Google
-           Fonts) llegan después del CSS: se mide cuando ya están. */
-        function ready() { document.fonts.ready.then(function() { shown = true; fit(); }); }
+           Fonts) llegan después del CSS: se mide cuando ya están (y se
+           vuelve a aplicar el tamaño: el ancho mínimo depende de ellas). */
+        function ready() { document.fonts.ready.then(function() { shown = true; setScale(scale); fit(); }); }
         function done() {
             if (--pending > 0) return;
             if (look.fontScaleDelta) {
@@ -1383,7 +1431,7 @@
         if (!pending) { pending = 1; done(); }
     }
     /* Si la ventana principal no contestara, se enseña con el aspecto base. */
-    setTimeout(function() { if (!lookApplied) { shown = true; fit(); } }, 2500);
+    setTimeout(function() { if (!lookApplied) { shown = true; setScale(scale); fit(); } }, 2500);
     /* Lo que cambie el tamaño después de enseñarse (una fuente que llega
        tarde, las pasadas del escalado de letra…) reajusta la ventana. */
     new ResizeObserver(function() { if (shown) fit(); }).observe($('mp'));

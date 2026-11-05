@@ -52,6 +52,9 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     <script src="../assets/js/icon-pack.js"></script>
     <?php require_once dirname(__DIR__) . "/assets/php/active-interface.php"; emitInterfaceCss("../"); ?>
     <script src="../assets/js/interface-loader.js?v=fs1"></script>
+    <!-- Fotos con el marco de perfil de cada uno (rankings del Buscaminas). -->
+    <link rel="stylesheet" href="../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/css/marcos.css') ?>">
+    <script src="../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js') ?>"></script>
     <?php if ($themeCssRel): ?>
     <link rel="stylesheet" id="active-theme-link" href="<?= htmlspecialchars($themeCssRel) ?>">
     <?php endif; ?>
@@ -197,9 +200,43 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
            grande) se cortaba el texto. */
         .bm-libre select { flex: 1; height: auto; min-height: 21px; }
         .bm-inf-line { margin-bottom: 6px; line-height: 1.5; }
+        /* Tablero del día: vista previa (tapada, o como lo dejó). */
+        .bm-dia-info { margin: 8px 0 6px; text-align: center; font-weight: bold; }
+        .bm-prev-wrap { display: flex; justify-content: center; }
+        .bm-prev { pointer-events: none; }
+        /* Infinito en el menú: tú a la izquierda, los 5 mejores a la derecha. */
+        .bm-inf-cols { display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: start; }
+        .bm-yo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+        .bm-yo .bm-av { width: 48px; height: 48px; }
+        /* Rankings: puesto, foto con marco, nombre y valor. */
+        .bm-side-tit { font-weight: bold; margin-bottom: 4px; }
+        .bm-rank { display: flex; flex-direction: column; gap: 2px; }
+        .bm-rk { display: grid; grid-template-columns: 22px 30px 1fr auto; align-items: center; gap: 6px; padding: 5px 6px; }
+        .bm-rk .bm-rk-n { text-align: right; color: var(--text-muted, #444); }
+        .bm-rk .bm-rk-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .bm-rk .bm-rk-v { font-weight: bold; white-space: nowrap; }
+        .bm-rk.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .bm-rk.yo .bm-rk-n { color: inherit; }
+        .bm-rk-sep { text-align: center; color: var(--text-muted, #444); line-height: 1; }
+        .bm-rank-vacio { color: var(--text-muted, #444); padding: 4px 6px; }
+        .bm-av {
+            position: relative; display: inline-flex; align-items: center; justify-content: center;
+            width: 22px; height: 22px; background: var(--accent, navy); color: var(--accent-text, #fff); font-weight: bold;
+        }
+        .bm-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        /* Al jugar: tablero a la izquierda (centrado) y ranking a la derecha. */
+        .bmj-cols { display: flex; gap: 10px; width: 100%; flex: 1; min-height: 0; margin-top: 6px; }
+        .bmj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .bm-side {
+            width: 200px; flex-shrink: 0; overflow: auto; padding: 8px; box-sizing: border-box;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a);
+        }
+        body.jg-kawaii .bm-side { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
         .bm-btns { display: flex; gap: 6px; justify-content: center; margin-top: 6px; flex-wrap: wrap; }
 
-        .bm-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; margin: 8px 0 6px; gap: 8px; }
+        .bm-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; margin: 0 0 6px; gap: 8px; }
         .bm-cont {
             justify-self: start; min-width: 54px; padding: 3px 6px; text-align: center;
             font-weight: bold; font-size: 14px; font-variant-numeric: tabular-nums;
@@ -286,7 +323,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             </div>
             <div>
                 <div class="jg-card-name">Buscaminas</div>
-                <div class="jg-card-sub">Tableros del día, libre e infinito</div>
+                <div class="jg-card-sub">Tablero del día, libre e infinito</div>
             </div>
             <div class="jg-card-state" id="jg-bm-state"></div>
         </div>
@@ -343,13 +380,28 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     </div>
     <div class="bm-menu">
         <fieldset>
-            <legend>Tableros del día</legend>
-            <div id="bm-dia-list"></div>
-            <div class="bm-nota">Un intento por tablero. El tiempo empieza al abrirlo.</div>
+            <legend>Tablero del día</legend>
+            <div class="bm-libre">
+                <select id="bm-dia-nivel">
+                    <option value="1">Principiante (9×9, 10 minas) · 50 puntos</option>
+                    <option value="2">Intermedio (16×16, 40 minas) · 100 puntos</option>
+                    <option value="3">Experto (30×16, 99 minas) · 200 puntos</option>
+                </select>
+                <button type="button" id="bm-dia-jugar">Jugar</button>
+            </div>
+            <div class="bm-dia-info" id="bm-dia-info"></div>
+            <div class="bm-prev-wrap"><div class="bm-board bm-prev" id="bm-dia-prev"></div></div>
+            <div class="bm-nota">Solo puedes hacer uno al día y tienes un intento. El tiempo empieza al darle a Jugar.</div>
         </fieldset>
         <fieldset>
             <legend>Infinito</legend>
-            <div id="bm-inf-box"></div>
+            <div class="bm-inf-cols">
+                <div id="bm-inf-box"></div>
+                <div class="bm-inf-top">
+                    <div class="bm-side-tit">Mejores récords</div>
+                    <div class="bm-rank" id="bm-inf-top"></div>
+                </div>
+            </div>
         </fieldset>
         <fieldset>
             <legend>Libre</legend>
@@ -378,13 +430,22 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
             <button type="button" id="bmj-nueva">Nueva</button>
         </div>
     </div>
-    <div class="bm-bar">
-        <div class="bm-cont" id="bmj-minas" title="Minas sin marcar">0</div>
-        <div class="bm-info" id="bmj-info"></div>
-        <div class="bm-cont" id="bmj-tiempo" title="Tiempo">0:00</div>
+    <div class="bmj-cols">
+        <!-- El tablero, siempre centrado en su zona (a la izquierda del ranking). -->
+        <div class="bmj-main" id="bmj-main">
+            <div class="bm-bar">
+                <div class="bm-cont" id="bmj-minas" title="Minas sin marcar">0</div>
+                <div class="bm-info" id="bmj-info"></div>
+                <div class="bm-cont" id="bmj-tiempo" title="Tiempo">0:00</div>
+            </div>
+            <div class="bm-wrap"><div class="bm-board" id="bmj-board"></div></div>
+            <div class="wd-end" id="bmj-end"></div>
+        </div>
+        <div class="bm-side" id="bmj-side">
+            <div class="bm-side-tit" id="bmj-rank-tit">Ranking</div>
+            <div class="bm-rank" id="bmj-rank"></div>
+        </div>
     </div>
-    <div class="bm-wrap"><div class="bm-board" id="bmj-board"></div></div>
-    <div class="wd-end" id="bmj-end"></div>
 </div>
 
 <!-- BUSCAMINAS: estadísticas de hoy -->
@@ -412,7 +473,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         <div class="window-body">
             Destapa todas las casillas sin mina. Cada número dice cuántas minas hay en las 8 casillas de alrededor.
             Clic: destapar. Clic derecho: poner o quitar bandera. Clic en un número con todas sus banderas puestas: destapa las de alrededor.
-            <div style="margin-top:6px"><b>Tableros del día</b>: tres, iguales para todos, un intento cada uno. Empiezan con una zona abierta y se pueden resolver sin adivinar. Despejarlos da 50, 100 y 200 puntos de Autismo; si pisas una mina, la parte de las minas que tuvieras bien marcadas con bandera. Al acabar el día, los 3 más rápidos de cada tablero se llevan +50, +30 y +15.</div>
+            <div style="margin-top:6px"><b>Tablero del día</b>: hay tres (iguales para todos) y eliges uno al día, con un intento. Empiezan con una zona abierta y se pueden resolver sin adivinar. Despejarlos da 50, 100 y 200 puntos de Autismo; si pisas una mina, la parte de las minas que tuvieras bien marcadas con bandera. Al acabar el día, los 3 más rápidos de cada tablero se llevan +50, +30 y +15.</div>
             <div style="margin-top:6px"><b>Infinito</b>: rondas cada vez más difíciles y, al llegar a Experto, con menos tiempo. Al pasar una ronda eliges: seguir o retirarte con lo ganado. Si pierdes (mina o tiempo), lo pierdes todo.</div>
             <div style="margin-top:6px"><b>Libre</b>: eliges la dificultad; no da puntos.</div>
             <div class="wd-modal-btns"><button type="button" id="bm-modal-ok">Aceptar</button></div>
