@@ -193,8 +193,11 @@ if (!app.requestSingleInstanceLock()) {
         if (link) links.open(link);
     });
 
-    /* Windows: sin esto las notificaciones del sistema no salen (o salen como "electron"). */
-    if (process.platform === 'win32') app.setAppUserModelId(require('./package.json').build.appId);
+    /* Windows: sin esto las notificaciones del sistema no salen (o salen como "electron").
+       El id va escrito aquí (el mismo que build.appId de package.json): electron-builder
+       quita el bloque "build" del package.json que mete en app.asar, y leerlo de ahí
+       tiraba la app al arrancar en Windows. */
+    if (process.platform === 'win32') app.setAppUserModelId('es.melonhub.MelonHub');
 
     app.whenReady().then(() => {
         Menu.setApplicationMenu(null);

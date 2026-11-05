@@ -64,6 +64,11 @@ const PF2_MEDALS = [
     ['streak',   'En racha',        '🔥', 'días de racha (la mejor)', RACHA_HITOS],
 ];
 const PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* XP acumulada por nivel de medalla */
+/* Medalla única "Tester" (🖥️, color de acento): la lista se lleva a mano.
+   Nombres de usuario de iniciar sesión, en minúsculas (usuarios.username).
+   No da XP ni puntos y a quien no está en la lista no le sale. */
+const PF2_TESTERS = [
+];
 
 /* ── Tablas (idempotente, una vez por petición) ───────────────────── */
 function pf2_ensure(PDO $pdo): void {
@@ -261,6 +266,12 @@ function pf2_stats(PDO $pdo, int $uid): array {
             'next'     => $next,                 /* siguiente umbral (null = el último nivel) */
             'progress' => $next === null ? 100 : (int)floor(100 * max(0, $v - $prev) / max(1, $next - $prev)),
         ];
+    }
+    $user = strtolower((string)pf2_one($pdo, "SELECT username FROM usuarios WHERE id = ?", [$uid]));
+    if ($user !== '' && in_array($user, array_map('strtolower', PF2_TESTERS), true)) {
+        $medals[] = ['key' => 'tester', 'name' => 'Tester', 'emoji' => '🖥️', 'unit' => '', 'value' => 0,
+                     'tier' => 1, 'next' => null, 'progress' => 100, 'unique' => true,
+                     'desc' => 'Ayudó a probar Melon Hub'];
     }
     return [
         'level'   => 1 + intdiv($xp, 100),

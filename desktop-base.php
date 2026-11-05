@@ -933,6 +933,7 @@ window.DesktopState.whenReady = function(cb){
             <a class="menu-item" href="#" id="menu-changelog">Changelog...</a>
             <a class="menu-item" href="#" id="menu-reports">Reportes...</a>
             <a class="menu-item" href="#" id="menu-change-password">Cambiar contraseña...</a>
+            <a class="menu-item" href="#" id="menu-desktop-app" style="display:none">Descargar app de escritorio...</a>
             <a class="menu-item" href="logout.php">Cerrar sesión...</a>
             <div class="menu-sep"></div>
         </div>
@@ -2189,6 +2190,9 @@ window.notifSystem = (function() {
    su sistema (assets/desktop/download.php → GitHub Releases).
    No sale dentro de la propia app, en tablets, ni si ya se contestó:
    "Ahora no" lo calla 14 días y "Descargar", para siempre.
+   Para quien dijo "Ahora no" y luego la quiere, la misma descarga está
+   en el menú Inicio ("Descargar app de escritorio..."), que sale siempre
+   que el aviso podría salir, aunque esté callado.
 ========================= */
 (function() {
     var systems = <?= json_encode(desktopDownloadSystems()) ?>;
@@ -2202,12 +2206,33 @@ window.notifSystem = (function() {
     if (!os || systems.indexOf(os) === -1) return;
 
     var DAY = 86400000;
-    var until = 0;
-    try { until = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (_) {}
-    if (Date.now() < until) return;
     function silenceFor(ms) {
         try { localStorage.setItem(KEY, String(Date.now() + ms)); } catch (_) {}
     }
+    function download() {
+        /* Ya la tiene: el aviso del haro no vuelve a salir. */
+        silenceFor(100 * 365 * DAY);
+        /* Iframe oculto: la descarga empieza sin sacar al usuario
+           del escritorio (si faltara el archivo, no navega a un 404). */
+        var dl = document.createElement('iframe');
+        dl.style.display = 'none';
+        dl.src = 'assets/desktop/download.php?os=' + os;
+        document.body.appendChild(dl);
+        setTimeout(function() { dl.remove(); }, 60000);
+    }
+
+    var menuItem = document.getElementById('menu-desktop-app');
+    if (menuItem) {
+        menuItem.style.display = '';
+        menuItem.addEventListener('click', function(e) {
+            e.preventDefault();
+            download();
+        });
+    }
+
+    var until = 0;
+    try { until = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (_) {}
+    if (Date.now() < until) return;
 
     /* Después de las notificaciones del arranque (recordatorios a los 5 s). */
     setTimeout(function() {
@@ -2220,16 +2245,7 @@ window.notifSystem = (function() {
             rejectLabel: 'Ahora no',
             acceptLabel: 'Descargar',
             onReject: function() { silenceFor(14 * DAY); },
-            onAccept: function() {
-                silenceFor(100 * 365 * DAY);
-                /* Iframe oculto: la descarga empieza sin sacar al usuario
-                   del escritorio (si faltara el archivo, no navega a un 404). */
-                var dl = document.createElement('iframe');
-                dl.style.display = 'none';
-                dl.src = 'assets/desktop/download.php?os=' + os;
-                document.body.appendChild(dl);
-                setTimeout(function() { dl.remove(); }, 60000);
-            }
+            onAccept: download
         });
     }, 8000);
 })();

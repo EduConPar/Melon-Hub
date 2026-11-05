@@ -555,9 +555,13 @@
 
     /* ── Columna lateral ── */
     function medalSvg(m) {
-        var t = TIERS[m.tier] || TIERS[1];
+        /* Medallas únicas (Tester): sin niveles, en el color de acento. El
+           relleno va aclarado: con acentos oscuros (el azul de Win98) el
+           emoji no se veía. */
+        var t = m.unique ? ['var(--accent)', 'color-mix(in srgb, var(--accent) 30%, #fff)'] : (TIERS[m.tier] || TIERS[1]);
         return '<svg viewBox="0 0 34 40"><path d="M9 0h6l2 10-6 0z" fill="var(--accent)"/><path d="M19 0h6l-5 10h-3z" fill="var(--accent-deep, var(--accent))"/>' +
-            '<circle cx="17" cy="25" r="13" fill="' + t[1] + '" stroke="' + t[0] + '" stroke-width="3"/>' +
+            /* En style (no en fill/stroke): los atributos SVG no aceptan var(--…). */
+            '<circle cx="17" cy="25" r="13" style="fill:' + t[1] + ';stroke:' + t[0] + '" stroke-width="3"/>' +
             '<text x="17" y="30" font-size="13" text-anchor="middle">' + m.emoji + '</text></svg>';
     }
     function renderSide() {
@@ -571,6 +575,10 @@
             '<div class="pf2-xp">' + (st.xpInto || 0) + ' / 100 XP para el nivel ' + ((st.level || 1) + 1) + '</div></div></div>';
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Medallas</div><div class="pf2-panel-body pf2-medals">' +
             (st.medals || []).map(function (m) {
+                if (m.unique) {
+                    return '<div class="pf2-medal">' + medalSvg(m) +
+                        '<div class="pf2-mtip"><b>' + esc(m.name) + '</b><br>' + esc(m.desc || '') + '</div></div>';
+                }
                 var tierName = m.tier ? TIERS[m.tier][2] : 'Sin medalla';
                 var nextTxt = m.next == null ? 'Nivel máximo'
                     : (TIERS[m.tier + 1][2] + ' con ' + m.next.toLocaleString('es') + ' ' + m.unit.split(' ')[0]);
