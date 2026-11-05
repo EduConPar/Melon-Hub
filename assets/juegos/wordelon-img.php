@@ -27,7 +27,8 @@
 
 const WIMG_POR_FILA = 5;
 const WIMG_W        = 112;   /* ancho de una tarjeta a 1x */
-const WIMG_H        = 236;   /* alto de una tarjeta a 1x */
+const WIMG_H        = 236;   /* alto de una tarjeta de Wordelon a 1x */
+const WIMG_BASE_H   = 142;   /* alto sin el contenido de abajo (barra, foto, nombre…) */
 const WIMG_GAP      = 8;     /* separación entre tarjetas a 1x */
 const WIMG_ESCALA   = 2;
 const WIMG_AVATAR   = 56;    /* diámetro de la foto a 1x */
@@ -114,9 +115,52 @@ function wimg_pt(string $iface): float {
     return $iface === 'kawaii' ? 8.0 : 8.25;
 }
 
+/* Las fuentes de Win98 (ms_sans_serif de 98.css) no lo traen todo: solo
+   ASCII (ni ñ, ni tildes, ni ×, º o …) y aun así les faltan signos (a la
+   normal < > ` |; a la negrita también . , / ' " ? + = * _ \). El
+   navegador tira de otra fuente para esas letras; aquí se hace a mano:
+   el texto se parte en tramos y cada letra que falta va con la siguiente
+   fuente de la cadena (negrita → normal → Pixelify Sans). */
+const WIMG_FALTAN = [
+    'ms_sans_serif.ttf'      => '<>`|',
+    'ms_sans_serif_bold.ttf' => '<>`|"\'*+,./=?\\_',
+];
+function wimg_fuenteDe(string $ch, string $font): string {
+    $d = __DIR__ . '/fuentes/';
+    $cadena = [basename($font)];
+    if ($cadena[0] === 'ms_sans_serif_bold.ttf') $cadena[] = 'ms_sans_serif.ttf';
+    foreach ($cadena as $f) {
+        if (!isset(WIMG_FALTAN[$f])) return $d . $f;
+        $o = ord($ch);
+        if (strlen($ch) === 1 && $o >= 0x20 && $o <= 0x7e && strpos(WIMG_FALTAN[$f], $ch) === false) return $d . $f;
+    }
+    return $d . 'PixelifySans.ttf';
+}
+function wimg_tramos(string $txt, string $font): array {
+    if (!isset(WIMG_FALTAN[basename($font)])) return [[$txt, $font]];
+    $out = [];
+    foreach (mb_str_split($txt) as $ch) {
+        $f = wimg_fuenteDe($ch, $font);
+        $k = count($out) - 1;
+        if ($k >= 0 && $out[$k][1] === $f) $out[$k][0] .= $ch; else $out[] = [$ch, $f];
+    }
+    return $out;
+}
+/* Avance de un tramo: lo que se mueve la pluma (con el espacio final). */
+function wimg_avance(string $txt, string $font, float $pt): int {
+    $b = imagettfbbox($pt, 0, $font, $txt . 'H');
+    $p = imagettfbbox($pt, 0, $font, 'H');
+    return $b && $p ? (int)(abs($b[2] - $b[0]) - abs($p[2] - $p[0])) : 0;
+}
 function wimg_ancho(string $txt, string $font, float $pt): int {
-    $b = imagettfbbox($pt, 0, $font, $txt);
-    return $b ? (int)abs($b[2] - $b[0]) : 0;
+    $tr = wimg_tramos($txt, $font);
+    if (count($tr) === 1) {
+        $b = imagettfbbox($pt, 0, $font, $txt);
+        return $b ? (int)abs($b[2] - $b[0]) : 0;
+    }
+    $w = 0;
+    foreach ($tr as [$t, $f]) $w += wimg_avance($t, $f, $pt);
+    return $w;
 }
 /* Recorta con "…" hasta que quepa en $max píxeles. */
 function wimg_cabe(string $txt, string $font, float $pt, int $max): string {
@@ -127,7 +171,11 @@ function wimg_cabe(string $txt, string $font, float $pt, int $max): string {
 /* Texto sin suavizado (color negativo en GD), centrado en $cx si se pide. */
 function wimg_texto($im, string $txt, float $pt, string $font, string $hex, int $x, int $base, bool $centrar = false): void {
     if ($centrar) $x = (int)round($x - wimg_ancho($txt, $font, $pt) / 2);
-    imagettftext($im, $pt, 0, $x, $base, -wimg_col($im, $hex), $font, $txt);
+    $col = -wimg_col($im, $hex);
+    foreach (wimg_tramos($txt, $font) as [$t, $f]) {
+        imagettftext($im, $pt, 0, $x, $base, $col, $f, $t);
+        $x += wimg_avance($t, $f, $pt);
+    }
 }
 
 function wimg_rect($im, int $x, int $y, int $w, int $h, string $hex): void {
@@ -202,8 +250,9 @@ function wimg_mk(?array $marco): array {
 /* Una tarjeta a 1x. $mt / $mb = sitio que se deja encima y debajo de la
    foto para los marcos (el mayor de los de la imagen, para que todas las
    tarjetas midan lo mismo). Devuelve [imagen, x de la foto, y de la foto]. */
-function wimg_tarjeta(array $look, string $nombre, string $resultado, array $filas, int $maximo, int $mt, int $mb): array {
-    $W = WIMG_W; $H = WIMG_H + $mt + $mb; $c = $look['c']; $kw = $look['iface'] === 'kawaii';
+function wimg_tarjeta(array $look, array $j, array $cfg, int $mt, int $mb): array {
+    $nombre = (string)$j['label']; $resultado = (string)($j['resultado'] ?? '');
+    $W = WIMG_W; $H = WIMG_BASE_H + $cfg['alto'] + $mt + $mb; $c = $look['c']; $kw = $look['iface'] === 'kawaii';
     $im = imagecreatetruecolor($W, $H);
     imagealphablending($im, false);
     imagefill($im, 0, 0, imagecolorallocatealpha($im, 0, 0, 0, 127));
@@ -216,7 +265,7 @@ function wimg_tarjeta(array $look, string $nombre, string $resultado, array $fil
         wimg_borde($im, 0, 0, $W, $H, $c['border'], 2);
         wimg_rect($im, 6, 6, $W - 12, 18, $c['winBodyBg']);
         wimg_borde($im, 6, 6, $W - 12, 18, $c['border'], 2);
-        wimg_texto($im, 'Wordelon', $pt, wimg_fuente('kawaii', true), $c['titlebarText'], 12, 19);
+        wimg_texto($im, $cfg['titulo'], $pt, wimg_fuente('kawaii', true), $c['titlebarText'], 12, 19);
         wimg_rect($im, 6, 28, $W - 12, $H - 34, $c['winBodyBg']);
         wimg_borde($im, 6, 28, $W - 12, $H - 34, $c['border'], 2);
         $top = 38;
@@ -233,7 +282,7 @@ function wimg_tarjeta(array $look, string $nombre, string $resultado, array $fil
             $col = imagecolorallocate($im, (int)($r1 + ($r2 - $r1) * $t), (int)($g1 + ($g2 - $g1) * $t), (int)($b1 + ($b2 - $b1) * $t));
             imageline($im, 3 + $i, 3, 3 + $i, 20, $col);
         }
-        wimg_texto($im, 'Wordelon', $pt, wimg_fuente('win98', true), $c['titlebarText'], 6, 16);
+        wimg_texto($im, $cfg['titulo'], $pt, wimg_fuente('win98', true), $c['titlebarText'], 6, 16);
         $top = 32;
     }
 
@@ -248,10 +297,18 @@ function wimg_tarjeta(array $look, string $nombre, string $resultado, array $fil
     wimg_texto($im, wimg_cabe($nombre, $fn, $pt, $W - 16), $pt, $fn, $c['text'], (int)($W / 2), $y, true);
     wimg_texto($im, $resultado, $pt, $ff, $c['textMuted'], (int)($W / 2), $y + 13, true);
 
-    /* Cuadrícula. */
+    /* Lo de cada juego (la cuadrícula de Wordelon, los tiempos del
+       Buscaminas…) va debajo, en un hueco de $cfg['alto'] px. */
+    ($cfg['pinta'])($im, $look, $j, $y + 21);
+    return [$im, $ax, $ay];
+}
+
+/* Contenido de Wordelon: la cuadrícula de pistas ($j['filas']), con las
+   filas que no se usaron vacías. */
+function wimg_pintaCuadricula(GdImage $im, array $look, array $j, int $gy, int $maximo): void {
+    $W = WIMG_W; $c = $look['c']; $kw = $look['iface'] === 'kawaii'; $filas = $j['filas'];
     $gw = 5 * WIMG_CASILLA + 4 * WIMG_HUECO;
     $gx = (int)(($W - $gw) / 2);
-    $gy = $y + 21;
     for ($r = 0; $r < $maximo; $r++) {
         for ($k = 0; $k < 5; $k++) {
             $x = $gx + $k * (WIMG_CASILLA + WIMG_HUECO);
@@ -271,7 +328,15 @@ function wimg_tarjeta(array $look, string $nombre, string $resultado, array $fil
             }
         }
     }
-    return [$im, $ax, $ay];
+}
+
+/* Configuración de las tarjetas de Wordelon (la de serie de wimg_render). */
+function wimg_cfgWordelon(int $maximo = 6): array {
+    return [
+        'titulo' => 'Wordelon',
+        'alto'   => $maximo * (WIMG_CASILLA + WIMG_HUECO) - WIMG_HUECO,
+        'pinta'  => fn($im, $look, $j, $y) => wimg_pintaCuadricula($im, $look, $j, $y, $maximo),
+    ];
 }
 
 /* Foto CUADRADA a la escala final, con un borde fino (del color de borde
@@ -390,9 +455,13 @@ function wimg_fantasma(GdImage $img, int $cx, int $cy, int $D): void {
    5 en Discord; la pantalla de Estadísticas de la app pide las que
    quepan en la ventana. $escala: 2 en Discord; 1 en la app (más
    pequeñas, y la letra pixel sigue nítida a su tamaño).
-   $jugadores: [{uid, label, ruta (foto o null), resultado, filas (pistas)}]. */
-function wimg_render(PDO $pdo, array $jugadores, int $maximo, int $porFila = WIMG_POR_FILA, int $escala = WIMG_ESCALA): ?string {
+   $cfg: título de la barra, alto y dibujo del contenido de cada juego
+   (null = Wordelon, wimg_cfgWordelon).
+   $jugadores: [{uid, label, ruta (foto o null), resultado, …lo que use
+   $cfg['pinta']}]. */
+function wimg_render(PDO $pdo, array $jugadores, ?array $cfg = null, int $porFila = WIMG_POR_FILA, int $escala = WIMG_ESCALA): ?string {
     if (!wimg_disponible() || !$jugadores) return null;
+    $cfg = $cfg ?? wimg_cfgWordelon();
     $porFila = max(1, min($porFila, WIMG_POR_FILA));
     $jugadores = array_values($jugadores);
     $n = count($jugadores);
@@ -409,7 +478,7 @@ function wimg_render(PDO $pdo, array $jugadores, int $maximo, int $porFila = WIM
         $mt = max($mt, (int)ceil($t * WIMG_AVATAR));
         $mb = max($mb, (int)ceil($b * WIMG_AVATAR));
     }
-    $CH = WIMG_H + $mt + $mb;
+    $CH = WIMG_BASE_H + $cfg['alto'] + $mt + $mb;
 
     $W = ($cols * WIMG_W + ($cols - 1) * WIMG_GAP) * $S;
     $H = ($rows * $CH + ($rows - 1) * WIMG_GAP) * $S;
@@ -420,7 +489,7 @@ function wimg_render(PDO $pdo, array $jugadores, int $maximo, int $porFila = WIM
 
     foreach ($jugadores as $i => $j) {
         $look = $j['look'];
-        [$card, $ax, $ay] = wimg_tarjeta($look, (string)$j['label'], (string)$j['resultado'], $j['filas'], $maximo, $mt, $mb);
+        [$card, $ax, $ay] = wimg_tarjeta($look, $j, $cfg, $mt, $mb);
         $ox = ($i % $porFila) * (WIMG_W + WIMG_GAP) * $S;
         $oy = intdiv($i, $porFila) * ($CH + WIMG_GAP) * $S;
         imagealphablending($img, false);

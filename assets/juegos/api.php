@@ -7,6 +7,14 @@
      GET  ?action=wordelon-discord    → reintenta el mensaje de Discord
      GET  ?action=wordelon-hoy        → resumen de hoy (Estadísticas)
      GET  ?action=wordelon-hoy-img&cols=N&escala=1|2 → PNG de las tarjetas
+   Buscaminas (assets/juegos/buscaminas.php):
+     GET  ?action=bm-dia               → los 3 tableros de hoy (y reparte
+                                          los premios de días pasados)
+     POST ?action=bm-dia-abrir         {nivel} → abre/retoma ese tablero
+     POST ?action=bm-jugar             {id, tipo: abrir|acorde|bandera, celda}
+     GET  ?action=bm-inf               → estado del modo infinito
+     POST ?action=bm-inf-empezar | bm-inf-continuar | bm-inf-retirarse
+     GET  ?action=bm-hoy / bm-hoy-img&cols=N&escala=1|2 → Estadísticas
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
    dejó abierta pasada la medianoche) no se apunta el intento al día
    nuevo sin que lo vea, se devuelve la partida nueva con diaNuevo.
@@ -17,6 +25,7 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once __DIR__ . '/wordelon.php';
+require_once __DIR__ . '/buscaminas.php';
 
 $me = requireAuth();
 $st = $pdo->prepare('SELECT id FROM usuarios WHERE user_key = ?');
@@ -25,6 +34,7 @@ $uid = (int)$st->fetchColumn();
 if ($uid <= 0) jsonError('Usuario no encontrado', 403);
 
 wordelon_ensure($pdo);
+bm_ensure($pdo);
 
 $action = $_GET['action'] ?? '';
 try {
@@ -75,7 +85,51 @@ try {
         case 'wordelon-hoy-img': {
             require_once __DIR__ . '/wordelon-img.php';
             [$jug] = wordelon_jugadores($pdo, wordelon_hoy());
-            $png = wimg_render($pdo, $jug, WORDELON_INTENTOS, (int)($_GET['cols'] ?? 4), (int)($_GET['escala'] ?? 1));
+            $png = wimg_render($pdo, $jug, wimg_cfgWordelon(WORDELON_INTENTOS), (int)($_GET['cols'] ?? 4), (int)($_GET['escala'] ?? 1));
+            if ($png === null) { http_response_code(404); exit; }
+            header('Content-Type: image/png');
+            header('Content-Length: ' . strlen($png));
+            echo $png;
+            exit;
+        }
+
+        /* ── Buscaminas ── */
+        case 'bm-dia':
+            jsonResponse(['ok' => true] + bm_dia($pdo, $uid));
+
+        case 'bm-dia-abrir':
+        case 'bm-jugar':
+        case 'bm-inf-empezar':
+        case 'bm-inf-continuar':
+        case 'bm-inf-retirarse': {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+            $b = jsonBody();
+            try {
+                if ($action === 'bm-dia-abrir')      $r = ['partida' => bm_abrirDia($pdo, $uid, (int)($b['nivel'] ?? 0))];
+                elseif ($action === 'bm-jugar')      $r = bm_jugar($pdo, $uid, (int)($b['id'] ?? 0), (string)($b['tipo'] ?? ''), (int)($b['celda'] ?? -1));
+                elseif ($action === 'bm-inf-retirarse') $r = bm_infRetirarse($pdo, $uid);
+                else                                 $r = ['infinito' => bm_infAvanzar($pdo, $uid, $action === 'bm-inf-continuar')];
+            } catch (InvalidArgumentException $e) {
+                jsonResponse(['ok' => false, 'error' => $e->getMessage()]);
+            }
+            $st = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ?');
+            $st->execute([$uid]);
+            jsonResponse(['ok' => true, 'autismo' => (int)$st->fetchColumn()] + $r);
+        }
+
+        case 'bm-inf':
+            jsonResponse(['ok' => true, 'infinito' => bm_infEstado($pdo, $uid)]);
+
+        case 'bm-hoy': {
+            require_once __DIR__ . '/wordelon-img.php';
+            bm_premiar($pdo);
+            $jug = bm_jugadoresHoy($pdo);
+            jsonResponse(['ok' => true, 'dia' => bm_hoy(), 'jugadores' => count($jug), 'imagen' => wimg_disponible() && count($jug) > 0]);
+        }
+
+        case 'bm-hoy-img': {
+            require_once __DIR__ . '/wordelon-img.php';
+            $png = wimg_render($pdo, bm_jugadoresHoy($pdo), bm_cfgImagen(), (int)($_GET['cols'] ?? 4), (int)($_GET['escala'] ?? 1));
             if ($png === null) { http_response_code(404); exit; }
             header('Content-Type: image/png');
             header('Content-Length: ' . strlen($png));

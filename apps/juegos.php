@@ -43,12 +43,15 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     <meta name="viewport" content="width=1024, user-scalable=yes">
     <?php endif; ?>
     <title>Juegos</title>
-    <script src="../assets/js/icon-pack.js"></script>
-    <?php require_once dirname(__DIR__) . "/assets/php/active-interface.php"; emitInterfaceCss("../"); ?>
-    <script src="../assets/js/interface-loader.js?v=fs1"></script>
+    <!-- Mismo orden que calendario.php / tienda.php: el CSS de la interfaz
+         DESPUÉS de tokens.css, para que sus variables (las de Kawaii) no
+         las pisen los valores de Win98. -->
     <link rel="stylesheet" href="../assets/css/98.css">
     <link rel="stylesheet" href="../assets/css/tokens.css">
     <link rel="stylesheet" href="../assets/css/base.css">
+    <script src="../assets/js/icon-pack.js"></script>
+    <?php require_once dirname(__DIR__) . "/assets/php/active-interface.php"; emitInterfaceCss("../"); ?>
+    <script src="../assets/js/interface-loader.js?v=fs1"></script>
     <?php if ($themeCssRel): ?>
     <link rel="stylesheet" id="active-theme-link" href="<?= htmlspecialchars($themeCssRel) ?>">
     <?php endif; ?>
@@ -99,7 +102,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
            que "?" (con flex se iba a la derecha). */
         .wd-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; width: 100%; }
         .wd-top button { min-width: 0; }
-        #wd-back, #st-back { justify-self: start; }
+        .wd-top > button:first-child { justify-self: start; }
         .wd-top-right { justify-self: end; display: flex; gap: 4px; }
         .wd-head { text-align: center; }
         .wd-title { font-weight: bold; font-size: 13px; }
@@ -178,6 +181,74 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .st-scroll img { display: block; margin: 0 auto; image-rendering: pixelated; }
         .st-empty { margin-top: 30px; text-align: center; color: var(--text-muted, #444); }
 
+        /* ── Buscaminas (assets/juegos/buscaminas.js) ────────────────── */
+        #jg-bm, #jg-bm-juego { padding: 8px 12px 12px; align-items: center; }
+        #jg-bm-stats { padding: 8px 0 0; align-items: center; }
+        #jg-bm-stats .wd-top { padding: 0 12px; box-sizing: border-box; }
+        .bm-menu { width: 100%; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+        .bm-menu fieldset { padding: 8px 10px; }
+        .bm-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 3px 0; }
+        .bm-row-name b { font-size: 12px; }
+        .bm-row-state { color: var(--text-muted, #444); text-align: right; white-space: nowrap; }
+        .bm-row button, .bm-libre button { min-width: 80px; }
+        .bm-nota { color: var(--text-muted, #444); margin-top: 6px; }
+        .bm-libre { display: flex; gap: 8px; align-items: center; }
+        /* Alto automático: 98.css lo fija a 21 px y en Kawaii (letra más
+           grande) se cortaba el texto. */
+        .bm-libre select { flex: 1; height: auto; min-height: 21px; }
+        .bm-inf-line { margin-bottom: 6px; line-height: 1.5; }
+        .bm-btns { display: flex; gap: 6px; justify-content: center; margin-top: 6px; flex-wrap: wrap; }
+
+        .bm-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; margin: 8px 0 6px; gap: 8px; }
+        .bm-cont {
+            justify-self: start; min-width: 54px; padding: 3px 6px; text-align: center;
+            font-weight: bold; font-size: 14px; font-variant-numeric: tabular-nums;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a);
+        }
+        #bmj-tiempo { justify-self: end; }
+        .bm-cont.urge { color: #c00000; }
+        .bm-info { text-align: center; font-weight: bold; }
+        .bm-wrap { flex: 0 0 auto; max-width: 100%; overflow: auto; }
+        .bm-board {
+            display: grid; padding: 3px; user-select: none; -webkit-user-select: none;
+            background: var(--bezel-dark-2, grey);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -3px -3px var(--bezel-light-2, #dfdfdf), inset 3px 3px var(--bezel-dark-1, #0a0a0a);
+        }
+        /* Casillas: tapada en relieve; destapada plana con la rejilla fina. */
+        .bm-c {
+            width: var(--cs, 20px); height: var(--cs, 20px); box-sizing: border-box;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: calc(var(--cs, 20px) * .68); font-style: normal; line-height: 1;
+            background-position: center; background-repeat: no-repeat; background-size: 70%;
+        }
+        .bm-c.t {
+            background-color: var(--btn-bg, silver); cursor: pointer;
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf);
+        }
+        .bm-c.t.p { box-shadow: inset 1px 1px var(--bezel-dark-2, grey); }
+        .bm-c.a { background-color: var(--win-bg, silver); box-shadow: inset 1px 1px var(--bezel-dark-2, grey); }
+        .bm-c.x { background-color: #e03030; }
+        /* Colores de los números (los de siempre del género). */
+        .bm-c.n1 { color: #0000ff; } .bm-c.n2 { color: #007b00; } .bm-c.n3 { color: #ff0000; } .bm-c.n4 { color: #00007b; }
+        .bm-c.n5 { color: #7b0000; } .bm-c.n6 { color: #007b7b; } .bm-c.n7 { color: #000; }    .bm-c.n8 { color: #7b7b7b; }
+        .bm-flag { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' shape-rendering='crispEdges'%3E%3Cpath fill='%23e00000' d='M3 1h4v1h1v1h1v1H8v1H7v1H3z'/%3E%3Cpath fill='%23000' d='M6 1h1v8H6zM4 9h5v1H4zM2 10h9v1H2z'/%3E%3C/svg%3E"); }
+        .bm-mina, .bm-mal { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13' shape-rendering='crispEdges'%3E%3Cpath fill='%23000' d='M6 0h1v13H6zM0 6h13v1H0zM2 2h1v1H2zM10 2h1v1h-1zM2 10h1v1H2zM10 10h1v1h-1zM4 3h5v1h1v1h1v3h-1v1h-1v1H4V9H3V8H2V5h1V4h1z'/%3E%3Cpath fill='%23fff' d='M4 4h2v2H4z'/%3E%3C/svg%3E"); }
+        .bm-mal { position: relative; }
+        .bm-mal::after { content: ''; position: absolute; inset: 15%; background: linear-gradient(45deg, transparent 44%, #e00000 44% 56%, transparent 56%), linear-gradient(-45deg, transparent 44%, #e00000 44% 56%, transparent 56%); }
+        /* Kawaii: casillas con borde morado en vez de relieve. */
+        body.jg-kawaii .bm-c.t { background-color: var(--win-body-bg, #F0E8F3); box-shadow: inset 0 0 0 1px var(--border, #49388B); }
+        body.jg-kawaii .bm-c.t.p { background-color: var(--win-bg, #E0D4E7); }
+        body.jg-kawaii .bm-c.a { background-color: var(--input-bg, #fff); box-shadow: inset 0 0 0 1px var(--win-bg, #E0D4E7); }
+        body.jg-kawaii .bm-board { background: var(--border, #49388B); box-shadow: none; padding: 2px; }
+        body.jg-kawaii .bm-cont { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        /* Icono de la portada. */
+        .bm-card-ic { --cs: 18px; }
+        .bm-card-ic .bm-c { width: 18px; height: 18px; font-size: 12px; }
+
         /* Ventanita Win98 de "Cómo se juega". */
         .wd-modal-bg {
             display: none; position: fixed; inset: 0; z-index: 50;
@@ -191,7 +262,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .wd-modal-btns { display: flex; justify-content: flex-end; margin-top: 8px; }
     </style>
 </head>
-<body class="<?= htmlspecialchars($themeClass) ?>">
+<body class="<?= htmlspecialchars($themeClass) ?><?= (($_COOKIE['activeInterface'] ?? '') === 'kawaii') ? ' jg-kawaii' : '' ?>">
 
 <!-- PORTADA -->
 <div class="jg-view on" id="jg-home">
@@ -207,6 +278,17 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
                 <div class="jg-card-sub">Adivina la palabra del día en 6 intentos</div>
             </div>
             <div class="jg-card-state" id="jg-wordelon-state"></div>
+        </div>
+        <div class="jg-card" id="jg-open-bm" role="button" tabindex="0" style="margin-top:6px">
+            <div class="jg-card-ic bm-card-ic" aria-hidden="true">
+                <i class="bm-c t"></i><i class="bm-c a n1">1</i>
+                <i class="bm-c a"></i><i class="bm-c t bm-flag"></i>
+            </div>
+            <div>
+                <div class="jg-card-name">Buscaminas</div>
+                <div class="jg-card-sub">Tableros del día, libre e infinito</div>
+            </div>
+            <div class="jg-card-state" id="jg-bm-state"></div>
         </div>
     </div>
 </div>
@@ -246,6 +328,98 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     <div class="st-scroll" id="st-scroll"></div>
 </div>
 
+<!-- BUSCAMINAS: menú (assets/juegos/buscaminas.js) -->
+<div class="jg-view" id="jg-bm">
+    <div class="wd-top">
+        <button type="button" id="bm-back">&lt; Juegos</button>
+        <div class="wd-head">
+            <div class="wd-title">Buscaminas</div>
+            <div class="wd-date" id="bm-date"></div>
+        </div>
+        <div class="wd-top-right">
+            <button type="button" id="bm-stats">Estadísticas</button>
+            <button type="button" class="wd-help" id="bm-help" title="Cómo se juega" aria-label="Cómo se juega">?</button>
+        </div>
+    </div>
+    <div class="bm-menu">
+        <fieldset>
+            <legend>Tableros del día</legend>
+            <div id="bm-dia-list"></div>
+            <div class="bm-nota">Un intento por tablero. El tiempo empieza al abrirlo.</div>
+        </fieldset>
+        <fieldset>
+            <legend>Infinito</legend>
+            <div id="bm-inf-box"></div>
+        </fieldset>
+        <fieldset>
+            <legend>Libre</legend>
+            <div class="bm-libre">
+                <select id="bm-libre-nivel">
+                    <option value="1">Principiante (9×9, 10 minas)</option>
+                    <option value="2">Intermedio (16×16, 40 minas)</option>
+                    <option value="3">Experto (30×16, 99 minas)</option>
+                </select>
+                <button type="button" id="bm-libre-jugar">Jugar</button>
+            </div>
+            <div class="bm-nota">Sin puntos.</div>
+        </fieldset>
+    </div>
+</div>
+
+<!-- BUSCAMINAS: tablero -->
+<div class="jg-view" id="jg-bm-juego">
+    <div class="wd-top">
+        <button type="button" id="bmj-back">&lt; Buscaminas</button>
+        <div class="wd-head">
+            <div class="wd-title" id="bmj-title">Buscaminas</div>
+            <div class="wd-date" id="bmj-sub"></div>
+        </div>
+        <div class="wd-top-right">
+            <button type="button" id="bmj-nueva">Nueva</button>
+        </div>
+    </div>
+    <div class="bm-bar">
+        <div class="bm-cont" id="bmj-minas" title="Minas sin marcar">0</div>
+        <div class="bm-info" id="bmj-info"></div>
+        <div class="bm-cont" id="bmj-tiempo" title="Tiempo">0:00</div>
+    </div>
+    <div class="bm-wrap"><div class="bm-board" id="bmj-board"></div></div>
+    <div class="wd-end" id="bmj-end"></div>
+</div>
+
+<!-- BUSCAMINAS: estadísticas de hoy -->
+<div class="jg-view" id="jg-bm-stats">
+    <div class="wd-top">
+        <button type="button" id="bms-back">&lt; Buscaminas</button>
+        <div class="wd-head">
+            <div class="wd-title">Buscaminas</div>
+            <div class="wd-date" id="bms-date"></div>
+        </div>
+        <div class="wd-top-right">
+            <button type="button" id="bms-reload">Actualizar</button>
+        </div>
+    </div>
+    <div class="st-sum" id="bms-sum"></div>
+    <div class="st-scroll" id="bms-scroll"></div>
+</div>
+
+<div class="wd-modal-bg" id="bm-modal">
+    <div class="window wd-modal">
+        <div class="title-bar">
+            <div class="title-bar-text">Cómo se juega</div>
+            <div class="title-bar-controls"><button aria-label="Close" id="bm-modal-x"></button></div>
+        </div>
+        <div class="window-body">
+            Destapa todas las casillas sin mina. Cada número dice cuántas minas hay en las 8 casillas de alrededor.
+            Clic: destapar. Clic derecho: poner o quitar bandera. Clic en un número con todas sus banderas puestas: destapa las de alrededor.
+            <div style="margin-top:6px"><b>Tableros del día</b>: tres, iguales para todos, un intento cada uno. Empiezan con una zona abierta y se pueden resolver sin adivinar. Despejarlos da 50, 100 y 200 puntos de Autismo; si pisas una mina, la parte de las minas que tuvieras bien marcadas con bandera. Al acabar el día, los 3 más rápidos de cada tablero se llevan +50, +30 y +15.</div>
+            <div style="margin-top:6px"><b>Infinito</b>: rondas cada vez más difíciles y, al llegar a Experto, con menos tiempo. Al pasar una ronda eliges: seguir o retirarte con lo ganado. Si pierdes (mina o tiempo), lo pierdes todo.</div>
+            <div style="margin-top:6px"><b>Libre</b>: eliges la dificultad; no da puntos.</div>
+            <div class="wd-modal-btns"><button type="button" id="bm-modal-ok">Aceptar</button></div>
+        </div>
+    </div>
+</div>
+
 <div class="wd-modal-bg" id="wd-modal">
     <div class="window wd-modal">
         <div class="title-bar">
@@ -283,7 +457,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     var $ = function (id) { return document.getElementById(id); };
 
     function show(view) {
-        ['jg-home', 'jg-wordelon', 'jg-stats'].forEach(function (id) { $(id).classList.toggle('on', id === view); });
+        Array.prototype.forEach.call(document.querySelectorAll('.jg-view'), function (v) { v.classList.toggle('on', v.id === view); });
     }
 
     function api(action, body) {
@@ -532,7 +706,11 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 
     buildKeyboard();
     cargar().then(paintHomeState);
+
+    /* Lo común para los demás juegos (assets/juegos/buscaminas.js). */
+    window.JG = { api: api, show: show, fecha: fecha, PT: PT, API: API, $: $ };
 })();
 </script>
+<script src="../assets/juegos/buscaminas.js?v=1"></script>
 </body>
 </html>
