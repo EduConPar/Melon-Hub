@@ -19,10 +19,10 @@
        y formas verbales), ya normalizado.
      - Acertar da puntos de autismo según el intento (WORDELON_PUNTOS),
        una sola vez al día porque solo hay una partida por día.
-     - El bot de Discord tiene UN mensaje por día en WORDELON_CANAL con la
-       clasificación de los que han terminado; se edita (PATCH) con cada
-       partida que acaba. Solo la cuadrícula de colores, sin letras, para
-       no destripar la palabra a quien aún no ha jugado.
+     - El bot de Discord tiene UN mensaje por día en WORDELON_CANAL; se
+       edita (PATCH) con cada partida que acaba. Lleva una imagen con una
+       tarjeta por jugador (wordelon-img.php) y un texto corto; solo la
+       cuadrícula de colores, sin letras, para no destripar la palabra.
    ────────────────────────────────────────────────────────────────────── */
 
 const WORDELON_NOMBRE      = 'Wordelon';
@@ -239,69 +239,116 @@ function wordelon_fechaLarga(string $dia): string {
     return (int)gmdate('j', $t) . ' de ' . $m[(int)gmdate('n', $t) - 1] . ' de ' . gmdate('Y', $t);
 }
 
+/* Mensaje del día: [embed, png]. Con imagen (wordelon-img.php: una
+   tarjeta por jugador con su foto, su interfaz y su tema, por orden de
+   llegada) el texto es corto: título, fecha y cuántos han jugado. Si el
+   servidor no puede dibujarla (sin GD), va la clasificación en texto. */
 function wordelon_embed(PDO $pdo, string $dia): array {
+    require_once __DIR__ . '/wordelon-img.php';
     $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
-    /* Primero los que aciertan (menos intentos antes), luego los que no;
-       a igualdad, quien terminó antes. */
-    $st = $pdo->prepare("SELECT p.intentos, p.acertado, p.puntos, u.label, u.user_key
+    $st = $pdo->prepare("SELECT p.user_id, p.intentos, p.acertado, p.updated_at, u.label, u.user_key
                            FROM wordelon_partidas p JOIN usuarios u ON u.id = p.user_id
                           WHERE p.dia = ? AND p.terminado = 1
-                          ORDER BY p.acertado DESC, JSON_LENGTH(p.intentos) ASC, p.updated_at ASC");
+                          ORDER BY p.updated_at ASC, p.user_id ASC");
     $st->execute([$dia]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
-    $fields = [];
+    $jug = [];
     $aciertos = 0;
-    foreach ($rows as $i => $r) {
+    foreach ($rows as $r) {
         $int = json_decode((string)$r['intentos'], true) ?: [];
         if ((int)$r['acertado']) $aciertos++;
-        /* Discord admite 25 campos: 24 jugadores + uno con los que faltan. */
-        if (count($fields) === 24 && count($rows) > 25) {
-            $fields[] = ['name' => '…', 'value' => 'y ' . (count($rows) - 24) . ' más', 'inline' => true];
-            break;
-        }
-        $res = (int)$r['acertado'] ? count($int) . '/' . WORDELON_INTENTOS : 'X/' . WORDELON_INTENTOS;
-        $fields[] = [
-            'name'   => mb_substr(($i + 1) . '. ' . ($r['label'] ?: $r['user_key']), 0, 200) . ' · ' . $res,
-            'value'  => wordelon_cuadricula($int, $sol) ?: '—',
-            'inline' => true,
+        $label = (string)($r['label'] ?: $r['user_key']);
+        $foto = function_exists('getUserImage') ? (string)getUserImage($label) : '';
+        $jug[] = [
+            'uid'       => (int)$r['user_id'],
+            'label'     => $label,
+            'ruta'      => $foto !== '' ? dirname(__DIR__, 2) . '/' . $foto : null,
+            'resultado' => ((int)$r['acertado'] ? count($int) : 'X') . '/' . WORDELON_INTENTOS,
+            'acertado'  => (int)$r['acertado'],
+            'intentos'  => $int,
+            'filas'     => array_map(fn($w) => wordelon_evaluar($w, $sol), $int),
         ];
     }
+
+    $png = null;
+    try { $png = wimg_render($pdo, $jug, WORDELON_INTENTOS); }
+    catch (Throwable $e) { error_log('[wordelon] imagen: ' . $e->getMessage()); }
+
     $n = count($rows);
     $desc = wordelon_fechaLarga($dia) . "\n"
           . $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
           . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado')
           . "\n**[→ Jugar en Melon Hub](" . WORDELON_WEB . '/)**';
-    return [
+    $embed = [
         'title'       => WORDELON_NOMBRE . ' #' . wordelon_numero($dia),
         'url'         => WORDELON_WEB . '/',
         'description' => $desc,
         'color'       => 0x6AAA64,
-        'fields'      => $fields,
         'footer'      => ['text' => 'Se actualiza con cada partida · Melon Hub'],
     ];
+    if ($png !== null) {
+        $embed['image'] = ['url' => 'attachment://wordelon.png'];
+        return [$embed, $png, $n];
+    }
+
+    /* Sin imagen: clasificación en texto (aciertos primero, menos
+       intentos antes). Discord admite 25 campos: 24 + "y N más". */
+    usort($jug, fn($x, $y) => [$y['acertado'], count($x['intentos'])] <=> [$x['acertado'], count($y['intentos'])]);
+    $fields = [];
+    foreach ($jug as $i => $j) {
+        if ($i === 24 && $n > 25) {
+            $fields[] = ['name' => '…', 'value' => 'y ' . ($n - 24) . ' más', 'inline' => true];
+            break;
+        }
+        $fields[] = [
+            'name'   => mb_substr(($i + 1) . '. ' . $j['label'], 0, 200) . ' · ' . $j['resultado'],
+            'value'  => wordelon_cuadricula($j['intentos'], $sol) ?: '—',
+            'inline' => true,
+        ];
+    }
+    $embed['fields'] = $fields;
+    return [$embed, null, $n];
 }
 
-function wordelon_discord(string $metodo, string $ruta, array $payload): array {
+/* Petición a la API de Discord. Con $png va en multipart como adjunto
+   "wordelon.png" (el embed lo enseña con attachment://). Al editar,
+   `attachments` dice qué adjuntos quedan: solo el nuevo, así el viejo
+   se borra. */
+function wordelon_discord(string $metodo, string $ruta, array $payload, ?string $png = null): array {
     $token = trim((string)env('DISCORD_BOT_TOKEN', ''));
     if ($token === '') return [0, null, 'sin token'];
     /* DISCORD_API_BASE solo para las pruebas (un Discord falso). */
     $base = rtrim((string)env('DISCORD_API_BASE', 'https://discord.com/api/v10'), '/');
+    $headers = ['Authorization: Bot ' . $token, 'User-Agent: MelonHub-Wordelon (https://melonhub.es, 1.0)'];
+    $tmp = null;
+    if ($png !== null) {
+        $payload['attachments'] = [['id' => 0, 'filename' => 'wordelon.png']];
+        if (class_exists('CURLStringFile')) {
+            $file = new CURLStringFile($png, 'wordelon.png', 'image/png');
+        } else {
+            $tmp = tempnam(sys_get_temp_dir(), 'wdl');
+            file_put_contents($tmp, $png);
+            $file = new CURLFile($tmp, 'image/png', 'wordelon.png');
+        }
+        $body = ['payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'files[0]' => $file];
+    } else {
+        $headers[] = 'Content-Type: application/json';
+        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
     $ch = curl_init($base . $ruta);
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => $metodo,
-        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: Bot ' . $token,
-            'Content-Type: application/json',
-            'User-Agent: MelonHub-Wordelon (https://melonhub.es, 1.0)',
-        ],
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => 20,
     ]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    return [$code, json_decode((string)$resp, true), (string)curl_error($ch)];
+    $err  = (string)curl_error($ch);
+    if ($tmp) @unlink($tmp);
+    return [$code, json_decode((string)$resp, true), $err];
 }
 
 /* Publica o edita el mensaje del día. Con un candado de MariaDB para que
@@ -319,26 +366,28 @@ function wordelon_discordResumen(PDO $pdo, string $dia): array {
     $st->execute([$lock]);
     if ((int)$st->fetchColumn() !== 1) return ['ok' => false, 'error' => 'Otra petición está publicando ahora mismo'];
     try {
-        $embed = wordelon_embed($pdo, $dia);
-        if (!$embed['fields']) return ['ok' => false, 'error' => 'Nadie ha terminado todavía la partida de hoy'];
+        [$embed, $png, $n] = wordelon_embed($pdo, $dia);
+        if ($n === 0) return ['ok' => false, 'error' => 'Nadie ha terminado todavía la partida de hoy'];
         $st = $pdo->prepare("SELECT discord_message_id FROM wordelon_dias WHERE dia = ?");
         $st->execute([$dia]);
         $msgId = (string)$st->fetchColumn();
         $canal = '/channels/' . rawurlencode(WORDELON_CANAL) . '/messages';
         if ($msgId !== '') {
-            [$code, $j, $err] = wordelon_discord('PATCH', $canal . '/' . rawurlencode($msgId), ['embeds' => [$embed]]);
+            [$code, $j, $err] = wordelon_discord('PATCH', $canal . '/' . rawurlencode($msgId), ['embeds' => [$embed]], $png);
             if ($code !== 404) {
                 $r = wordelon_discordResultado('PATCH', $code, $j, $err);
                 $r['mensaje'] = $msgId;
+                $r['imagen'] = $png !== null;
                 return $r;
             }
         }
-        [$code, $j, $err] = wordelon_discord('POST', $canal, ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]]);
+        [$code, $j, $err] = wordelon_discord('POST', $canal, ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]], $png);
         $r = wordelon_discordResultado('POST', $code, $j, $err);
         if ($r['ok'] && isset($j['id'])) {
             $pdo->prepare("UPDATE wordelon_dias SET discord_message_id = ? WHERE dia = ?")->execute([(string)$j['id'], $dia]);
             $r['mensaje'] = (string)$j['id'];
         }
+        $r['imagen'] = $png !== null;
         return $r;
     } finally {
         $pdo->prepare("SELECT RELEASE_LOCK(?)")->execute([$lock]);
