@@ -2908,3 +2908,22 @@
    (cada uno del ancho de 1/5 de la fila). */
 .pf2-games.pf2-games5, .pf2-music { display: flex; justify-content: center; gap: 6px; }
 .pf2-games.pf2-games5 > .pf2-game, .pf2-music > .pf2-album { width: calc((100% - 24px) / 5); flex: 0 0 auto; }
+
+/* ── Racha diaria (fueguito junto al nombre) e invitaciones ──
+   assets/profile/racha.php + perfil-v2.js (renderRacha / openInvite). */
+.pf2-racha { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; vertical-align: -2px; font-size: 13px; }
+.pf2-racha:empty { display: none; }
+.pf2-racha svg { width: 15px; height: 18px; display: block; filter: drop-shadow(1px 1px 0 #000); }
+.pf2-racha b { font-weight: bold; }
+.pf2-racha.is-off b { color: #d0d0d0; }
+.pf2-racha.is-btn { cursor: pointer; }
+.pf2-racha.is-btn:hover svg { transform: translateY(-1px); }
+.pf2-racha.is-btn:focus-visible { outline: 1px dotted #fff; outline-offset: 2px; }
+.pf2-inv-txt { font-size: 11px; line-height: 1.4; }
+.pf2-inv-link { display: flex; gap: 4px; }
+.pf2-inv-link input { flex: 1; min-width: 0; }
+.pf2-inv-list { max-height: 240px; }
+.pf2-inv-row .mh-marco-av img, .pf2-inv-row .pf2-friend-ph { width: 28px; height: 28px; object-fit: cover; display: flex; align-items: center; justify-content: center; }
+.pf2-inv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf2-inv-st { font-size: 10px; color: var(--text-faint, #808080); }
+.pf2-inv-row.is-cobrada .pf2-inv-st { color: var(--accent); font-weight: bold; }

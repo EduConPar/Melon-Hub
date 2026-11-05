@@ -201,6 +201,22 @@ function tiendaPrevSlug(string $slug): ?string {
     return null;
 }
 
+/* Objetos que se gastan (de momento solo el Protector de racha,
+   assets/profile/racha.php): la compra se marca con consumido_en al
+   usarse y deja de contar como "lo tienes", así que se puede volver a
+   comprar o regalar. Lo de comprobar si se tiene algo en la tienda mira
+   siempre consumido_en IS NULL. */
+function tiendaEnsureConsumibles(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM tienda_compras LIKE 'consumido_en'")->fetch()) {
+            $pdo->exec("ALTER TABLE tienda_compras ADD COLUMN consumido_en TIMESTAMP NULL DEFAULT NULL");
+        }
+    } catch (Throwable $e) { /* ya estaba o sin permisos de ALTER */ }
+}
+
 /* Regalos de la tienda (tienda api gift / gifts / gift-answer):
    estado pendiente → aceptado | rechazado | devuelto (ya lo tenía o le
    faltaba la mejora anterior al abrirlo). */

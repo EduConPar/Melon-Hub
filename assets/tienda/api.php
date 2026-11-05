@@ -24,6 +24,10 @@ if (!$user) {
 }
 $userId = (int)$user['id'];
 
+/* Compras que se gastan (Protector de racha): consumido_en. */
+require_once __DIR__ . '/catalogo.php';
+tiendaEnsureConsumibles($pdo);
+
 $action = $_GET['action'] ?? '';
 
 function getBody(): array {
@@ -60,7 +64,7 @@ case 'state': {
 
     /* IDs de items ya comprados por el usuario — el frontend los usa para
        deshabilitar el botón "Comprar" y mostrar "Ya lo tienes". */
-    $ownStmt = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ?');
+    $ownStmt = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ? AND consumido_en IS NULL');
     $ownStmt->execute([$userId]);
     $ownedIds = array_map('intval', $ownStmt->fetchAll(PDO::FETCH_COLUMN));
 
@@ -147,7 +151,7 @@ case 'buy': {
         if (!$item) { $pdo->rollBack(); jsonError('Item no disponible', 404); }
 
         /* Una recompensa solo se puede adquirir UNA vez por usuario. */
-        $ownChk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? LIMIT 1');
+        $ownChk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? AND consumido_en IS NULL LIMIT 1');
         $ownChk->execute([$userId, $itemId]);
         if ($ownChk->fetchColumn()) {
             $pdo->rollBack();
@@ -193,7 +197,10 @@ case 'buy': {
 
         $pdo->prepare('UPDATE usuarios SET autismo = ? WHERE id = ?')
             ->execute([$newBalance, $userId]);
-        $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, ?)')
+        /* UNIQUE (user_id, item_id): un consumible gastado (Protector de
+           racha) se vuelve a comprar sobre su misma fila. */
+        $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, ?)
+                       ON DUPLICATE KEY UPDATE precio = VALUES(precio), creado_en = NOW(), consumido_en = NULL')
             ->execute([$userId, $itemId, $precio]);
 
         /* Si el item lleva rol asignado Y el usuario tiene Discord vinculado,
@@ -263,7 +270,7 @@ case 'gift-answer': {
         return $st->fetch(PDO::FETCH_ASSOC) ?: null;
     };
     $ownsSlug = function (int $uid, string $slug) use ($pdo): bool {
-        $st = $pdo->prepare('SELECT 1 FROM tienda_compras c JOIN tienda_items i ON i.id = c.item_id WHERE c.user_id = ? AND i.slug = ? LIMIT 1');
+        $st = $pdo->prepare('SELECT 1 FROM tienda_compras c JOIN tienda_items i ON i.id = c.item_id WHERE c.user_id = ? AND i.slug = ? AND c.consumido_en IS NULL LIMIT 1');
         $st->execute([$uid, $slug]);
         return (bool)$st->fetchColumn();
     };
@@ -284,7 +291,7 @@ case 'gift-answer': {
     if ($action === 'gift-target') {
         $t = $userByKey((string)($_GET['user'] ?? ''));
         if (!$t || (int)$t['id'] === $userId || !isMutualFollow($pdo, $userId, (int)$t['id'])) jsonError('Solo puedes regalar a amigos mutuos.', 403);
-        $st = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ?');
+        $st = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ? AND consumido_en IS NULL');
         $st->execute([(int)$t['id']]);
         $owned = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
         $st = $pdo->prepare("SELECT DISTINCT item_id FROM tienda_regalos WHERE to_user_id = ? AND estado = 'pendiente'");
@@ -312,7 +319,7 @@ case 'gift-answer': {
             $itStmt->execute([$itemId]);
             $item = $itStmt->fetch(PDO::FETCH_ASSOC);
             if (!$item) { $pdo->rollBack(); jsonError('Item no disponible', 404); }
-            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? LIMIT 1');
+            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? AND consumido_en IS NULL LIMIT 1');
             $chk->execute([$toId, $itemId]);
             if ($chk->fetchColumn()) { $pdo->rollBack(); jsonError('Ya lo tiene.', 409); }
             $chk = $pdo->prepare("SELECT 1 FROM tienda_regalos WHERE to_user_id = ? AND item_id = ? AND estado = 'pendiente' LIMIT 1");
@@ -381,7 +388,7 @@ case 'gift-answer': {
         if (!$accept) {
             $refund('rechazado');
         } else {
-            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? LIMIT 1');
+            $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? AND consumido_en IS NULL LIMIT 1');
             $chk->execute([$userId, (int)$g['item_id']]);
             $prev = tiendaPrevSlug((string)($g['slug'] ?? ''));
             if ($chk->fetchColumn()) {
@@ -392,7 +399,8 @@ case 'gift-answer': {
                 $roleId = (string)($g['discord_role_id'] ?? '');
                 $dUser = (string)($user['discord_user_id'] ?? '');
                 if ($roleId !== '' && $dUser === '') { $pdo->rollBack(); jsonError('Vincula tu Discord (aquí al lado) para aceptar este regalo.', 403); }
-                $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, 0)')->execute([$userId, (int)$g['item_id']]);
+                $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, 0)
+                               ON DUPLICATE KEY UPDATE precio = 0, creado_en = NOW(), consumido_en = NULL')->execute([$userId, (int)$g['item_id']]);
                 $pdo->prepare("UPDATE tienda_regalos SET estado = 'aceptado', resuelto_en = NOW() WHERE id = ?")->execute([(int)$g['id']]);
                 if ($roleId !== '') {
                     $r = discordAssignRole($dUser, $roleId);

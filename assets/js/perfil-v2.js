@@ -92,6 +92,7 @@
         ['#b06a2c', '#e6a46a', 'Bronce'],
         ['#8c8c8c', '#e8e8e8', 'Plata'],
         ['#b8860b', '#ffe066', 'Oro'],
+        ['#3a9bd5', '#bfe9ff', 'Diamante'],   /* solo "En racha" (1000 días) */
     ];
 
     var S = {
@@ -138,6 +139,7 @@
         renderComments();
         renderSide();
         refreshStatus();
+        renderRacha();
     }
 
     function panel(sc, sub, idx) {
@@ -604,6 +606,119 @@
         el.innerHTML = '● <b>' + txt + '</b>';
     }
 
+    /* ════════════════════ Racha diaria e invitaciones ════════════════════
+       (assets/profile/racha.php) Fueguito pixelado al lado del nombre:
+       apagado (gris) si hoy aún no se ha encendido, encendido después, con
+       los días de racha al lado. Solo se pulsa en el perfil propio; en el
+       de otra persona se ve su racha. Botón "Invitar" (perfil propio):
+       enlace de invitación y cómo van mis invitaciones. */
+    function fuego(on) {
+        var fuera = [[6,6],[5,6],[5,7],[4,7],[4,8],[3,8],[2,9],[2,9],[1,10],[1,10],[1,10],[2,9],[3,8],[4,7]];
+        var dentro = { 7: [5,6], 8: [4,7], 9: [4,7], 10: [4,7], 11: [5,6] };
+        var c1 = on ? '#ff7a1a' : '#8c8c8c', c2 = on ? '#ffd34d' : '#c8c8c8';
+        var r = '';
+        fuera.forEach(function (x, y) { r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c1 + '"/>'; });
+        Object.keys(dentro).forEach(function (y) { var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c2 + '"/>'; });
+        return '<svg viewBox="0 0 12 14" shape-rendering="crispEdges" aria-hidden="true">' + r + '</svg>';
+    }
+    function renderRacha() {
+        var el = $('pf2-racha');
+        var inv = $('pf2-invite-btn');
+        if (inv) {
+            inv.style.display = S.ctx && S.ctx.own && !S.editing ? '' : 'none';
+            if (!inv._pf2) { inv._pf2 = true; inv.addEventListener('click', openInvite); }
+        }
+        if (!el) return;
+        var r = S.v2 && S.v2.racha;
+        if (!r) { el.innerHTML = ''; return; }
+        var own = !!(S.ctx && S.ctx.own);
+        var on = !!r.today;
+        var dias = function (n) { return n + (n === 1 ? ' día' : ' días'); };
+        var tip;
+        if (own && !on) {
+            tip = 'Enciende tu racha de hoy (+' + r.puntosHoy + ' puntos de autismo)';
+            if (r.enPeligro) tip += '. Ayer no la encendiste: tu protector de racha la salva';
+            else if (r.current) tip += '. Llevas ' + dias(r.current);
+        } else {
+            tip = 'Racha de ' + dias(r.current) + ' · mejor: ' + dias(r.best);
+            if (own) tip += r.protector ? ' · protector de racha guardado' : ' · sin protector de racha';
+        }
+        el.className = 'pf2-racha ' + (on ? 'is-on' : 'is-off') + (own && !on ? ' is-btn' : '');
+        el.title = tip;
+        el.innerHTML = fuego(on) + '<b>' + (r.current || 0) + '</b>';
+        if (own && !on) {
+            el.setAttribute('role', 'button');
+            el.tabIndex = 0;
+        } else {
+            el.removeAttribute('role');
+            el.removeAttribute('tabindex');
+        }
+        if (!el._pf2) {
+            el._pf2 = true;
+            el.addEventListener('click', claimRacha);
+            el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); claimRacha(); } });
+        }
+    }
+    function claimRacha() {
+        var r = S.v2 && S.v2.racha;
+        if (!r || r.today || !(S.ctx && S.ctx.own) || S.claiming) return;
+        S.claiming = true;
+        api('streak-claim', {}).then(function (d) {
+            S.claiming = false;
+            if (!d || !d.ok) { if (d && d.error) alert(d.error); return; }
+            S.v2.racha = d.racha;
+            renderRacha();
+            var g = d.ganado || {};
+            var lineas = ['+' + g.dia + ' puntos de autismo'];
+            (g.hitos || []).forEach(function (h) { lineas.push('¡' + h.dias + ' días de racha! +' + h.puntos + ' puntos'); });
+            if (g.invitacion) lineas.push('Invitación cumplida: +' + g.invitacion + ' puntos');
+            if (g.protector) lineas.push('Tu protector de racha la ha salvado');
+            if (window.notifSystem) {
+                window.notifSystem.show({ type: 'success', title: 'Racha de ' + d.racha.current + (d.racha.current === 1 ? ' día' : ' días'), message: lineas.join(' · ') });
+            }
+        }).catch(function () { S.claiming = false; });
+    }
+    function openInvite() {
+        var body = pickerWindow('Invitar a Melon Hub');
+        var key = S.ctx && S.ctx.userKey;
+        var url = window.melonLinkUrl ? window.melonLinkUrl('invitar', key) : '';
+        body.innerHTML =
+            '<div class="pf2-inv-txt">Si alguien se crea una cuenta con tu enlace y llega a 7 días de racha en sus primeros 14 días, os lleváis 500 puntos de autismo cada uno.</div>' +
+            '<div class="pf2-inv-link"><input type="text" readonly><button type="button" class="button" data-a="copy">Copiar enlace</button></div>' +
+            '<div class="profile-sidebar-heading pf2-panel-head">Mis invitaciones</div>' +
+            '<div class="pf2-pick-list pf2-inv-list"><div class="pf2-empty">Cargando…</div></div>';
+        var input = body.querySelector('input');
+        input.value = url;
+        input.addEventListener('focus', function () { input.select(); });
+        body.querySelector('[data-a="copy"]').addEventListener('click', function () { if (window.melonCopyLink) window.melonCopyLink('invitar', key); });
+        var f = document.createElement('div');
+        f.className = 'pf2-pick-foot';
+        f.innerHTML = '<button type="button" class="button">Cerrar</button>';
+        f.querySelector('button').addEventListener('click', closePicker);
+        body.appendChild(f);
+        fetch(API + '?action=invites', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+            var list = body.querySelector('.pf2-inv-list');
+            if (!list) return;
+            var inv = (d && d.invites) || [];
+            if (!inv.length) { list.innerHTML = '<div class="pf2-empty">Aún no has invitado a nadie.</div>'; return; }
+            list.innerHTML = inv.map(function (i) {
+                var st = i.estado === 'cobrada' ? '+' + d.puntos + ' puntos conseguidos'
+                       : i.estado === 'caducada' ? 'Caducada'
+                       : 'Racha ' + i.racha + ' / ' + d.racha + ' · quedan ' + i.quedan + (i.quedan === 1 ? ' día' : ' días');
+                return '<div class="pf2-pick-row pf2-inv-row is-' + esc(i.estado) + '" data-key="' + esc(i.key) + '">' +
+                    '<span class="mh-marco-av" data-marco-user="' + esc(i.key) + '">' +
+                    (i.image ? '<img src="' + esc(i.image) + '" alt="">' : '<span class="pf2-friend-ph">' + esc(i.label.slice(0, 2)) + '</span>') + '</span>' +
+                    '<span class="pf2-inv-name">' + esc(i.label) + '</span><span class="pf2-inv-st">' + esc(st) + '</span></div>';
+            }).join('');
+            list.querySelectorAll('[data-key]').forEach(function (row) {
+                row.addEventListener('click', function () { closePicker(); if (bridge().openProfile) bridge().openProfile(row.dataset.key); });
+            });
+        }).catch(function () {
+            var list = body.querySelector('.pf2-inv-list');
+            if (list) list.innerHTML = '<div class="pf2-empty">No se han podido cargar.</div>';
+        });
+    }
+
     /* ════════════════════ Personalizar ════════════════════ */
     function setEditing(on, fresh) {
         S.editing = !!on;
@@ -616,6 +731,7 @@
         previewFrame();
         renderShowcases();
         renderSteamCtl();
+        renderRacha();
         if (on) loadFrames().then(renderSteamCtl);
     }
 

@@ -68,6 +68,8 @@
     { "categoria": "perfil", "slug": "marco-lesbiana", "nombre": "Marco orgullo lésbico", "descripcion": "Marco con los colores de la bandera del orgullo lésbico.", "precio": 300, "marco": "css" },
     { "categoria": "perfil", "slug": "marco-overdose", "nombre": "Marco Overdose", "descripcion": "Tu foto en una ventana de MelonOS Overdose, lila y morada.", "precio": 400, "marco": "assets/img/marcos/marco-overdose.png" },
     { "categoria": "perfil", "slug": "marco-gatito", "nombre": "Marco gatito", "descripcion": "Marco blanco con orejas de gato y bigotes alrededor de tu foto de perfil.", "precio": 400, "marco": "assets/img/marcos/marco-gatito.png" },
-    { "categoria": "perfil", "slug": "marco-fantasma", "nombre": "Marco fantasma", "descripcion": "Un fantasma de sábana que da vueltas alrededor de tu foto (animado).", "precio": 500, "marco": "css" }
+    { "categoria": "perfil", "slug": "marco-fantasma", "nombre": "Marco fantasma", "descripcion": "Un fantasma de sábana que da vueltas alrededor de tu foto (animado).", "precio": 500, "marco": "css" },
+
+    { "categoria": "perfil", "slug": "protector-racha", "nombre": "Protector de racha", "descripcion": "Si un día no enciendes el fueguito de tu perfil, tu racha no se pierde. Sirve una vez; cuando se gasta puedes comprar otro.", "precio": 500 }
   ]
 }

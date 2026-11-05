@@ -24,6 +24,21 @@
 header('Content-Type: text/html; charset=UTF-8');
 require_once __DIR__ . '/assets/links.php';
 
+/* Invitación (enlace.php?invitar=<user_key>, botón "Invitar" del perfil):
+   no abre la app. Se guarda quién invita en una cookie (30 días) y se va
+   a la web; register-user.php la lee al crear la cuenta (racha.php). */
+if (isset($_GET['invitar'])) {
+    $quien = (string)$_GET['invitar'];
+    if (preg_match('/^[A-Za-z0-9_-]{1,50}$/', $quien)) {
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        setcookie('melon_invita', $quien, ['expires' => time() + 30 * 86400, 'path' => '/',
+                                           'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
+    }
+    header('Location: index.php');
+    exit;
+}
+
 $link = null;
 foreach (['perfil', 'cancion', 'album', 'playlist', 'escuchar'] as $tipo) {
     if (isset($_GET[$tipo])) { $link = melonParseLink($tipo, (string)$_GET[$tipo]); break; }

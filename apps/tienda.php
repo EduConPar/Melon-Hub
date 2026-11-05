@@ -947,7 +947,8 @@ function renderPerfil(view, items) {
     CADENAS_PERFIL.forEach(function(c){ c.slugs.forEach(function(sl){ enCadena[sl] = true; }); });
     var adicionales = EXPO_ADICIONALES.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; })
                                       .filter(Boolean);
-    var otros  = items.filter(function(it){ return !it.marco && !enCadena[it.slug] && EXPO_ADICIONALES.indexOf(it.slug) < 0; });
+    var racha  = items.filter(function(it){ return it.slug === 'protector-racha'; });
+    var otros  = items.filter(function(it){ return !it.marco && !enCadena[it.slug] && EXPO_ADICIONALES.indexOf(it.slug) < 0 && it.slug !== 'protector-racha'; });
     /* En modo regalo, los marcos se ven con la foto de esa persona. */
     var foto = (_gift ? _gift.image : MY_AVATAR) || '../assets/img/appIcons/profileIcon.png';
     var html = '';
@@ -1002,6 +1003,21 @@ function renderPerfil(view, items) {
             var owned = isOwned(it.id);
             return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
                 '<div class="tienda-card-icon"><img class="tienda-card-icon-img" src="../assets/img/appIcons/' + iconos[it.slug] + '.png" alt="" style="image-rendering:pixelated;">' +
+                    '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
+                '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
+                '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
+                '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? lblOwned() : lblBuy()) + '</button>' +
+            '</div>';
+        }).join(''), 'tienda-sec-grid');
+    }
+
+    /* Protector de racha (assets/profile/racha.php): se gasta al salvar
+       la racha; mientras está guardado sale como "Ya lo tienes". */
+    if (racha.length) {
+        html += perfilSeccion('RACHA', 'La racha se enciende cada día con el fueguito que sale al lado de tu nombre en el perfil.', racha.map(function(it){
+            var owned = isOwned(it.id);
+            return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+                '<div class="tienda-card-icon">' + rachaFuego() +
                     '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
                 '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
                 '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
@@ -1073,6 +1089,16 @@ function perfilIcono(slug) {
     if (/^steam-/.test(slug)) return 'steamIcon';
     return { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' }[slug] || 'profileIcon';
 }
+/* El fueguito de la racha (mismo dibujo pixelado que en perfil-v2.js),
+   encendido: icono del Protector de racha. */
+function rachaFuego() {
+    var fuera = [[6,6],[5,6],[5,7],[4,7],[4,8],[3,8],[2,9],[2,9],[1,10],[1,10],[1,10],[2,9],[3,8],[4,7]];
+    var dentro = { 7: [5,6], 8: [4,7], 9: [4,7], 10: [4,7], 11: [5,6] };
+    var r = '';
+    fuera.forEach(function(x, y){ r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="#ff7a1a"/>'; });
+    Object.keys(dentro).forEach(function(y){ var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="#ffd34d"/>'; });
+    return '<svg class="tienda-card-icon-img" viewBox="0 0 12 14" shape-rendering="crispEdges" style="width:48px;height:56px;">' + r + '</svg>';
+}
 /* Icono de un objeto para las ventanas de regalo (como en sus tarjetas). */
 function itemIconHtml(it, foto) {
     if (it.categoria === 'haros' && it.slug) {
@@ -1082,6 +1108,7 @@ function itemIconHtml(it, foto) {
     if (it.categoria === 'perfil' && /^marco-/.test(it.slug || '')) {
         return '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto || '../assets/img/appIcons/profileIcon.png') + '" alt=""></span>';
     }
+    if (it.slug === 'protector-racha') return rachaFuego();
     if (it.categoria === 'perfil') {
         return '<img class="tienda-card-icon-img" src="../assets/img/appIcons/' + perfilIcono(it.slug) + '.png" alt="" style="image-rendering:pixelated;">';
     }

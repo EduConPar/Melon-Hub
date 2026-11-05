@@ -366,7 +366,7 @@ if ($_perfilStandalone) {
                             </div>
                         </div>
                         <div class="pf2-id">
-                            <div class="pf2-name"><span id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></span></div>
+                            <div class="pf2-name"><span id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></span><span id="pf2-racha"></span></div>
                             <div class="pf2-status" id="pf2-status"></div>
                             <div id="profile-info-meta"></div>
                             <div id="profile-info-bio" class="pinfo-bio"></div>
@@ -378,6 +378,8 @@ if ($_perfilStandalone) {
                                 <span class="profile-notif-badge" id="profile-notif-badge" style="display:none;">0</span>
                             </button>
                             <button class="button" id="profile-follow-btn" style="display:none;">+ Seguir</button>
+                            <!-- Invitar (solo en el perfil propio; perfil-v2.js lo enseña): enlace de invitación y estado de mis invitaciones (racha.php). -->
+                            <button class="button" id="pf2-invite-btn" style="display:none;">Invitar</button>
                             <button class="button" id="profile-info-edit-btn"><img src="assets/img/appIcons/drawingIcon.png" alt="" class="pf2-ic" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;">Personalizar</button>
                             <button class="button" id="profile-info-edit-save-btn" style="display:none;">✓ Guardar</button>
                             <button class="button" id="profile-info-edit-cancel-btn" style="display:none;">Cancelar</button>
@@ -2976,6 +2978,9 @@ var PROFILE_USERS = <?php
                 if (snippet.length > 60) snippet = snippet.substring(0, 60) + '…';
                 msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> le ha dado ❤ a tu publicación'
                     + (snippet ? ': <em>"' + escHtml(snippet) + '"</em>' : '');
+            } else if (n.type === 'invite-reward') {
+                /* Racha de la invitación cumplida (assets/profile/racha.php). */
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> ha llegado a 7 días de racha: +' + (n.points || 500) + ' puntos de autismo por invitarle';
             } else if (n.type === 'review') {
                 var noun;
                 if (n.category === 'movies')      noun = 'la película';

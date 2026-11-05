@@ -31,6 +31,8 @@
    GET   ?action=frames                                    (marcos: marcos.php)
    GET   ?action=my-frames
    POST  ?action=set-frame             { slug }            ('' = sin marco)
+   POST  ?action=streak-claim          {}                  (racha: racha.php)
+   GET   ?action=invites                                   (invitaciones: racha.php)
    GET   ?action=steam-game-achievements&appid=N
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
@@ -2321,6 +2323,25 @@ case 'delete-wall-comment': {
     if ((int)$c['profile_user_id'] !== $uid && (int)$c['author_id'] !== $uid) jsonError('No puedes borrar este comentario', 403);
     $pdo->prepare("UPDATE profile_comments SET deleted_at = NOW() WHERE id = ?")->execute([$id]);
     jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, (int)$c['profile_user_id'], $uid)]);
+}
+
+/* Racha diaria (racha.php): pulsar el fueguito del perfil propio. */
+case 'streak-claim': {
+    require_once __DIR__ . '/racha.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $r = racha_pulsar($pdo, $uid);
+    if (!$r['ok']) jsonError($r['error'], 409);
+    jsonResponse($r);
+}
+
+/* Invitaciones (racha.php): las mías, para la ventana "Invitar". */
+case 'invites': {
+    require_once __DIR__ . '/racha.php';
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + invita_lista($pdo, $uid));
 }
 
 /* Guarda los expositores propios (tipo + configuración, en orden). */

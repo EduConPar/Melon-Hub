@@ -26,11 +26,15 @@
      uploads/screenshots/ con copia en la BD); screenshot.php sigue
      sirviendo esas.
    - Medallas (bronce / plata / oro) y nivel con lo que ya se guarda:
-     nivel = 1 + XP/100; bronce 100 XP, plata +200, oro +300.
+     nivel = 1 + XP/100; bronce 100 XP, plata +200, oro +300. "En racha"
+     (mejor racha del fueguito, racha.php) tiene un cuarto nivel,
+     diamante (+400): cada medalla lleva sus umbrales, no hace falta que
+     sean tres.
    ────────────────────────────────────────────────────────────────────── */
 
 require_once dirname(__DIR__) . '/cache-helpers.php';   /* portadas de álbum en caché (find-album) */
 require_once __DIR__ . '/steam.php';                     /* fase 2: horas y logros de Steam */
+require_once __DIR__ . '/racha.php';                     /* racha diaria (fueguito) e invitaciones */
 
 const PF2_BASE_SLOTS   = 2;
 const PF2_SLOT_SLUGS   = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
@@ -49,7 +53,7 @@ const PF2_MAX_TEXT     = 1000;
 const PF2_PLAYLIST_TRACKS = 5;
 const PF2_MAX_SHOTS    = 3;
 
-/* Medallas: [clave, nombre, emoji, unidad, umbrales bronce/plata/oro]. */
+/* Medallas: [clave, nombre, emoji, unidad, umbrales bronce/plata/oro(/diamante)]. */
 const PF2_MEDALS = [
     ['listen',   'Melómano',        '🎧', 'h escuchadas',         [100, 500, 1000]],
     ['reviews',  'Crítico',         '⭐', 'reseñas',              [10, 50, 100]],
@@ -57,8 +61,9 @@ const PF2_MEDALS = [
     ['together', 'Escuchar juntos', '🎤', 'sesiones',             [10, 50, 100]],
     ['days',     'Veterano',        '📅', 'días en Melon Hub',    [30, 180, 365]],
     ['chat',     'Charlatán',       '💬', 'mensajes',             [500, 2000, 10000]],
+    ['streak',   'En racha',        '🔥', 'días de racha (la mejor)', RACHA_HITOS],
 ];
-const PF2_TIER_XP = [0, 100, 300, 600];   /* XP acumulada por nivel de medalla */
+const PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* XP acumulada por nivel de medalla */
 
 /* ── Tablas (idempotente, una vez por petición) ───────────────────── */
 function pf2_ensure(PDO $pdo): void {
@@ -235,6 +240,7 @@ function pf2_stats(PDO $pdo, int $uid): array {
                                                + (SELECT COUNT(*) FROM listening_sessions WHERE host_user_id = ?)", [$uid, $uid]),
         'days'     => (int)pf2_one($pdo, "SELECT GREATEST(0, DATEDIFF(NOW(), created_at)) FROM usuarios WHERE id = ?", [$uid]),
         'chat'     => (int)pf2_one($pdo, "SELECT COUNT(*) FROM messages WHERE from_user_id = ?", [$uid]),
+        'streak'   => racha_estado($pdo, $uid, false)['best'],
     ];
     $medals = [];
     $xp = 0;
@@ -243,7 +249,7 @@ function pf2_stats(PDO $pdo, int $uid): array {
         $tier = 0;
         foreach ($th as $i => $t) if ($v >= $t) $tier = $i + 1;
         $xp += PF2_TIER_XP[$tier];
-        $next = $tier < 3 ? $th[$tier] : null;
+        $next = $tier < count($th) ? $th[$tier] : null;
         $prev = $tier > 0 ? $th[$tier - 1] : 0;
         $medals[] = [
             'key'      => $key,
@@ -252,7 +258,7 @@ function pf2_stats(PDO $pdo, int $uid): array {
             'unit'     => $unit,
             'value'    => $v,
             'tier'     => $tier,                 /* 0 = aún sin medalla */
-            'next'     => $next,                 /* siguiente umbral (null = oro) */
+            'next'     => $next,                 /* siguiente umbral (null = el último nivel) */
             'progress' => $next === null ? 100 : (int)floor(100 * max(0, $v - $prev) / max(1, $next - $prev)),
         ];
     }
@@ -690,5 +696,6 @@ function pf2_profile(PDO $pdo, int $uid, int $viewerUid): array {
         'stats'     => pf2_stats($pdo, $uid),
         'friends'   => pf2_friends($pdo, $uid),
         'steam'     => steam_state($pdo, $uid),
+        'racha'     => racha_estado($pdo, $uid, $uid === $viewerUid),
     ];
 }
