@@ -1,0 +1,335 @@
+<?php
+/* ──────────────────────────────────────────────────────────────────────
+   WORDELON (app Juegos; decidido así)
+   ──────────────────────────────────────────────────────────────────────
+   Palabra del día: la misma para todos, 5 letras en español, 6 intentos.
+   Pistas por letra: ok (en su sitio), cerca (está en otra posición), no.
+     - La ñ es una letra más; las tildes y la diéresis no cuentan
+       ("arbol" vale por "árbol"). Todo se compara normalizado
+       (wordelon_norm).
+     - El día va en hora de Madrid, como la racha.
+     - La palabra NO se calcula a partir de la fecha: el repo es público
+       y cualquiera podría sacarla. Se elige al azar la primera vez que
+       alguien abre el juego ese día y se guarda en wordelon_dias (sin
+       repetir las de los últimos WORDELON_NO_REPETIR días). Tampoco
+       llega al navegador hasta que la partida termina.
+     - soluciones.txt = palabras que pueden tocar (comunes, sin nombres
+       propios ni tacos, con tildes para enseñarla bien al final);
+       validas.txt = todo lo que se acepta como intento (incluye plurales
+       y formas verbales), ya normalizado.
+     - Acertar da puntos de autismo según el intento (WORDELON_PUNTOS),
+       una sola vez al día porque solo hay una partida por día.
+     - El bot de Discord tiene UN mensaje por día en WORDELON_CANAL con la
+       clasificación de los que han terminado; se edita (PATCH) con cada
+       partida que acaba. Solo la cuadrícula de colores, sin letras, para
+       no destripar la palabra a quien aún no ha jugado.
+   ────────────────────────────────────────────────────────────────────── */
+
+const WORDELON_NOMBRE      = 'Wordelon';
+const WORDELON_TZ          = 'Europe/Madrid';
+const WORDELON_INICIO      = '2026-11-05';            /* día del Wordelon nº 1 */
+const WORDELON_LARGO       = 5;
+const WORDELON_INTENTOS    = 6;
+const WORDELON_PUNTOS      = [60, 50, 40, 30, 20, 10]; /* según el intento en que se acierta */
+const WORDELON_NO_REPETIR  = 365;                      /* días sin repetir palabra */
+const WORDELON_CANAL       = '1567977480667529277';
+const WORDELON_WEB         = 'https://melonhub.es';
+
+function wordelon_ensure(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wordelon_dias (
+            dia                DATE PRIMARY KEY,
+            palabra            VARCHAR(16) NOT NULL,
+            discord_message_id VARCHAR(32) NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wordelon_partidas (
+            user_id    INT NOT NULL,
+            dia        DATE NOT NULL,
+            intentos   TEXT NOT NULL,
+            terminado  TINYINT NOT NULL DEFAULT 0,
+            acertado   TINYINT NOT NULL DEFAULT 0,
+            puntos     INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, dia),
+            INDEX idx_dia (dia, terminado)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) { /* sin permisos de CREATE: fallará al usarlas */ }
+}
+
+function wordelon_hoy(): string {
+    return (new DateTime('now', new DateTimeZone(WORDELON_TZ)))->format('Y-m-d');
+}
+
+/* Número del Wordelon de ese día (el 1 es WORDELON_INICIO). */
+function wordelon_numero(string $dia): int {
+    $d = (int)round((strtotime($dia . ' 12:00:00 UTC') - strtotime(WORDELON_INICIO . ' 12:00:00 UTC')) / 86400);
+    return max(1, $d + 1);
+}
+
+/* Minúsculas, sin tildes ni diéresis, con la ñ. */
+function wordelon_norm(string $s): string {
+    $s = mb_strtolower(trim($s), 'UTF-8');
+    return strtr($s, [
+        'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+        'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+        'â' => 'a', 'ê' => 'e', 'î' => 'i', 'ô' => 'o', 'û' => 'u',
+        'ä' => 'a', 'ë' => 'e', 'ï' => 'i', 'ö' => 'o',
+    ]);
+}
+
+function wordelon_esPalabra(string $norm): bool {
+    return (bool)preg_match('/^[a-zñ]{' . WORDELON_LARGO . '}$/u', $norm);
+}
+
+function wordelon_lista(string $archivo): array {
+    $ruta = __DIR__ . '/wordelon/' . $archivo;
+    $l = @file($ruta, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    return is_array($l) ? array_map('trim', $l) : [];
+}
+
+function wordelon_esValida(string $norm): bool {
+    static $set = null;
+    if ($set === null) {
+        $set = array_flip(wordelon_lista('validas.txt'));
+        /* Las soluciones siempre valen como intento. */
+        foreach (wordelon_lista('soluciones.txt') as $w) $set[wordelon_norm($w)] = true;
+    }
+    return isset($set[$norm]);
+}
+
+/* Palabra del día (con tildes, tal cual en soluciones.txt). La primera
+   petición del día la elige; INSERT IGNORE por si dos llegan a la vez:
+   gana la que entra primero y las dos leen la misma. */
+function wordelon_palabra(PDO $pdo, string $dia): string {
+    $st = $pdo->prepare("SELECT palabra FROM wordelon_dias WHERE dia = ?");
+    $st->execute([$dia]);
+    $p = $st->fetchColumn();
+    if ($p !== false) return (string)$p;
+
+    $todas = wordelon_lista('soluciones.txt');
+    if (!$todas) throw new RuntimeException('Sin lista de palabras');
+    $st = $pdo->prepare("SELECT palabra FROM wordelon_dias WHERE dia > DATE_SUB(?, INTERVAL " . WORDELON_NO_REPETIR . " DAY)");
+    $st->execute([$dia]);
+    $usadas = array_flip(array_map('wordelon_norm', $st->fetchAll(PDO::FETCH_COLUMN)));
+    $libres = array_values(array_filter($todas, fn($w) => !isset($usadas[wordelon_norm($w)])));
+    if (!$libres) $libres = $todas;  /* se acabó la lista: se puede repetir */
+    $elegida = $libres[random_int(0, count($libres) - 1)];
+
+    $pdo->prepare("INSERT IGNORE INTO wordelon_dias (dia, palabra) VALUES (?, ?)")->execute([$dia, $elegida]);
+    $st = $pdo->prepare("SELECT palabra FROM wordelon_dias WHERE dia = ?");
+    $st->execute([$dia]);
+    return (string)$st->fetchColumn();
+}
+
+/* Pistas de un intento. Con letras repetidas manda lo que hay en la
+   solución: primero se marcan las que están en su sitio y luego "cerca"
+   solo mientras queden letras de esas sin usar (si la palabra tiene una
+   sola A y pones dos, la segunda sale gris). */
+function wordelon_evaluar(string $intento, string $solucion): array {
+    $a = mb_str_split($intento, 1, 'UTF-8');
+    $b = mb_str_split($solucion, 1, 'UTF-8');
+    $res = array_fill(0, count($a), 'no');
+    $quedan = [];
+    foreach ($a as $i => $c) {
+        if (($b[$i] ?? null) === $c) $res[$i] = 'ok';
+        else $quedan[$b[$i] ?? ''] = ($quedan[$b[$i] ?? ''] ?? 0) + 1;
+    }
+    foreach ($a as $i => $c) {
+        if ($res[$i] === 'ok') continue;
+        if (!empty($quedan[$c])) { $res[$i] = 'cerca'; $quedan[$c]--; }
+    }
+    return $res;
+}
+
+function wordelon_partida(PDO $pdo, int $uid, string $dia): ?array {
+    $st = $pdo->prepare("SELECT * FROM wordelon_partidas WHERE user_id = ? AND dia = ?");
+    $st->execute([$uid, $dia]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    return $r ?: null;
+}
+
+/* Lo que ve el navegador. La palabra solo va cuando la partida acaba. */
+function wordelon_estado(PDO $pdo, int $uid): array {
+    $dia      = wordelon_hoy();
+    $palabra  = wordelon_palabra($pdo, $dia);
+    $sol      = wordelon_norm($palabra);
+    $p        = wordelon_partida($pdo, $uid, $dia);
+    $intentos = $p ? (json_decode((string)$p['intentos'], true) ?: []) : [];
+    $filas = [];
+    foreach ($intentos as $w) $filas[] = ['palabra' => $w, 'pistas' => wordelon_evaluar($w, $sol)];
+    $terminado = $p && (int)$p['terminado'] === 1;
+    return [
+        'nombre'    => WORDELON_NOMBRE,
+        'dia'       => $dia,
+        'numero'    => wordelon_numero($dia),
+        'largo'     => WORDELON_LARGO,
+        'maximo'    => WORDELON_INTENTOS,
+        'puntosPor' => WORDELON_PUNTOS,
+        'filas'     => $filas,
+        'terminado' => $terminado,
+        'acertado'  => $p && (int)$p['acertado'] === 1,
+        'puntos'    => $p ? (int)$p['puntos'] : 0,
+        'palabra'   => $terminado ? mb_strtoupper($palabra, 'UTF-8') : null,
+    ];
+}
+
+/* Un intento. Devuelve [estado, puntos ganados ahora] o lanza
+   InvalidArgumentException con el mensaje para el usuario. */
+function wordelon_intentar(PDO $pdo, int $uid, string $texto): array {
+    $dia = wordelon_hoy();
+    $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
+    $w   = wordelon_norm($texto);
+    if (!wordelon_esPalabra($w))  throw new InvalidArgumentException('Tienen que ser ' . WORDELON_LARGO . ' letras');
+    if (!wordelon_esValida($w))   throw new InvalidArgumentException('No está en la lista de palabras');
+
+    $ganados = 0;
+    $acaba   = false;
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("INSERT IGNORE INTO wordelon_partidas (user_id, dia, intentos) VALUES (?, ?, '[]')")
+            ->execute([$uid, $dia]);
+        $st = $pdo->prepare("SELECT * FROM wordelon_partidas WHERE user_id = ? AND dia = ? FOR UPDATE");
+        $st->execute([$uid, $dia]);
+        $p = $st->fetch(PDO::FETCH_ASSOC);
+        if ((int)$p['terminado'] === 1) throw new InvalidArgumentException('Ya has jugado el ' . WORDELON_NOMBRE . ' de hoy');
+        $intentos = json_decode((string)$p['intentos'], true) ?: [];
+        if (count($intentos) >= WORDELON_INTENTOS) throw new InvalidArgumentException('No te quedan intentos');
+
+        $intentos[] = $w;
+        $acierto = ($w === $sol);
+        $acaba   = $acierto || count($intentos) >= WORDELON_INTENTOS;
+        if ($acierto) $ganados = WORDELON_PUNTOS[count($intentos) - 1] ?? 0;
+
+        $pdo->prepare("UPDATE wordelon_partidas SET intentos = ?, terminado = ?, acertado = ?, puntos = ? WHERE user_id = ? AND dia = ?")
+            ->execute([json_encode($intentos, JSON_UNESCAPED_UNICODE), $acaba ? 1 : 0, $acierto ? 1 : 0, $ganados, $uid, $dia]);
+        if ($ganados > 0) {
+            $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$ganados, $uid]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+
+    /* Discord después de guardar: si el bot falla, la partida ya cuenta. */
+    if ($acaba) {
+        try { wordelon_discordResumen($pdo, $dia); }
+        catch (Throwable $e) { error_log('[wordelon] discord: ' . $e->getMessage()); }
+    }
+    return [wordelon_estado($pdo, $uid), $ganados];
+}
+
+/* ── Resumen del día en Discord ─────────────────────────────────────── */
+
+function wordelon_cuadricula(array $intentos, string $sol): string {
+    $em = ['ok' => '🟩', 'cerca' => '🟨', 'no' => '⬛'];
+    $l = [];
+    foreach ($intentos as $w) {
+        $l[] = implode('', array_map(fn($x) => $em[$x], wordelon_evaluar($w, $sol)));
+    }
+    return implode("\n", $l);
+}
+
+function wordelon_fechaLarga(string $dia): string {
+    static $m = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    $t = strtotime($dia . ' 12:00:00 UTC');
+    return (int)gmdate('j', $t) . ' de ' . $m[(int)gmdate('n', $t) - 1] . ' de ' . gmdate('Y', $t);
+}
+
+function wordelon_embed(PDO $pdo, string $dia): array {
+    $sol = wordelon_norm(wordelon_palabra($pdo, $dia));
+    /* Primero los que aciertan (menos intentos antes), luego los que no;
+       a igualdad, quien terminó antes. */
+    $st = $pdo->prepare("SELECT p.intentos, p.acertado, p.puntos, u.label, u.user_key
+                           FROM wordelon_partidas p JOIN usuarios u ON u.id = p.user_id
+                          WHERE p.dia = ? AND p.terminado = 1
+                          ORDER BY p.acertado DESC, JSON_LENGTH(p.intentos) ASC, p.updated_at ASC");
+    $st->execute([$dia]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    $fields = [];
+    $aciertos = 0;
+    foreach ($rows as $i => $r) {
+        $int = json_decode((string)$r['intentos'], true) ?: [];
+        if ((int)$r['acertado']) $aciertos++;
+        /* Discord admite 25 campos: 24 jugadores + uno con los que faltan. */
+        if (count($fields) === 24 && count($rows) > 25) {
+            $fields[] = ['name' => '…', 'value' => 'y ' . (count($rows) - 24) . ' más', 'inline' => true];
+            break;
+        }
+        $res = (int)$r['acertado'] ? count($int) . '/' . WORDELON_INTENTOS : 'X/' . WORDELON_INTENTOS;
+        $fields[] = [
+            'name'   => mb_substr(($i + 1) . '. ' . ($r['label'] ?: $r['user_key']), 0, 200) . ' · ' . $res,
+            'value'  => wordelon_cuadricula($int, $sol) ?: '—',
+            'inline' => true,
+        ];
+    }
+    $n = count($rows);
+    $desc = wordelon_fechaLarga($dia) . "\n"
+          . $n . ($n === 1 ? ' persona ha jugado' : ' personas han jugado')
+          . ' · ' . $aciertos . ($aciertos === 1 ? ' la ha acertado' : ' la han acertado')
+          . "\n**[→ Jugar en Melon Hub](" . WORDELON_WEB . '/)**';
+    return [
+        'title'       => WORDELON_NOMBRE . ' #' . wordelon_numero($dia),
+        'url'         => WORDELON_WEB . '/',
+        'description' => $desc,
+        'color'       => 0x6AAA64,
+        'fields'      => $fields,
+        'footer'      => ['text' => 'Se actualiza con cada partida · Melon Hub'],
+    ];
+}
+
+function wordelon_discord(string $metodo, string $ruta, array $payload): array {
+    $token = trim((string)env('DISCORD_BOT_TOKEN', ''));
+    if ($token === '') return [0, null];
+    /* DISCORD_API_BASE solo para las pruebas (un Discord falso). */
+    $base = rtrim((string)env('DISCORD_API_BASE', 'https://discord.com/api/v10'), '/');
+    $ch = curl_init($base . $ruta);
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST  => $metodo,
+        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bot ' . $token,
+            'Content-Type: application/json',
+            'User-Agent: MelonHub-Wordelon (https://melonhub.es, 1.0)',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    return [$code, json_decode((string)$resp, true)];
+}
+
+/* Publica o edita el mensaje del día. Con un candado de MariaDB para que
+   dos partidas que acaban a la vez no publiquen dos mensajes. Si alguien
+   borró el mensaje en Discord (PATCH → 404) se publica otro. */
+function wordelon_discordResumen(PDO $pdo, string $dia): void {
+    if (trim((string)env('DISCORD_BOT_TOKEN', '')) === '') return;
+    $lock = 'wordelon_discord_' . $dia;
+    $st = $pdo->prepare("SELECT GET_LOCK(?, 10)");
+    $st->execute([$lock]);
+    if ((int)$st->fetchColumn() !== 1) return;
+    try {
+        $embed = wordelon_embed($pdo, $dia);
+        $st = $pdo->prepare("SELECT discord_message_id FROM wordelon_dias WHERE dia = ?");
+        $st->execute([$dia]);
+        $msgId = (string)$st->fetchColumn();
+        $canal = '/channels/' . rawurlencode(WORDELON_CANAL) . '/messages';
+        if ($msgId !== '') {
+            [$code] = wordelon_discord('PATCH', $canal . '/' . rawurlencode($msgId), ['embeds' => [$embed]]);
+            if ($code !== 404) return;
+        }
+        [$code, $j] = wordelon_discord('POST', $canal, ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]]);
+        if ($code >= 200 && $code < 300 && isset($j['id'])) {
+            $pdo->prepare("UPDATE wordelon_dias SET discord_message_id = ? WHERE dia = ?")->execute([(string)$j['id'], $dia]);
+        } else {
+            error_log('[wordelon] discord POST ' . $code);
+        }
+    } finally {
+        $pdo->prepare("SELECT RELEASE_LOCK(?)")->execute([$lock]);
+    }
+}

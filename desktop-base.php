@@ -728,6 +728,15 @@ window.DesktopState.whenReady = function(cb){
         ?></div>
         <span>Tienda</span>
     </div>
+    <div class="desktop-icon" id="juegos-icon">
+        <div class="desktop-icon-img"><?php
+            $_juegosIcon = 'assets/img/appIcons/juegosIcon.png';
+            echo _appIconExists($_juegosIcon)
+                ? '<img src="' . $_juegosIcon . '" style="width:48px;height:48px;object-fit:contain;image-rendering:pixelated;" alt="">'
+                : desktopIcon('juegos', '🎮');
+        ?></div>
+        <span>Juegos</span>
+    </div>
     <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
     <!-- Icono de mascotas (SOLO DEV — gated por MELON_DEV_BUILD). -->
     <div class="desktop-icon" id="mascota-desktop-icon">
@@ -867,6 +876,19 @@ window.DesktopState.whenReady = function(cb){
         </div>
     </div>
     <iframe id="dnd-iframe" src="" frameborder="0" style="flex:1; width:100%; border:none; display:block;"></iframe>
+</div>
+
+<!-- JUEGOS WINDOW (apps/juegos.php: de momento, Wordelon) -->
+<div class="window" id="juegos-window" style="display:none; position:fixed; left:calc(50vw - 230px); top:6vh; width:460px; height:640px; max-height:90vh; z-index:500; flex-direction:column;">
+    <div class="title-bar" id="juegos-titlebar">
+        <div class="title-bar-text"><?php echo appTitleIcon('juegosIcon', '🎮'); ?>Juegos</div>
+        <div class="title-bar-controls">
+            <button aria-label="Minimize"></button>
+            <button aria-label="Maximize"></button>
+            <button aria-label="Close" id="juegos-close"></button>
+        </div>
+    </div>
+    <iframe id="juegos-iframe" src="" frameborder="0" style="flex:1; width:100%; border:none; display:block;"></iframe>
 </div>
 
 <!-- GALERÍA WINDOW -->
@@ -1189,7 +1211,7 @@ window.addEventListener('message', function(e) {
         var className = e.data.className || '';
         var basePath  = e.data.cssBasePath || '';
         applyThemeToDocument(document, className, basePath);
-        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
             var fr = document.getElementById(id);
             if (!fr || !fr.contentDocument || !fr.contentDocument.body) return;
             var childHref = basePath ? '../' + basePath : '';
@@ -1221,7 +1243,7 @@ window.addEventListener('message', function(e) {
                declaran las vars con !important en sus :root. */
             try { document.body.style.setProperty(cssVar, value, 'important'); } catch (_) {}
             /* Propaga a iframes de apps abiertas. */
-            ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+            ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
                 var fr = document.getElementById(id);
                 if (!fr || !fr.contentDocument || !fr.contentDocument.body) return;
                 try { fr.contentDocument.body.style.setProperty(cssVar, value, 'important'); } catch (_) {}
@@ -1274,7 +1296,7 @@ window.addEventListener('message', function(e) {
             }
         }
         refreshImgs(document);
-        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
             var fr = document.getElementById(id);
             if (fr && fr.contentDocument) refreshImgs(fr.contentDocument);
         });
@@ -2494,6 +2516,27 @@ window.notifSystem = (function() {
 })();
 
 /* =========================
+   JUEGOS (Wordelon)
+========================= */
+(function() {
+    var juegosIframe = document.getElementById('juegos-iframe');
+    var juegosLoaded = false;
+
+    document.getElementById('juegos-icon').addEventListener('dblclick', function() {
+        if (!juegosLoaded) { juegosIframe.src = appSrc('apps/juegos.php'); juegosLoaded = true; }
+        if (taskbarManager.isRegistered('juegos-window')) {
+            taskbarManager.restore('juegos-window');
+        } else {
+            taskbarManager.register('juegos-window', 'Juegos', '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
+        }
+    });
+
+    document.getElementById('juegos-close').addEventListener('click', function() {
+        taskbarManager.unregister('juegos-window');
+    });
+})();
+
+/* =========================
    GALERÍA
 ========================= */
 (function() {
@@ -2994,7 +3037,7 @@ window.notifSystem = (function() {
     [
         'calendar-window','archive-window','temas-window','dnd-window',
         'galeria-window','companion-window','dibujo-window',
-        'tienda-window','kofi-window','mascota-window',
+        'tienda-window','kofi-window','mascota-window','juegos-window',
         'playlist-editor','create-playlist-dialog','profile-window',
         'add-track-dialog','import-playlist-dialog',
         'collab-dialog','spotify-import-dialog','tidal-import-dialog','confirm-dialog',
@@ -3023,7 +3066,7 @@ window.notifSystem = (function() {
         'galeria-window', 'create-playlist-dialog', 'profile-window',
         'companion-window', 'dibujo-window',
         'tienda-window', 'kofi-window', 'mascota-window',
-        'wrapped-window'
+        'wrapped-window', 'juegos-window'
     ];
     ids.forEach(function(id) {
         var win = document.getElementById(id);

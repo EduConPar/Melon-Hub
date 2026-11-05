@@ -29,7 +29,7 @@
          ventana principal se inserta delante. -->
     <style id="mini-overrides">
         html, body { margin: 0; padding: 0; background: none !important; overflow: hidden; }
-        #mp { position: static; margin: 0; width: 300px; }
+        #mp { position: relative; margin: 0; width: 300px; }
         #mp .title-bar { -webkit-app-region: drag; user-select: none; }
         #mp .title-bar button { -webkit-app-region: no-drag; }
         #mp .title-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
@@ -171,6 +171,20 @@
         .mp-invite-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .mp-invite .mp-form-buttons { margin-top: 4px; }
 
+        /* ── Tirador de la esquina (tamaño del flotante) ── */
+        #mp-grip {
+            position: absolute;
+            right: 2px;
+            bottom: 2px;
+            width: 12px;
+            height: 12px;
+            cursor: nwse-resize;
+            touch-action: none;
+        }
+        /* Rayas del tirador de Win98 (dos grises y una blanca, tres veces),
+           dibujadas píxel a píxel: con degradados salían borrosas. */
+        #mp-grip svg { display: block; pointer-events: none; }
+
         /* ── Menú del clic derecho ── */
         #mp-menu {
             position: fixed;
@@ -309,6 +323,7 @@
             </div>
         </div>
     </div>
+    <div id="mp-grip" title="Arrastra para cambiar el tamaño"><svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path fill="var(--bezel-light-1)" d="M0 11h1v1h-1zM1 10h1v1h-1zM2 9h1v1h-1zM3 8h1v1h-1zM4 7h1v1h-1zM4 11h1v1h-1zM5 6h1v1h-1zM5 10h1v1h-1zM6 5h1v1h-1zM6 9h1v1h-1zM7 4h1v1h-1zM7 8h1v1h-1zM8 3h1v1h-1zM8 7h1v1h-1zM8 11h1v1h-1zM9 2h1v1h-1zM9 6h1v1h-1zM9 10h1v1h-1zM10 1h1v1h-1zM10 5h1v1h-1zM10 9h1v1h-1zM11 0h1v1h-1zM11 4h1v1h-1zM11 8h1v1h-1z"/><path fill="var(--bezel-dark-2)" d="M1 11h1v1h-1zM2 10h1v1h-1zM2 11h1v1h-1zM3 9h1v1h-1zM3 10h1v1h-1zM4 8h1v1h-1zM4 9h1v1h-1zM5 7h1v1h-1zM5 8h1v1h-1zM5 11h1v1h-1zM6 6h1v1h-1zM6 7h1v1h-1zM6 10h1v1h-1zM6 11h1v1h-1zM7 5h1v1h-1zM7 6h1v1h-1zM7 9h1v1h-1zM7 10h1v1h-1zM8 4h1v1h-1zM8 5h1v1h-1zM8 8h1v1h-1zM8 9h1v1h-1zM9 3h1v1h-1zM9 4h1v1h-1zM9 7h1v1h-1zM9 8h1v1h-1zM9 11h1v1h-1zM10 2h1v1h-1zM10 3h1v1h-1zM10 6h1v1h-1zM10 7h1v1h-1zM10 10h1v1h-1zM10 11h1v1h-1zM11 1h1v1h-1zM11 2h1v1h-1zM11 5h1v1h-1zM11 6h1v1h-1zM11 9h1v1h-1zM11 10h1v1h-1z"/></svg></div>
 </div>
 <div id="mp-menu"></div>
 <script>
@@ -348,6 +363,50 @@
         var r = $('mp').getBoundingClientRect();
         md.mini.fit(Math.ceil(r.width), Math.ceil(r.height));
     }
+
+    /* ── Tamaño: el tirador de la esquina escala todo el flotante con
+       zoom (carátula, textos y botones a la vez, mismo diseño) y fit()
+       ajusta la ventana a lo que ocupa. Va todo en la página para que
+       también funcione con apps instaladas sin IPC nuevo. Se recuerda en
+       localStorage (es de este equipo, no de la cuenta). ── */
+    var SCALE_KEY = 'reproductor:mini-scale', MIN_SCALE = 0.6, MAX_SCALE = 1.6;
+    var scale = 1;
+    function setScale(s) {
+        scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s || 1));
+        document.body.style.zoom = scale === 1 ? '' : String(scale);
+    }
+    try { setScale(parseFloat(localStorage.getItem(SCALE_KEY))); } catch (_) {}
+    (function() {
+        var grip = $('mp-grip');
+        grip.addEventListener('pointerdown', function(e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            grip.setPointerCapture(e.pointerId);
+            /* screenX/Y: la ventana cambia de tamaño bajo el ratón y las
+               coordenadas de la página se moverían con ella. */
+            var x0 = e.screenX, y0 = e.screenY, s0 = scale;
+            var r = $('mp').getBoundingClientRect();
+            function move(ev) {
+                var fx = (r.width + ev.screenX - x0) / r.width;
+                var fy = (r.height + ev.screenY - y0) / r.height;
+                /* Manda el eje que más se ha movido: así se mantiene la forma. */
+                var f = Math.abs(fx - 1) > Math.abs(fy - 1) ? fx : fy;
+                var next = Math.round(s0 * f * 100) / 100;
+                if (next === scale) return;
+                setScale(next);
+                fit();
+            }
+            function end() {
+                grip.removeEventListener('pointermove', move);
+                grip.removeEventListener('pointerup', end);
+                grip.removeEventListener('lostpointercapture', end);
+                try { localStorage.setItem(SCALE_KEY, String(scale)); } catch (_) {}
+            }
+            grip.addEventListener('pointermove', move);
+            grip.addEventListener('pointerup', end);
+            grip.addEventListener('lostpointercapture', end);
+        });
+    })();
 
     /* Mismo desplazamiento del título largo que el reproductor del
        escritorio (marqueeScroll de apps/reproductor.php). */
@@ -399,10 +458,15 @@
             setTimeout(function() { stopMarquee = marqueeScroll($('mp-song'), $('mp-song').parentElement, 50, 1000); }, 50);
         }
         $('mp-artist').textContent = s.artist || '—';
-        if (s.cover && s.cover !== lastCover) {
-            lastCover = s.cover;
-            $('mp-cover').dataset.fallback = s.cover;
-            $('mp-cover').src = bigCover(s.cover);
+        /* La original (coverUrl), no `cover`: el reproductor del escritorio
+           pixela su carátula al 25 % y, si el estado llega después de eso,
+           `cover` es un data: diminuto que aquí se estiraba a todo el ancho. */
+        var coverSrc = s.coverUrl || (/^data:/.test(s.cover || '') ? '' : s.cover)
+            || (s.videoId ? 'https://i.ytimg.com/vi/' + s.videoId + '/mqdefault.jpg' : s.cover);
+        if (coverSrc && coverSrc !== lastCover) {
+            lastCover = coverSrc;
+            $('mp-cover').dataset.fallback = coverSrc;
+            $('mp-cover').src = bigCover(coverSrc);
         }
         $('mp-play').innerHTML = s.playing ? ICON_PAUSE : ICON_PLAY;
         $('mp-shuffle').classList.toggle('btn-active', !!s.shuffle);
@@ -1264,10 +1328,13 @@
     });
     function placeMenu(e) {
         menu.style.display = 'block';
-        var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 2);
-        var y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 2);
-        menu.style.left = Math.max(2, x) + 'px';
-        menu.style.top = Math.max(2, y) + 'px';
+        /* Con el zoom del tamaño, left/top van en px sin escalar: se mide
+           lo que ocupa de verdad y se divide entre la escala. */
+        var m = menu.getBoundingClientRect();
+        var x = Math.min(e.clientX, window.innerWidth - m.width - 2);
+        var y = Math.min(e.clientY, window.innerHeight - m.height - 2);
+        menu.style.left = Math.max(2, x) / scale + 'px';
+        menu.style.top = Math.max(2, y) / scale + 'px';
     }
     document.addEventListener('click', function(e) { if (!menu.contains(e.target)) hideMenu(); });
     document.addEventListener('keydown', function(e) {
