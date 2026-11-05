@@ -213,12 +213,64 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
            grande) se cortaba el texto. */
         .bm-libre select { flex: 1; height: auto; min-height: 21px; }
         .bm-inf-line { margin-bottom: 6px; line-height: 1.5; }
+        /* ── Menú del Buscaminas: secciones como ventanitas ── */
+        .bm-win {
+            display: flex; flex-direction: column; padding: 3px; background: var(--win-bg, silver);
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-2, #dfdfdf),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-1, #fff);
+        }
+        .bm-win-bar {
+            display: flex; align-items: center; gap: 6px; padding: 3px 6px; font-weight: bold;
+            background: linear-gradient(90deg, var(--titlebar-start, navy), var(--titlebar-end, #1084d0));
+            color: var(--titlebar-text, #fff);
+        }
+        .bm-win-bar-r { margin-left: auto; font-weight: normal; }
+        .bm-ic { fill: currentColor; flex-shrink: 0; }
+        .bm-win-body { padding: 8px 10px; flex: 1; }
+        body.jg-kawaii .bm-win { box-shadow: none; border: 2px solid var(--border, #49388B); padding: 4px; }
+        body.jg-kawaii .bm-win-bar { background: var(--win-body-bg, #F0E8F3); border: 2px solid var(--border, #49388B); }
+        body.jg-kawaii .bm-win-body { background: var(--win-body-bg, #F0E8F3); border: 2px solid var(--border, #49388B); margin-top: 4px; }
+        /* Tablero del día: vista previa a la izquierda, datos a la derecha. */
+        .bm-dia-grid { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; }
+        .bm-dia-izq { display: flex; justify-content: center; }
+        .bm-dia-der { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .bm-campos { display: flex; gap: 4px; }
+        .bm-campo {
+            flex: 1; padding: 3px 6px; min-width: 0;
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey);
+        }
+        body.jg-kawaii .bm-campo { box-shadow: inset 0 0 0 1px var(--border, #49388B); }
+        .bm-campo small { display: block; color: var(--text-muted, #444); }
+        .bm-campo b { font-size: 13px; white-space: nowrap; }
+        .bm-campo .pt-ic { margin-left: 3px; }
+        .bm-premios-tit { font-weight: bold; margin-bottom: 3px; }
+        .bm-premios-fila { display: flex; gap: 14px; font-weight: bold; }
+        .bm-premios-fila span { display: inline-flex; align-items: center; gap: 4px; }
+        /* Medallas (oro, plata, bronce) de los 3 primeros: premios y rankings. */
+        .bm-med {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-weight: bold; font-style: normal; color: #2a2a2a;
+            box-shadow: inset -1px -1px rgba(0,0,0,.35), inset 1px 1px rgba(255,255,255,.7);
+        }
+        .bm-med.m1 { background: #e8c547; } .bm-med.m2 { background: #c9ccd6; } .bm-med.m3 { background: #d08a4e; }
+        /* Infinito y Libre, lado a lado. */
+        .bm-fila2 { display: grid; grid-template-columns: 1fr 220px; gap: 8px; }
+        .bm-libre-col { display: flex; flex-direction: column; gap: 8px; }
+        .bm-libre-col select { height: auto; min-height: 21px; width: 100%; }
+        .bm-contador {
+            display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 10px; margin-top: 2px;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a);
+        }
+        body.jg-kawaii .bm-contador { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .bm-contador b { font-size: 20px; }
         /* Tablero del día: vista previa (tapada, o como lo dejó). */
-        .bm-dia-info { margin: 8px 0 6px; text-align: center; font-weight: bold; }
+        .bm-dia-info { font-weight: bold; }
         .bm-prev-wrap { display: flex; justify-content: center; }
         .bm-prev { pointer-events: none; }
         /* Infinito en el menú: tú a la izquierda, los 5 mejores a la derecha. */
-        .bm-inf-cols { display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: start; }
+        .bm-inf-cols { display: grid; grid-template-columns: 1fr 250px; gap: 12px; align-items: start; }
         .bm-yo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
         .bm-yo .bm-av { --av: 48px; }
         /* Rankings: puesto, foto con marco, nombre y valor. */
@@ -226,6 +278,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .bm-rank { display: flex; flex-direction: column; gap: 2px; }
         .bm-rk { display: grid; grid-template-columns: 22px auto 1fr auto; align-items: center; gap: 6px; padding: 5px 6px; }
         .bm-rk .bm-rk-n { text-align: right; color: var(--text-muted, #444); }
+        .bm-rk .bm-rk-n.bm-med { justify-self: end; color: #2a2a2a; }
         .bm-rk .bm-rk-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .bm-rk .bm-rk-v { font-weight: bold; white-space: nowrap; }
         .bm-rk.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
@@ -407,42 +460,60 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         </div>
     </div>
     <div class="bm-menu">
-        <fieldset>
-            <legend>Tablero del día</legend>
-            <div class="bm-libre">
-                <select id="bm-dia-nivel">
-                    <option value="1">Principiante (9×9, 10 minas) · 50 puntos</option>
-                    <option value="2">Intermedio (16×16, 40 minas) · 100 puntos</option>
-                    <option value="3">Experto (30×16, 99 minas) · 200 puntos</option>
-                </select>
-                <button type="button" id="bm-dia-jugar">Jugar</button>
-            </div>
-            <div class="bm-dia-info" id="bm-dia-info"></div>
-            <div class="bm-prev-wrap"><div class="bm-board bm-prev" id="bm-dia-prev"></div></div>
-            <div class="bm-nota">Solo puedes hacer uno al día y tienes un intento. El tiempo empieza al darle a Jugar.</div>
-        </fieldset>
-        <fieldset>
-            <legend>Infinito</legend>
-            <div class="bm-inf-cols">
-                <div id="bm-inf-box"></div>
-                <div class="bm-inf-top">
-                    <div class="bm-side-tit">Mejores récords</div>
-                    <div class="bm-rank" id="bm-inf-top"></div>
+        <!-- Cada sección es una ventanita con su barra de título (colores
+             del tema) y un icono pixelado. -->
+        <section class="bm-win">
+            <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v13H6zM0 6h13v1H0zM2 2h1v1H2zM10 2h1v1h-1zM2 10h1v1H2zM10 10h1v1h-1zM4 3h5v1h1v1h1v3h-1v1h-1v1H4V9H3V8H2V5h1V4h1z"/></svg><span>Tablero del día</span><span class="bm-win-bar-r" id="bm-dia-estado"></span></div>
+            <div class="bm-win-body bm-dia-grid">
+                <div class="bm-dia-izq"><div class="bm-board bm-prev" id="bm-dia-prev"></div></div>
+                <div class="bm-dia-der">
+                    <div class="bm-libre">
+                        <select id="bm-dia-nivel">
+                            <option value="1">Principiante (9×9, 10 minas)</option>
+                            <option value="2">Intermedio (16×16, 40 minas)</option>
+                            <option value="3">Experto (30×16, 99 minas)</option>
+                        </select>
+                        <button type="button" id="bm-dia-jugar">Jugar</button>
+                    </div>
+                    <div class="bm-campos" id="bm-dia-campos"></div>
+                    <div class="bm-dia-info" id="bm-dia-info"></div>
+                    <div class="bm-premios">
+                        <div class="bm-premios-tit">Premios del día</div>
+                        <div class="bm-premios-fila">
+                            <span><i class="bm-med m1">1</i> +50</span>
+                            <span><i class="bm-med m2">2</i> +30</span>
+                            <span><i class="bm-med m3">3</i> +15</span>
+                        </div>
+                        <div class="bm-nota">Para los 3 más rápidos de cada tablero, al acabar el día.</div>
+                    </div>
+                    <div class="bm-nota">Solo puedes hacer uno al día y tienes un intento. El tiempo empieza al darle a Jugar.</div>
                 </div>
             </div>
-        </fieldset>
-        <fieldset>
-            <legend>Libre</legend>
-            <div class="bm-libre">
-                <select id="bm-libre-nivel">
-                    <option value="1">Principiante (9×9, 10 minas)</option>
-                    <option value="2">Intermedio (16×16, 40 minas)</option>
-                    <option value="3">Experto (30×16, 99 minas)</option>
-                </select>
-                <button type="button" id="bm-libre-jugar">Jugar</button>
-            </div>
-            <div class="bm-nota">Sin puntos.</div>
-        </fieldset>
+        </section>
+        <div class="bm-fila2">
+            <section class="bm-win">
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 15 9" width="15" height="9" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 1h3v1H2zM10 1h3v1h-3zM1 2h1v5H1zM13 2h1v5h-1zM5 2h1v1H5zM9 2h1v1H9zM6 3h1v1H6zM8 3h1v1H8zM7 4h1v1H7zM6 5h1v1H6zM8 5h1v1H8zM5 6h1v1H5zM9 6h1v1H9zM2 7h3v1H2zM10 7h3v1h-3z"/></svg><span>Infinito</span></div>
+                <div class="bm-win-body bm-inf-cols">
+                    <div id="bm-inf-box"></div>
+                    <div class="bm-inf-top">
+                        <div class="bm-side-tit">Mejores récords</div>
+                        <div class="bm-rank" id="bm-inf-top"></div>
+                    </div>
+                </div>
+            </section>
+            <section class="bm-win">
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 1h4v1h1v1h1v1H8v1H7v1H3z"/><path d="M6 1h1v8H6zM4 9h5v1H4zM2 10h9v1H2z"/></svg><span>Libre</span></div>
+                <div class="bm-win-body bm-libre-col">
+                    <select id="bm-libre-nivel">
+                        <option value="1">Principiante · 9×9</option>
+                        <option value="2">Intermedio · 16×16</option>
+                        <option value="3">Experto · 30×16</option>
+                    </select>
+                    <button type="button" id="bm-libre-jugar">Jugar</button>
+                    <div class="bm-nota">Elige la dificultad y juega las veces que quieras. Sin puntos.</div>
+                </div>
+            </section>
+        </div>
     </div>
 </div>
 

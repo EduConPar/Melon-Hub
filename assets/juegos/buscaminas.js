@@ -23,9 +23,9 @@
     if (!JG) return;
     var $ = JG.$;
     var NIVELES = {
-        1: { nombre: 'Principiante', w: 9,  h: 9,  m: 10 },
-        2: { nombre: 'Intermedio',   w: 16, h: 16, m: 40 },
-        3: { nombre: 'Experto',      w: 30, h: 16, m: 99 }
+        1: { nombre: 'Principiante', w: 9,  h: 9,  m: 10, base: 50 },
+        2: { nombre: 'Intermedio',   w: 16, h: 16, m: 40, base: 100 },
+        3: { nombre: 'Experto',      w: 30, h: 16, m: 99, base: 200 }
     };
 
     var juego = null;      /* { modo, w, h, minas, vista, estado, … } */
@@ -60,8 +60,10 @@
             : esc(((u && u.nombre) || '?').charAt(0).toUpperCase());
         return '<span class="mh-marco-av bm-av"' + (u && u.key ? ' data-marco-user="' + esc(u.key) + '"' : '') + '>' + dentro + '</span>';
     }
+    /* Los 3 primeros llevan medalla (oro, plata, bronce). */
     function filaRank(puesto, u, valor, yo) {
-        return '<div class="bm-rk' + (yo ? ' yo' : '') + '"><span class="bm-rk-n">' + puesto + '.</span>' + avatar(u) +
+        var n = puesto <= 3 ? '<i class="bm-rk-n bm-med m' + puesto + '">' + puesto + '</i>' : '<span class="bm-rk-n">' + puesto + '.</span>';
+        return '<div class="bm-rk' + (yo ? ' yo' : '') + '">' + n + avatar(u) +
             '<span class="bm-rk-nom">' + esc(u.nombre) + '</span><span class="bm-rk-v">' + esc(valor) + '</span></div>';
     }
 
@@ -90,29 +92,36 @@
        cuadrícula tapada del tamaño elegido. Ya elegido: el desplegable
        fijo en ese y el tablero como lo dejó. */
     function pintaDia() {
-        var r = diaInfo, sel = $('bm-dia-nivel'), btn = $('bm-dia-jugar'), info = $('bm-dia-info');
+        var r = diaInfo, sel = $('bm-dia-nivel'), btn = $('bm-dia-jugar'), info = $('bm-dia-info'), est = $('bm-dia-estado');
+        var nv = r.elegido || +sel.value, n = NIVELES[nv];
         if (r.elegido) {
             var t = r.tableros[r.elegido - 1];
             sel.value = String(r.elegido);
             sel.disabled = true;
-            if (t.estado === 'jugando') { info.textContent = 'Tu tablero de hoy: a medias'; btn.textContent = 'Continuar'; }
-            else if (t.estado === 'ganada') { info.textContent = 'Despejado en ' + tiempo(t.ms, true) + ' · vas ' + t.puesto + '.º · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
-            else { info.textContent = '¡Mina! · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
+            if (t.estado === 'jugando') { est.textContent = 'A medias'; info.textContent = 'Lo has dejado a medias.'; btn.textContent = 'Continuar'; }
+            else if (t.estado === 'ganada') { est.textContent = 'Hecho'; info.textContent = 'Despejado en ' + tiempo(t.ms, true) + ' · vas ' + t.puesto + '.º · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
+            else { est.textContent = 'Hecho'; info.textContent = '¡Mina! · +' + t.puntos + ' puntos'; btn.textContent = 'Ver'; }
             pintaPrevia(r.partida.w, r.partida.h, r.partida.vista);
         } else {
             sel.disabled = false;
-            var n = NIVELES[+sel.value];
-            info.textContent = n.nombre + ': ' + n.w + '×' + n.h + ', ' + n.m + ' minas';
+            est.textContent = 'Sin jugar';
+            info.textContent = '';
             btn.textContent = 'Jugar';
             pintaPrevia(n.w, n.h, null);
         }
+        /* Casillas tipo barra de estado: tamaño, minas y puntos. */
+        $('bm-dia-campos').innerHTML =
+            '<div class="bm-campo"><small>Tamaño</small><b>' + n.w + '×' + n.h + '</b></div>' +
+            '<div class="bm-campo"><small>Minas</small><b>' + n.m + '</b></div>' +
+            '<div class="bm-campo"><small>Puntos</small><b>' + n.base + '</b>' + JG.PT + '</div>';
     }
 
     function pintaPrevia(w, h, vista) {
         var b = $('bm-dia-prev');
-        var ancho = $('jg-bm').clientWidth - 70;
-        /* Pequeña (hasta 13 px) para que el Infinito y el Libre quepan debajo. */
-        var cs = Math.max(8, Math.min(13, Math.floor(ancho / w)));
+        /* El hueco de la izquierda: lo que deja la columna de datos (~300). */
+        var ancho = $('jg-bm').clientWidth - 340;
+        /* Hasta 16 px: cabe con el Infinito y el Libre debajo. */
+        var cs = Math.max(8, Math.min(16, Math.floor(ancho / w)));
         b.style.setProperty('--cs', cs + 'px');
         b.style.gridTemplateColumns = 'repeat(' + w + ', ' + cs + 'px)';
         var html = '';
@@ -125,7 +134,7 @@
         var s = inf.siguiente;
         var yo = rank && rank.yo;
         var html = '<div class="bm-yo">' + avatar(yo || { nombre: '?' }) +
-            '<div>Tu récord<br><b style="font-size:13px">' + (inf.mejor ? 'Ronda ' + inf.mejor : 'Ninguno') + '</b></div></div>';
+            '<div>Tu récord<br><span class="bm-contador">' + (inf.mejor ? '<b>' + inf.mejor + '</b>' + (inf.mejor === 1 ? 'ronda' : 'rondas') : '<b>0</b>rondas') + '</span></div></div>';
         html += '<div class="bm-inf-line">';
         if (inf.estado === 'jugando') html += 'Tienes una partida en la ronda ' + inf.ronda + ' (llevas ' + inf.pendientes + ' puntos).';
         else if (inf.estado === 'superada') html += 'Has superado la ronda ' + inf.ronda + ' y llevas <b>' + inf.pendientes + '</b> puntos.';
