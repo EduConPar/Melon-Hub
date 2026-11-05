@@ -52,6 +52,9 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     <script src="../assets/js/icon-pack.js"></script>
     <?php require_once dirname(__DIR__) . "/assets/php/active-interface.php"; emitInterfaceCss("../"); ?>
     <script src="../assets/js/interface-loader.js?v=fs1"></script>
+    <!-- Botones y demás piezas de 98.css con los colores del tema (como en
+         calendario.php y tienda.php). -->
+    <link rel="stylesheet" href="../assets/css/themes.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/css/themes.css') ?>">
     <!-- Fotos con el marco de perfil de cada uno (rankings del Buscaminas). -->
     <link rel="stylesheet" href="../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/css/marcos.css') ?>">
     <script src="../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js') ?>"></script>
@@ -184,6 +187,14 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .st-scroll img { display: block; margin: 0 auto; image-rendering: pixelated; }
         .st-empty { margin-top: 30px; text-align: center; color: var(--text-muted, #444); }
 
+        /* ── Colores del tema en lo que 98.css pinta fijo: el título de
+           los recuadros (fondo plateado) y los desplegables (blanco). Con
+           un tema oscuro no se leían. ── */
+        fieldset legend { background: var(--win-bg, silver); color: var(--text, #000); }
+        select { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        select option { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        select:disabled { color: var(--text-muted, grey); }
+
         /* ── Buscaminas (assets/juegos/buscaminas.js) ────────────────── */
         #jg-bm, #jg-bm-juego { padding: 8px 12px 12px; align-items: center; }
         #jg-bm-stats { padding: 8px 0 0; align-items: center; }
@@ -272,6 +283,13 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         /* Colores de los números (los de siempre del género). */
         .bm-c.n1 { color: #0000ff; } .bm-c.n2 { color: #007b00; } .bm-c.n3 { color: #ff0000; } .bm-c.n4 { color: #00007b; }
         .bm-c.n5 { color: #7b0000; } .bm-c.n6 { color: #007b7b; } .bm-c.n7 { color: #000; }    .bm-c.n8 { color: #7b7b7b; }
+        /* Tema oscuro (fondo de ventana oscuro, lo detecta buscaminas.js):
+           los mismos colores de números, más claros, y la mina en blanco. */
+        body.jg-oscuro .bm-c.n1 { color: #7aa8ff; } body.jg-oscuro .bm-c.n2 { color: #5fd35f; }
+        body.jg-oscuro .bm-c.n3 { color: #ff6b6b; } body.jg-oscuro .bm-c.n4 { color: #b0b0ff; }
+        body.jg-oscuro .bm-c.n5 { color: #ff9f7a; } body.jg-oscuro .bm-c.n6 { color: #5fdede; }
+        body.jg-oscuro .bm-c.n7 { color: #fff; }    body.jg-oscuro .bm-c.n8 { color: #c8c8c8; }
+        body.jg-oscuro .bm-c.a.bm-mina:not(.x) { filter: invert(1); }
         .bm-flag { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' shape-rendering='crispEdges'%3E%3Cpath fill='%23e00000' d='M3 1h4v1h1v1h1v1H8v1H7v1H3z'/%3E%3Cpath fill='%23000' d='M6 1h1v8H6zM4 9h5v1H4zM2 10h9v1H2z'/%3E%3C/svg%3E"); }
         .bm-mina, .bm-mal { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13' shape-rendering='crispEdges'%3E%3Cpath fill='%23000' d='M6 0h1v13H6zM0 6h13v1H0zM2 2h1v1H2zM10 2h1v1h-1zM2 10h1v1H2zM10 10h1v1h-1zM4 3h5v1h1v1h1v3h-1v1h-1v1H4V9H3V8H2V5h1V4h1z'/%3E%3Cpath fill='%23fff' d='M4 4h2v2H4z'/%3E%3C/svg%3E"); }
         .bm-mal { position: relative; }
@@ -772,6 +790,6 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
     window.JG = { api: api, show: show, fecha: fecha, PT: PT, API: API, $: $ };
 })();
 </script>
-<script src="../assets/juegos/buscaminas.js?v=1"></script>
+<script src="../assets/juegos/buscaminas.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/juegos/buscaminas.js') ?>"></script>
 </body>
 </html>

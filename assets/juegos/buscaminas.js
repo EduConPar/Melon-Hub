@@ -544,6 +544,24 @@
         }).catch(function () { $('bms-sum').textContent = 'Sin conexión, prueba otra vez'; });
     }
 
+    /* Tema oscuro: si el fondo de ventana del tema es oscuro, los
+       números van con colores más claros (clase jg-oscuro, juegos.php). */
+    function revisarOscuro() {
+        var c = getComputedStyle(document.body).getPropertyValue('--win-bg').trim();
+        var m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(c), r, g, b;
+        if (m) {
+            var h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
+            r = parseInt(h.substr(0, 2), 16); g = parseInt(h.substr(2, 2), 16); b = parseInt(h.substr(4, 2), 16);
+        } else {
+            var rgb = /(\d+)\D+(\d+)\D+(\d+)/.exec(getComputedStyle(document.body).backgroundColor) || [0, 192, 192, 192];
+            r = +rgb[1]; g = +rgb[2]; b = +rgb[3];
+        }
+        document.body.classList.toggle('jg-oscuro', (0.299 * r + 0.587 * g + 0.114 * b) < 110);
+    }
+    revisarOscuro();
+    /* Al cambiar de tema en vivo (desktop-base.php cambia la clase). */
+    new MutationObserver(revisarOscuro).observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+
     /* ── Eventos ── */
     var board = $('bmj-board');
     board.addEventListener('click', function (e) { enClic(e, false); });
