@@ -284,7 +284,7 @@ function wordelon_embed(PDO $pdo, string $dia): array {
 
 function wordelon_discord(string $metodo, string $ruta, array $payload): array {
     $token = trim((string)env('DISCORD_BOT_TOKEN', ''));
-    if ($token === '') return [0, null];
+    if ($token === '') return [0, null, 'sin token'];
     /* DISCORD_API_BASE solo para las pruebas (un Discord falso). */
     $base = rtrim((string)env('DISCORD_API_BASE', 'https://discord.com/api/v10'), '/');
     $ch = curl_init($base . $ruta);
@@ -301,35 +301,61 @@ function wordelon_discord(string $metodo, string $ruta, array $payload): array {
     ]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    return [$code, json_decode((string)$resp, true)];
+    return [$code, json_decode((string)$resp, true), (string)curl_error($ch)];
 }
 
 /* Publica o edita el mensaje del día. Con un candado de MariaDB para que
    dos partidas que acaban a la vez no publiquen dos mensajes. Si alguien
-   borró el mensaje en Discord (PATCH → 404) se publica otro. */
-function wordelon_discordResumen(PDO $pdo, string $dia): void {
-    if (trim((string)env('DISCORD_BOT_TOKEN', '')) === '') return;
+   borró el mensaje en Discord (PATCH → 404) se publica otro.
+   Devuelve lo que pasó (lo enseña la acción wordelon-discord de la API,
+   que sirve para ver por qué no sale y para reintentarlo). */
+function wordelon_discordResumen(PDO $pdo, string $dia): array {
+    if (trim((string)env('DISCORD_BOT_TOKEN', '')) === '') {
+        return ['ok' => false, 'error' => 'Falta DISCORD_BOT_TOKEN en el .env del servidor'];
+    }
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'PHP sin la extensión curl'];
     $lock = 'wordelon_discord_' . $dia;
     $st = $pdo->prepare("SELECT GET_LOCK(?, 10)");
     $st->execute([$lock]);
-    if ((int)$st->fetchColumn() !== 1) return;
+    if ((int)$st->fetchColumn() !== 1) return ['ok' => false, 'error' => 'Otra petición está publicando ahora mismo'];
     try {
         $embed = wordelon_embed($pdo, $dia);
+        if (!$embed['fields']) return ['ok' => false, 'error' => 'Nadie ha terminado todavía la partida de hoy'];
         $st = $pdo->prepare("SELECT discord_message_id FROM wordelon_dias WHERE dia = ?");
         $st->execute([$dia]);
         $msgId = (string)$st->fetchColumn();
         $canal = '/channels/' . rawurlencode(WORDELON_CANAL) . '/messages';
         if ($msgId !== '') {
-            [$code] = wordelon_discord('PATCH', $canal . '/' . rawurlencode($msgId), ['embeds' => [$embed]]);
-            if ($code !== 404) return;
+            [$code, $j, $err] = wordelon_discord('PATCH', $canal . '/' . rawurlencode($msgId), ['embeds' => [$embed]]);
+            if ($code !== 404) {
+                $r = wordelon_discordResultado('PATCH', $code, $j, $err);
+                $r['mensaje'] = $msgId;
+                return $r;
+            }
         }
-        [$code, $j] = wordelon_discord('POST', $canal, ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]]);
-        if ($code >= 200 && $code < 300 && isset($j['id'])) {
+        [$code, $j, $err] = wordelon_discord('POST', $canal, ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]]);
+        $r = wordelon_discordResultado('POST', $code, $j, $err);
+        if ($r['ok'] && isset($j['id'])) {
             $pdo->prepare("UPDATE wordelon_dias SET discord_message_id = ? WHERE dia = ?")->execute([(string)$j['id'], $dia]);
-        } else {
-            error_log('[wordelon] discord POST ' . $code);
+            $r['mensaje'] = (string)$j['id'];
         }
+        return $r;
     } finally {
         $pdo->prepare("SELECT RELEASE_LOCK(?)")->execute([$lock]);
     }
+}
+
+/* Traduce la respuesta de Discord a algo que se entienda (y la apunta en
+   el log si ha ido mal). */
+function wordelon_discordResultado(string $metodo, int $code, $j, string $err): array {
+    if ($code >= 200 && $code < 300) return ['ok' => true, 'accion' => $metodo, 'http' => $code];
+    $msg = is_array($j) ? (string)($j['message'] ?? '') : '';
+    $porque = [
+        0   => 'No se pudo conectar con Discord' . ($err !== '' ? ' (' . $err . ')' : ''),
+        401 => 'El token del bot no es válido (DISCORD_BOT_TOKEN)',
+        403 => 'El bot no tiene permiso en el canal (Ver canal, Enviar mensajes, Insertar enlaces)',
+        404 => 'Discord no encuentra el canal ' . WORDELON_CANAL . ' (o el bot no está en ese servidor)',
+    ][$code] ?? 'Discord respondió ' . $code;
+    error_log('[wordelon] discord ' . $metodo . ' ' . $code . ' ' . $msg . ' ' . $err);
+    return ['ok' => false, 'accion' => $metodo, 'http' => $code, 'error' => $porque, 'discord' => $msg];
 }

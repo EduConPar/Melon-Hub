@@ -4,6 +4,7 @@
    (assets/juegos/wordelon.php):
      GET  ?action=wordelon            → partida de hoy
      POST ?action=wordelon-intento    {intento, dia} → partida + ganados
+     GET  ?action=wordelon-discord    → reintenta el mensaje de Discord
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
    dejó abierta pasada la medianoche) no se apunta el intento al día
    nuevo sin que lo vea, se devuelve la partida nueva con diaNuevo.
@@ -44,6 +45,12 @@ try {
             $st->execute([$uid]);
             jsonResponse(['ok' => true, 'estado' => $estado, 'ganados' => $ganados, 'autismo' => (int)$st->fetchColumn()]);
         }
+
+        /* Reintenta el mensaje del día en Discord y dice qué contestó.
+           Se abre a mano en el navegador (con sesión) cuando el bot no
+           publica: si se arregló el permiso, lo publica en ese momento. */
+        case 'wordelon-discord':
+            jsonResponse(wordelon_discordResumen($pdo, wordelon_hoy()));
 
         default:
             jsonError('Acción desconocida');
