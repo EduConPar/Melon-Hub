@@ -16,6 +16,21 @@
      GET  ?action=bm-rank-inf          → récords del infinito de todos
      GET  ?action=bm-rank-dia&nivel=N  → 3 mejores tiempos de hoy
      POST ?action=bm-inf-empezar | bm-inf-continuar | bm-inf-retirarse
+   Ajedrez (assets/juegos/ajedrez.php y ajedrez-torneos.php):
+     GET  ?action=ajz-estado           → saldo, retos, mis partidas, torneos
+     GET  ?action=ajz-amigos           → amigos a los que se puede retar
+     GET  ?action=ajz-avisos           → para el haro (desktop-base.php)
+     POST ?action=ajz-retar            {amigo, min, inc, apuesta}
+     POST ?action=ajz-reto-responder   {id, aceptar} → partida
+     POST ?action=ajz-reto-cancelar    {id}
+     GET  ?action=ajz-partida&id=N     → partida (y señal de vida)
+     POST ?action=ajz-mover            {id, uci, n}
+     POST ?action=ajz-rendirse         {id}
+     POST ?action=ajz-tablas           {id, tipo: ofrecer|aceptar|rechazar}
+     GET  ?action=ajz-torneo&id=N      → torneo con su cuadro
+     POST ?action=ajz-torneo-crear     {nombre, plazas, min, inc, empieza, entrada, premio1..3}
+     POST ?action=ajz-torneo-apuntarse | ajz-torneo-salir | ajz-torneo-cancelar {id}
+     GET  ?action=ajz-torneo-discord&id=N → reintenta el anuncio y dice qué contestó
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
    dejó abierta pasada la medianoche) no se apunta el intento al día
    nuevo sin que lo vea, se devuelve la partida nueva con diaNuevo.
@@ -27,6 +42,7 @@ require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once __DIR__ . '/wordelon.php';
 require_once __DIR__ . '/buscaminas.php';
+require_once __DIR__ . '/ajedrez.php';
 
 $me = requireAuth();
 $st = $pdo->prepare('SELECT id FROM usuarios WHERE user_key = ?');
@@ -34,10 +50,14 @@ $st->execute([$me['key']]);
 $uid = (int)$st->fetchColumn();
 if ($uid <= 0) jsonError('Usuario no encontrado', 403);
 
+$action = $_GET['action'] ?? '';
+/* El ajedrez llama cada segundo (partida) o cada pocos (menú, haro): sin
+   soltar la sesión, cada petición esperaría a la anterior. */
+if (strncmp($action, 'ajz-', 4) === 0) session_write_close();
+
 wordelon_ensure($pdo);
 bm_ensure($pdo);
-
-$action = $_GET['action'] ?? '';
+if (strncmp($action, 'ajz-', 4) === 0) ajz_ensure($pdo);
 try {
     switch ($action) {
         case 'wordelon':
@@ -126,6 +146,65 @@ try {
 
         case 'bm-rank-dia':
             jsonResponse(['ok' => true] + bm_rankingDia($pdo, $uid, (int)($_GET['nivel'] ?? 0)));
+
+        /* ── Ajedrez ── */
+        case 'ajz-estado':
+            jsonResponse(['ok' => true] + ajz_estado($pdo, $uid));
+
+        case 'ajz-amigos':
+            jsonResponse(['ok' => true, 'amigos' => ajz_amigos($pdo, $uid)]);
+
+        case 'ajz-avisos':
+            jsonResponse(['ok' => true] + ajz_avisos($pdo, $uid));
+
+        case 'ajz-partida':
+            try { $p = ajz_partidaVer($pdo, $uid, (int)($_GET['id'] ?? 0)); }
+            catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
+            jsonResponse(['ok' => true, 'ahora' => bm_ms(), 'partida' => ajz_vista($pdo, $p, $uid, bm_ms())]);
+
+        case 'ajz-torneo':
+            try { $t = ajz_torVer($pdo, $uid, (int)($_GET['id'] ?? 0)); }
+            catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
+            jsonResponse(['ok' => true, 'torneo' => $t, 'autismo' => ajz_saldo($pdo, $uid)]);
+
+        /* Se abre a mano (con sesión) si el anuncio no sale en Discord. */
+        case 'ajz-torneo-discord':
+            jsonResponse(ajz_torDiscord($pdo, (int)($_GET['id'] ?? 0)));
+
+        case 'ajz-retar':
+        case 'ajz-reto-responder':
+        case 'ajz-reto-cancelar':
+        case 'ajz-mover':
+        case 'ajz-rendirse':
+        case 'ajz-tablas':
+        case 'ajz-torneo-crear':
+        case 'ajz-torneo-apuntarse':
+        case 'ajz-torneo-salir':
+        case 'ajz-torneo-cancelar': {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+            $b = jsonBody();
+            $id = (int)($b['id'] ?? 0);
+            $r = [];
+            try {
+                switch ($action) {
+                    case 'ajz-retar':          $r = ajz_retar($pdo, $uid, (string)($b['amigo'] ?? ''), $b['min'] ?? 0, $b['inc'] ?? 0, $b['apuesta'] ?? 0); break;
+                    case 'ajz-reto-responder': $r = ajz_responder($pdo, $uid, $id, !empty($b['aceptar'])); break;
+                    case 'ajz-reto-cancelar':  ajz_cancelarReto($pdo, $uid, $id); break;
+                    case 'ajz-torneo-crear':   $r = ajz_torCrear($pdo, $uid, $b); break;
+                    case 'ajz-torneo-apuntarse': ajz_torApuntarse($pdo, $uid, $id); break;
+                    case 'ajz-torneo-salir':   ajz_torSalir($pdo, $uid, $id); break;
+                    case 'ajz-torneo-cancelar': ajz_torCancelar($pdo, $uid, $id); break;
+                    default:
+                        if ($action === 'ajz-mover')        $p = ajz_mover($pdo, $uid, $id, (string)($b['uci'] ?? ''), (int)($b['n'] ?? -1));
+                        elseif ($action === 'ajz-rendirse') $p = ajz_rendirse($pdo, $uid, $id);
+                        else                                $p = ajz_tablas($pdo, $uid, $id, (string)($b['tipo'] ?? ''));
+                        $r = ['ahora' => bm_ms(), 'partida' => ajz_vista($pdo, $p, $uid, bm_ms())];
+                }
+            } catch (InvalidArgumentException $e) {
+                jsonResponse(['ok' => false, 'error' => $e->getMessage(), 'autismo' => ajz_saldo($pdo, $uid)]);
+            }
+            jsonResponse(['ok' => true, 'autismo' => ajz_saldo($pdo, $uid)] + $r);
+        }
 
         default:
             jsonError('Acción desconocida');

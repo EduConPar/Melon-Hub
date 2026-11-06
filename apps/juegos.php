@@ -368,6 +368,143 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .bm-card-ic { --cs: 18px; }
         .bm-card-ic .bm-c { width: 18px; height: 18px; font-size: 12px; }
 
+        /* ── Ajedrez (assets/juegos/ajedrez.js) ───────────────────────── */
+        #jg-ajz, #jg-ajz-crear, #jg-ajz-torneo, #jg-ajz-partida { padding: 8px 12px 12px; align-items: center; }
+        .az-menu { width: 100%; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+        .az-fila2 { display: grid; grid-template-columns: 300px 1fr; gap: 8px; }
+        .az-form { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
+        .az-form label { white-space: nowrap; }
+        .az-form select, .az-form input[type=text], .az-form input[type=datetime-local] { width: 100%; box-sizing: border-box; height: auto; min-height: 21px; }
+        .az-form input[type=number] { width: 64px; }
+        .az-ritmo { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+        .az-form .az-span { grid-column: 1 / -1; }
+        .az-acc { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+        .az-err { color: #c00000; font-weight: bold; }
+        body.jg-oscuro .az-err { color: #ff6b6b; }
+        /* Campos de texto con los colores del tema (98.css los pinta blancos). */
+        #jg-ajz input, #jg-ajz-crear input, .az-modal input {
+            background-color: var(--input-bg, #fff); color: var(--input-text, #000);
+        }
+        /* Listas: retos, partidas y torneos. */
+        .az-list { display: flex; flex-direction: column; gap: 2px; }
+        .az-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 6px; }
+        .az-item + .az-item { border-top: 1px solid var(--bezel-dark-2, grey); }
+        .az-item-t { min-width: 0; line-height: 1.4; }
+        .az-item-t b { font-size: 12px; }
+        .az-item-sub { color: var(--text-muted, #444); }
+        .az-item-btns { display: flex; gap: 4px; }
+        .az-item-btns button { min-width: 0; padding: 0 8px; }
+        .az-vacio { color: var(--text-muted, #444); padding: 4px 6px; }
+        .az-tor { cursor: pointer; grid-template-columns: 1fr auto; }
+        .az-tor:hover { background: color-mix(in srgb, var(--accent, navy) 14%, transparent); }
+        .az-badge { padding: 1px 6px; white-space: nowrap; font-weight: bold;
+                    background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .az-badge.gris { background: var(--bezel-dark-2, grey); color: var(--win-bg, #fff); }
+        .az-pod { display: flex; gap: 12px; flex-wrap: wrap; }
+        .az-pod span { display: inline-flex; align-items: center; gap: 4px; }
+        .az-saldo { display: inline-flex; align-items: center; gap: 3px; }
+
+        /* Tablero: casillas con los colores del tema. */
+        .az-cols { display: flex; gap: 10px; width: 100%; flex: 1; min-height: 0; margin-top: 6px; }
+        .az-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: center; }
+        .az-board-wrap { position: relative; padding: 3px;
+            background: var(--bezel-dark-2, grey);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -3px -3px var(--bezel-light-2, #dfdfdf), inset 3px 3px var(--bezel-dark-1, #0a0a0a); }
+        body.jg-kawaii .az-board-wrap { background: var(--border, #49388B); box-shadow: none; padding: 3px; }
+        .az-board { display: grid; grid-template-columns: repeat(8, var(--az-sq, 54px)); grid-template-rows: repeat(8, var(--az-sq, 54px));
+                    user-select: none; -webkit-user-select: none; touch-action: none; }
+        .az-sq { position: relative; display: flex; align-items: center; justify-content: center; }
+        .az-sq.cl { background: color-mix(in srgb, var(--input-bg, #fff) 70%, var(--win-bg, silver)); }
+        .az-sq.os { background: color-mix(in srgb, var(--accent, navy) 55%, var(--win-bg, silver)); }
+        .az-sq.ult::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--titlebar-end, #1084d0) 42%, transparent); }
+        .az-sq.sel::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--titlebar-start, navy) 55%, transparent); }
+        .az-sq.jaque::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, rgba(224,48,48,.95) 0, rgba(224,48,48,.55) 45%, transparent 72%); }
+        .az-sq.dest::after { content: ''; position: absolute; width: 30%; height: 30%; border-radius: 50%;
+                             background: color-mix(in srgb, var(--text, #000) 38%, transparent); pointer-events: none; z-index: 2; }
+        .az-sq.dest.come::after { width: 86%; height: 86%; background: none; box-sizing: border-box;
+                                  border: 5px solid color-mix(in srgb, var(--text, #000) 38%, transparent); }
+        .az-sq.dest, .az-sq.mia { cursor: pointer; }
+        .az-coord { position: absolute; font-size: 10px; font-weight: bold; line-height: 1; pointer-events: none; z-index: 1; }
+        .az-coord.f { right: 2px; bottom: 2px; }
+        .az-coord.r { left: 2px; top: 2px; }
+        .az-sq.cl .az-coord { color: color-mix(in srgb, var(--accent, navy) 70%, var(--win-bg, silver)); }
+        .az-sq.os .az-coord { color: color-mix(in srgb, var(--input-bg, #fff) 85%, var(--win-bg, silver)); }
+        .az-pz { position: relative; z-index: 1; width: 88%; height: 88%; display: block; pointer-events: none; }
+        .az-sq.arrastre .az-pz { opacity: .35; }
+        .az-fantasma { position: fixed; z-index: 60; pointer-events: none; width: var(--az-sq, 54px); height: var(--az-sq, 54px); transform: translate(-50%, -50%); }
+        .az-fantasma .az-pz { width: 100%; height: 100%; }
+        /* Piezas negras sobre casillas oscuras con un tema oscuro: un halo claro. */
+        body.jg-oscuro .az-pz.n { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px rgba(255,255,255,.7)); }
+        /* Encima del tablero: esperando al rival, coronación. */
+        .az-capa { position: absolute; inset: 3px; z-index: 5; display: flex; align-items: center; justify-content: center;
+                   background: color-mix(in srgb, var(--win-bg, silver) 55%, transparent); }
+        .az-capa .window { min-width: 220px; }
+        .az-capa .window-body { text-align: center; line-height: 1.6; }
+        .az-coronar { display: flex; gap: 4px; justify-content: center; }
+        .az-coronar button { width: 54px; height: 54px; padding: 2px; min-width: 0; }
+        .az-coronar button .az-pz { width: 100%; height: 100%; }
+        /* Columna de la derecha: jugadores, relojes y jugadas. */
+        .az-side { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+        .az-jug { display: flex; align-items: center; gap: 8px; padding: 6px; background: var(--win-bg, silver);
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf); }
+        body.jg-kawaii .az-jug { box-shadow: none; border: 2px solid var(--border, #49388B); }
+        .az-jug .bm-av { --av: 32px; }
+        .az-jug-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+        .az-jug-nom small { display: block; font-weight: normal; color: var(--text-muted, #444); }
+        .az-reloj { min-width: 64px; padding: 3px 6px; text-align: center; font-weight: bold; font-size: 16px; font-variant-numeric: tabular-nums;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
+        body.jg-kawaii .az-reloj { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-reloj.corre { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .az-reloj.urge { color: #c00000; }
+        .az-reloj.corre.urge { background: #c00000; color: #fff; }
+        .az-jugadas { flex: 1; min-height: 60px; overflow: auto; padding: 4px 6px; font-variant-numeric: tabular-nums;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
+        body.jg-kawaii .az-jugadas { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-jg { display: grid; grid-template-columns: 28px 1fr 1fr; gap: 4px; padding: 1px 0; }
+        .az-jg i { font-style: normal; color: var(--text-muted, #444); text-align: right; }
+        .az-jg .ult { font-weight: bold; }
+        .az-estado { text-align: center; font-weight: bold; min-height: 14px; }
+        .az-aviso { padding: 6px; text-align: center; line-height: 1.5;
+                    background: color-mix(in srgb, var(--accent, navy) 16%, var(--win-bg, silver)); }
+        .az-btns { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+        .az-fin { display: none; padding: 8px; text-align: center; line-height: 1.6;
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
+        body.jg-kawaii .az-fin { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-fin.on { display: block; }
+        .az-fin b { font-size: 13px; }
+        /* Torneo: apuntados y cuadro. */
+        .az-tor-body { width: 100%; overflow: auto; flex: 1; min-height: 0; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+        .az-tor-campos { display: flex; gap: 4px; flex-wrap: wrap; }
+        .az-tor-campos .bm-campo { flex: 1 1 90px; }
+        .az-tor-campos .bm-campo.ancho { flex: 2 1 190px; }
+        .az-apuntados { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+        .az-apuntados span { display: inline-flex; align-items: center; gap: 6px; }
+        .az-cuadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 4px; align-items: stretch; }
+        .az-ronda { display: flex; flex-direction: column; min-width: 150px; }
+        .az-ronda-tit { font-weight: bold; text-align: center; margin-bottom: 4px; }
+        .az-ronda-cr { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 8px; }
+        .az-cruce { background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); padding: 3px; }
+        body.jg-kawaii .az-cruce { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-cruce-tit { color: var(--text-muted, #444); padding: 0 3px 2px; }
+        .az-cr-j { display: flex; align-items: center; gap: 5px; padding: 2px 3px; }
+        .az-cr-j .az-cr-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .az-cr-j.gana { font-weight: bold; }
+        .az-cr-j.pierde { color: var(--text-muted, #444); }
+        .az-cr-j.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .az-cr-est { color: var(--text-muted, #444); padding: 1px 3px 0; }
+        .az-card-ic { display: flex; align-items: center; justify-content: center; }
+        .az-card-ic .az-pz { width: 38px; height: 38px; }
+
         /* Ventanita Win98 de "Cómo se juega". */
         .wd-modal-bg {
             display: none; position: fixed; inset: 0; z-index: 50;
@@ -408,6 +545,162 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
                 <div class="jg-card-sub">Tablero del día, libre e infinito</div>
             </div>
             <div class="jg-card-state" id="jg-bm-state"></div>
+        </div>
+        <div class="jg-card" id="jg-open-ajz" role="button" tabindex="0" style="margin-top:6px">
+            <div class="jg-card-ic az-card-ic" id="az-card-ic" aria-hidden="true"></div>
+            <div>
+                <div class="jg-card-name">Ajedrez</div>
+                <div class="jg-card-sub">Reta a tus amigos, apuesta puntos y organiza torneos</div>
+            </div>
+            <div class="jg-card-state" id="jg-ajz-state"></div>
+        </div>
+    </div>
+</div>
+
+<!-- AJEDREZ: menú (assets/juegos/ajedrez.js) -->
+<div class="jg-view" id="jg-ajz">
+    <div class="wd-top">
+        <button type="button" id="az-back">&lt; Juegos</button>
+        <div class="wd-head">
+            <div class="wd-title">Ajedrez</div>
+            <div class="wd-date az-saldo" id="az-saldo"></div>
+        </div>
+        <div class="wd-top-right">
+            <button type="button" class="wd-help" id="az-help" title="Cómo se juega" aria-label="Cómo se juega">?</button>
+        </div>
+    </div>
+    <div class="az-menu">
+        <div class="az-fila2">
+            <section class="bm-win">
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path d="M5 1h2v1h1v2H7v1h1v1H7v3h2v1h1v1H2v-1h1V9h2V6H4V5h1V4H4V2h1z"/></svg><span>Retar a un amigo</span></div>
+                <div class="bm-win-body">
+                    <div class="az-form">
+                        <label for="az-amigo">Amigo</label>
+                        <select id="az-amigo"></select>
+                        <label for="az-min">Ritmo</label>
+                        <div class="az-ritmo"><input type="number" id="az-min" min="1" max="180" value="5"> min +
+                            <input type="number" id="az-inc" min="0" max="180" value="3"> s</div>
+                        <label for="az-apuesta">Apuesta</label>
+                        <div class="az-ritmo"><input type="number" id="az-apuesta" min="0" value="0"><span id="az-apuesta-pt"></span></div>
+                        <div class="az-span bm-nota">Los dos ponéis lo mismo y quien gana se lo lleva todo. En tablas, cada uno recupera lo suyo. El reto caduca a los 5 minutos.</div>
+                        <div class="az-span az-acc"><span class="az-err" id="az-retar-msg"></span><button type="button" id="az-retar">Retar</button></div>
+                    </div>
+                </div>
+            </section>
+            <section class="bm-win">
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 2h9v1H2zM2 10h9v1H2zM1 3h1v7H1zM11 3h1v7h-1zM6 4h1v3h2v1H6z"/></svg><span>Partidas y retos</span></div>
+                <div class="bm-win-body"><div class="az-list" id="az-mios"></div></div>
+            </section>
+        </div>
+        <section class="bm-win">
+            <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 1h7v1h2v3h-1v1h-1v1H9v1H8v1H7v1h2v2H4v-2h2V9H5V8H4V7H3V6H2V5H1V2h2zM2 2v2h1V2zM10 2v2h1V2z"/></svg><span>Torneos</span>
+                <span class="bm-win-bar-r"><button type="button" id="az-crear-btn">Crear torneo</button></span></div>
+            <div class="bm-win-body"><div class="az-list" id="az-torneos"></div></div>
+        </section>
+    </div>
+</div>
+
+<!-- AJEDREZ: crear torneo -->
+<div class="jg-view" id="jg-ajz-crear">
+    <div class="wd-top">
+        <button type="button" id="azc-back">&lt; Ajedrez</button>
+        <div class="wd-head"><div class="wd-title">Crear torneo</div><div class="wd-date az-saldo" id="azc-saldo"></div></div>
+        <div class="wd-top-right"></div>
+    </div>
+    <div class="az-menu">
+        <section class="bm-win">
+            <div class="bm-win-bar"><span>Torneo de eliminatoria directa</span></div>
+            <div class="bm-win-body">
+                <div class="az-form">
+                    <label for="azc-nombre">Nombre</label>
+                    <input type="text" id="azc-nombre" maxlength="60">
+                    <label for="azc-plazas">Jugadores</label>
+                    <select id="azc-plazas"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option><option value="32">32</option></select>
+                    <label for="azc-min">Ritmo</label>
+                    <div class="az-ritmo"><input type="number" id="azc-min" min="1" max="180" value="5"> min +
+                        <input type="number" id="azc-inc" min="0" max="180" value="3"> s</div>
+                    <label for="azc-empieza">Empieza</label>
+                    <input type="datetime-local" id="azc-empieza">
+                    <label for="azc-entrada">Entrada</label>
+                    <div class="az-ritmo"><input type="number" id="azc-entrada" min="0" value="0"><span class="azc-pt"></span> por jugador, para ti</div>
+                    <label>Premios</label>
+                    <div class="az-ritmo">
+                        <i class="bm-med m1">1</i><input type="number" id="azc-p1" min="0" value="0">
+                        <i class="bm-med m2">2</i><input type="number" id="azc-p2" min="0" value="0">
+                        <i class="bm-med m3">3</i><input type="number" id="azc-p3" min="0" value="0"><span class="azc-pt"></span>
+                    </div>
+                    <div class="az-span bm-nota">Los premios salen de tus puntos al crear el torneo. Las entradas te llegan cuando empieza. Si a la hora de inicio no está lleno, se cancela y se devuelve todo. Puedes apuntarte tú también, sin pagar entrada.</div>
+                    <div class="az-span bm-nota">Cada ronda empieza cuando acaba la anterior. Si alguien no se presenta a su partida en 2 minutos, la pierde. Las tablas se repiten con los colores cambiados. Al final se juegan a la vez la final y la partida por el 3.er puesto.</div>
+                    <div class="az-span az-acc"><span id="azc-coste"></span></div>
+                    <div class="az-span az-acc"><span class="az-err" id="azc-msg"></span><button type="button" id="azc-crear">Crear torneo</button></div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- AJEDREZ: torneo -->
+<div class="jg-view" id="jg-ajz-torneo">
+    <div class="wd-top">
+        <button type="button" id="azt-back">&lt; Ajedrez</button>
+        <div class="wd-head"><div class="wd-title" id="azt-title">Torneo</div><div class="wd-date" id="azt-sub"></div></div>
+        <div class="wd-top-right"></div>
+    </div>
+    <div class="az-tor-body" id="azt-body"></div>
+</div>
+
+<!-- AJEDREZ: partida -->
+<div class="jg-view" id="jg-ajz-partida">
+    <div class="wd-top">
+        <button type="button" id="azp-back">&lt; Ajedrez</button>
+        <div class="wd-head"><div class="wd-title" id="azp-title">Ajedrez</div><div class="wd-date" id="azp-sub"></div></div>
+        <div class="wd-top-right"></div>
+    </div>
+    <div class="az-cols">
+        <div class="az-main">
+            <div class="az-board-wrap" id="azp-wrap"><div class="az-board" id="azp-board"></div></div>
+        </div>
+        <div class="az-side">
+            <div class="az-jug" id="azp-rival"></div>
+            <div class="az-jugadas" id="azp-jugadas"></div>
+            <div class="az-jug" id="azp-yo"></div>
+            <div class="az-estado" id="azp-estado"></div>
+            <div id="azp-aviso"></div>
+            <div class="az-btns" id="azp-btns">
+                <button type="button" id="azp-tablas">Ofrecer tablas</button>
+                <button type="button" id="azp-rendirse">Rendirse</button>
+            </div>
+            <div class="az-fin" id="azp-fin"></div>
+        </div>
+    </div>
+</div>
+
+<div class="wd-modal-bg" id="az-modal">
+    <div class="window wd-modal">
+        <div class="title-bar">
+            <div class="title-bar-text">Cómo se juega</div>
+            <div class="title-bar-controls"><button aria-label="Close" id="az-modal-x"></button></div>
+        </div>
+        <div class="window-body">
+            Ajedrez de siempre, en tiempo real y con reloj. Mueve con un clic en la pieza y otro en la casilla, o arrastrándola.
+            <div style="margin-top:6px"><b>Retos</b>: solo a tus amigos. Eliges el ritmo (minutos y segundos que se suman en cada jugada) y, si quieres, una apuesta de puntos de Autismo: los dos ponéis lo mismo y quien gana se lo lleva todo. En tablas, cada uno recupera lo suyo. Si alguno no entra en 2 minutos, se anula y se devuelve la apuesta.</div>
+            <div style="margin-top:6px"><b>Torneos</b>: eliminatoria directa. Quien lo organiza pone la entrada (que es para él), los premios del 1.º, 2.º y 3.º (que salen de sus puntos) y la hora de inicio.</div>
+            <div style="margin-top:6px">Si cierras la partida o te quedas sin conexión más de 60 segundos, la pierdes.</div>
+            <div class="wd-modal-btns"><button type="button" id="az-modal-ok">Aceptar</button></div>
+        </div>
+    </div>
+</div>
+
+<!-- AJEDREZ: confirmaciones (no se usa confirm(): bloquea las pruebas) -->
+<div class="wd-modal-bg" id="az-conf">
+    <div class="window wd-modal az-modal">
+        <div class="title-bar">
+            <div class="title-bar-text" id="az-conf-tit">Ajedrez</div>
+            <div class="title-bar-controls"><button aria-label="Close" id="az-conf-x"></button></div>
+        </div>
+        <div class="window-body">
+            <div id="az-conf-txt"></div>
+            <div class="wd-modal-btns" style="gap:6px"><button type="button" id="az-conf-no">Cancelar</button><button type="button" id="az-conf-si">Aceptar</button></div>
         </div>
     </div>
 </div>
@@ -856,5 +1149,13 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 })();
 </script>
 <script src="../assets/juegos/buscaminas.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/juegos/buscaminas.js') ?>"></script>
+<?php
+/* ?abrir=partida:N | torneo:N (aviso del haro o enlace del anuncio de
+   Discord, ver openJuegos en desktop-base.php). */
+$_jgAbrir = (string)($_GET['abrir'] ?? '');
+if (!preg_match('/^(partida|torneo):[0-9]{1,10}$/', $_jgAbrir)) $_jgAbrir = '';
+?>
+<script>window.JG_ABRIR = <?= json_encode($_jgAbrir) ?>;</script>
+<script src="../assets/juegos/ajedrez.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/juegos/ajedrez.js') ?>"></script>
 </body>
 </html>

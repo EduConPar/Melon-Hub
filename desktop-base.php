@@ -2516,24 +2516,104 @@ window.notifSystem = (function() {
 })();
 
 /* =========================
-   JUEGOS (Wordelon)
+   JUEGOS (Wordelon, Buscaminas, Ajedrez)
 ========================= */
 (function() {
     var juegosIframe = document.getElementById('juegos-iframe');
     var juegosLoaded = false;
+    var JUEGOS_IC = '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">';
 
-    document.getElementById('juegos-icon').addEventListener('dblclick', function() {
-        if (!juegosLoaded) { juegosIframe.src = appSrc('apps/juegos.php'); juegosLoaded = true; }
+    /* abrir = "partida:N" | "torneo:N" (ajedrez): entra directo ahí. */
+    function openJuegos(abrir) {
+        if (!juegosLoaded) {
+            juegosIframe.src = appSrc('apps/juegos.php' + (abrir ? '?abrir=' + encodeURIComponent(abrir) : ''));
+            juegosLoaded = true;
+        } else if (abrir) {
+            try { juegosIframe.contentWindow.postMessage({ type: 'juegos-abrir', abrir: abrir }, location.origin); } catch (e) {}
+        }
         if (taskbarManager.isRegistered('juegos-window')) {
             taskbarManager.restore('juegos-window');
         } else {
-            taskbarManager.register('juegos-window', 'Juegos', '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
+            taskbarManager.register('juegos-window', 'Juegos', JUEGOS_IC, 'flex');
         }
-    });
+    }
+    window.melonOpenJuegos = openJuegos;
+    document.getElementById('juegos-icon').addEventListener('dblclick', function() { openJuegos(); });
 
     document.getElementById('juegos-close').addEventListener('click', function() {
         taskbarManager.unregister('juegos-window');
     });
+
+    /* Ajedrez: aviso del haro con los retos que te llegan (Aceptar /
+       Rechazar) y las partidas que te esperan (reto aceptado, ronda de
+       torneo: "Jugar"). Cada 10 s; esa llamada es también la que hace
+       avanzar lo que caduca (assets/juegos/ajedrez.php, ajz_tick). Si
+       Juegos ya está enseñando el ajedrez, la partida entra sola y no
+       hace falta avisar. */
+    function ajzViendo() {
+        var win = document.getElementById('juegos-window');
+        if (!juegosLoaded || !win || win.style.display === 'none') return null;
+        try { return juegosIframe.contentWindow.ajzViendo ? juegosIframe.contentWindow.ajzViendo() : null; } catch (e) { return null; }
+    }
+    var AJZ_TIT = '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Ajedrez';
+    function ajzPost(action, body) {
+        return fetch('assets/juegos/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function(r) { return r.json(); });
+    }
+    function ajzError(msg) {
+        window.notifSystem.show({ id: 'ajz-err-' + Date.now(), type: 'info', title: AJZ_TIT, message: msg });
+    }
+    function pollAjedrez() {
+        if (!window.notifSystem) return;
+        fetch('assets/juegos/api.php?action=ajz-avisos', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ok) return;
+                (d.retos || []).forEach(function(x) {
+                    var u = x.de || {};
+                    window.notifSystem.show({
+                        id:          'ajz-reto-' + x.id,
+                        type:        'action',
+                        title:       AJZ_TIT,
+                        message:     (u.nombre || 'Alguien') + ' te reta a una partida (' + x.ritmo + (x.apuesta > 0 ? ', apuesta ' + x.apuesta + ' puntos' : '') + ')',
+                        senderImage: u.foto || '',
+                        senderKey:   u.key,
+                        sentAt:      x.ts,
+                        rejectLabel: 'Rechazar',
+                        acceptLabel: 'Aceptar',
+                        onReject:    function() { ajzPost('ajz-reto-responder', { id: x.id, aceptar: false }).catch(function() {}); },
+                        onAccept:    function() {
+                            ajzPost('ajz-reto-responder', { id: x.id, aceptar: true }).then(function(r) {
+                                if (r && r.ok && r.partida) openJuegos('partida:' + r.partida);
+                                else ajzError((r && r.error) || 'No se ha podido aceptar el reto');
+                            }).catch(function() { ajzError('Sin conexión'); });
+                        },
+                    });
+                });
+                var v = ajzViendo();
+                (d.partidas || []).forEach(function(p) {
+                    if (v && (v.vista === 'menu' || v.partida === p.id || (v.vista === 'torneo' && p.torneoId && v.torneo === p.torneoId))) return;
+                    var u = p.rival || {};
+                    window.notifSystem.show({
+                        id:          'ajz-partida-' + p.id,
+                        type:        'action',
+                        title:       AJZ_TIT,
+                        message:     p.torneo ? 'Empieza tu partida del torneo ' + p.torneo + ' contra ' + (u.nombre || '?')
+                                              : (u.nombre || 'Tu rival') + ' ha aceptado tu reto: ¡a jugar!',
+                        senderImage: u.foto || '',
+                        senderKey:   u.key,
+                        sentAt:      p.ts,
+                        rejectLabel: 'Cerrar',
+                        acceptLabel: 'Jugar',
+                        onAccept:    function() { openJuegos('partida:' + p.id); },
+                    });
+                });
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollAjedrez, 4000);
+    setInterval(pollAjedrez, 10000);
 })();
 
 /* =========================
@@ -4660,6 +4740,9 @@ window.notifSystem = (function() {
             if (typeof openSharedPlaylistViewer === 'function') openSharedPlaylistViewer(valor);
         } else if (tipo === 'escuchar') {
             if (typeof window.melonJoinListen === 'function') window.melonJoinListen(valor);
+        } else if (tipo === 'torneo') {
+            /* Anuncio del torneo de ajedrez en Discord (ajedrez-torneos.php). */
+            if (typeof window.melonOpenJuegos === 'function') window.melonOpenJuegos('torneo:' + valor);
         }
     };
 
