@@ -235,7 +235,11 @@ function ev_discordPublish(PDO $pdo, array $event): ?string {
     $counts = ev_counts($pdo, (int)$event['id']);
     $embed  = ev_buildEmbed($event, $ci['label'], $counts['joined'], $counts['waitlist'], $ci['avatarUrl']);
 
-    $payload = ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]];
+    /* @everyone al publicarlo (solo aquí: los PATCH no tocan `content`,
+       así que al editar no vuelve a avisar a todos). El bot necesita el
+       permiso "Mencionar @everyone" en el canal; sin él, sale el texto
+       pero no avisa. */
+    $payload = ['content' => '@everyone', 'embeds' => [$embed], 'allowed_mentions' => ['parse' => ['everyone']]];
     $url     = 'https://discord.com/api/v10/channels/' . rawurlencode(EV_DISCORD_CHANNEL) . '/messages';
 
     $ch = curl_init($url);

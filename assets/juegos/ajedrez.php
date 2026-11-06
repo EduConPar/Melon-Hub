@@ -550,7 +550,16 @@ function ajz_avisos(PDO $pdo, int $uid): array {
     $ids = array_column($retos, 'de_id');
     foreach ($parts as $p) $ids[] = (int)$p['blanco_id'] === $uid ? (int)$p['negro_id'] : (int)$p['blanco_id'];
     $us = bm_usuarios($pdo, $ids);
-    $out = ['retos' => [], 'partidas' => []];
+    $out = ['retos' => [], 'partidas' => [], 'cancelados' => []];
+    /* Torneos cancelados en los que estaba apuntado: se avisan una vez. */
+    $st = $pdo->prepare("SELECT c.id, c.devuelto, c.creado, t.nombre, t.motivo FROM ajz_cancelados c JOIN ajz_torneos t ON t.id = c.torneo_id
+                          WHERE c.user_id = ? AND c.entregado = 0 ORDER BY c.id");
+    $st->execute([$uid]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $out['cancelados'][] = ['id' => (int)$c['id'], 'torneo' => $c['nombre'], 'motivo' => $c['motivo'],
+                                'devuelto' => (int)$c['devuelto'], 'ts' => intdiv((int)$c['creado'], 1000)];
+        $pdo->prepare("UPDATE ajz_cancelados SET entregado = 1 WHERE id = ?")->execute([$c['id']]);
+    }
     foreach ($retos as $r) {
         $out['retos'][] = ['id' => (int)$r['id'], 'de' => $us[(int)$r['de_id']] ?? null, 'apuesta' => (int)$r['apuesta'],
                            'ritmo' => ajz_ritmoTexto((int)$r['base_ms'], (int)$r['inc_ms']), 'ts' => intdiv((int)$r['creado'], 1000)];

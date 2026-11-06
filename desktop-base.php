@@ -2545,8 +2545,8 @@ window.notifSystem = (function() {
     });
 
     /* Ajedrez: aviso del haro con los retos que te llegan (Aceptar /
-       Rechazar) y las partidas que te esperan (reto aceptado, ronda de
-       torneo: "Jugar"). Cada 10 s; esa llamada es también la que hace
+       Rechazar), las partidas que te esperan (reto aceptado, ronda de
+       torneo: "Jugar") y los torneos cancelados en los que estabas. Cada 10 s; esa llamada es también la que hace
        avanzar lo que caduca (assets/juegos/ajedrez.php, ajz_tick). Si
        Juegos ya está enseñando el ajedrez, la partida entra sola y no
        hace falta avisar. */
@@ -2589,6 +2589,18 @@ window.notifSystem = (function() {
                                 else ajzError((r && r.error) || 'No se ha podido aceptar el reto');
                             }).catch(function() { ajzError('Sin conexión'); });
                         },
+                    });
+                });
+                /* Torneo cancelado en el que estabas apuntado. */
+                (d.cancelados || []).forEach(function(c) {
+                    window.notifSystem.show({
+                        id:      'ajz-cancelado-' + c.id,
+                        type:    'info',
+                        title:   AJZ_TIT,
+                        message: 'Se ha cancelado el torneo «' + c.torneo + '» ' +
+                                 (c.motivo === 'vacio' ? 'porque no se llenó a tiempo.' : 'porque lo ha cancelado quien lo organizaba.') +
+                                 (c.devuelto > 0 ? ' Se te han devuelto los ' + c.devuelto + ' puntos de la entrada.' : ''),
+                        sentAt:  c.ts,
                     });
                 });
                 var v = ajzViendo();

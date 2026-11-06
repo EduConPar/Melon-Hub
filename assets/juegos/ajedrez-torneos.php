@@ -19,6 +19,9 @@
    calendario (EV_DISCORD_CHANNEL de assets/events/api.php) y edita el
    mensaje al apuntarse/borrarse gente, al empezar, al acabar (podio) y
    si se cancela.
+   Cancelado: aviso del haro a cada apuntado (menos a quien lo cancela)
+   con lo que se le ha devuelto (tabla ajz_cancelados, se entrega una vez
+   en ajz-avisos) y deja de salir en la lista de torneos del menú.
    Tablas: ajz_torneos, ajz_inscritos (pagado = la entrada guardada),
    ajz_cruces (ronda, slot; la final es slot 0 de la última ronda y el
    3.er puesto el slot 1; juegos = partidas jugadas en ese cruce, para
@@ -61,6 +64,15 @@ function ajz_torEnsure(PDO $pdo): void {
             pagado    INT NOT NULL DEFAULT 0,
             orden     BIGINT NOT NULL,
             PRIMARY KEY (torneo_id, user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS ajz_cancelados (
+            id        INT AUTO_INCREMENT PRIMARY KEY,
+            user_id   INT NOT NULL,
+            torneo_id INT NOT NULL,
+            devuelto  INT NOT NULL DEFAULT 0,
+            creado    BIGINT NOT NULL,
+            entregado TINYINT NOT NULL DEFAULT 0,
+            INDEX idx_user (user_id, entregado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS ajz_cruces (
             id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -164,7 +176,14 @@ function ajz_torSalir(PDO $pdo, int $uid, int $id): void {
 
 /* Cancelado (por el anfitrión o porque no se llenó): se devuelve todo. */
 function ajz_torCancelarDentro(PDO $pdo, array $t, string $motivo): void {
-    foreach (ajz_torInscritos($pdo, $t['id']) as $i) ajz_pagar($pdo, (int)$i['user_id'], (int)$i['pagado']);
+    $aviso = $pdo->prepare("INSERT INTO ajz_cancelados (user_id, torneo_id, devuelto, creado) VALUES (?,?,?,?)");
+    foreach (ajz_torInscritos($pdo, $t['id']) as $i) {
+        ajz_pagar($pdo, (int)$i['user_id'], (int)$i['pagado']);
+        /* Aviso a cada apuntado; quien lo cancela a mano ya lo sabe. */
+        if (!($motivo === 'anfitrion' && (int)$i['user_id'] === $t['host_id'])) {
+            $aviso->execute([(int)$i['user_id'], $t['id'], (int)$i['pagado'], bm_ms()]);
+        }
+    }
     $pdo->prepare("UPDATE ajz_inscritos SET pagado = 0 WHERE torneo_id = ?")->execute([$t['id']]);
     ajz_pagar($pdo, $t['host_id'], $t['premio1'] + $t['premio2'] + $t['premio3']);
     $pdo->prepare("UPDATE ajz_torneos SET estado = 'cancelado', motivo = ? WHERE id = ?")->execute([$motivo, $t['id']]);
@@ -306,13 +325,14 @@ function ajz_torResumen(array $t, int $apuntados, array $us): array {
     ];
 }
 
-/* Lista del menú: los abiertos y en juego, y los de los últimos 3 días. */
+/* Lista del menú: los abiertos y en juego, y los terminados de los
+   últimos 3 días. Los cancelados no salen (sí por su enlace). */
 function ajz_torLista(PDO $pdo, int $uid): array {
     $st = $pdo->prepare("SELECT t.*, (SELECT COUNT(*) FROM ajz_inscritos i WHERE i.torneo_id = t.id) AS apuntados,
                                 (SELECT COUNT(*) FROM ajz_inscritos i WHERE i.torneo_id = t.id AND i.user_id = ?) AS yo
                            FROM ajz_torneos t
-                          WHERE t.estado IN ('inscripcion','jugando') OR t.empieza > ?
-                          ORDER BY FIELD(t.estado, 'jugando', 'inscripcion', 'terminado', 'cancelado'), t.empieza");
+                          WHERE t.estado IN ('inscripcion','jugando') OR (t.estado = 'terminado' AND t.empieza > ?)
+                          ORDER BY FIELD(t.estado, 'jugando', 'inscripcion', 'terminado'), t.empieza");
     $st->execute([$uid, bm_ms() - 3 * 86400000]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     $us = bm_usuarios($pdo, array_column($rows, 'host_id'));
@@ -408,7 +428,8 @@ function ajz_torEmbed(PDO $pdo, array $t): array {
         case 'inscripcion': $desc = '**[→ Apuntarse en Melon Hub](' . $url . ')**'; break;
         case 'jugando':     $desc = 'En juego · ' . ajz_torNombreRonda($t['ronda'], $total) . "\n**[→ Ver el cuadro en Melon Hub](" . $url . ')**'; break;
         case 'terminado':   $desc = 'Terminado' . "\n**[→ Ver el cuadro en Melon Hub](" . $url . ')**'; break;
-        default:            $desc = $t['motivo'] === 'vacio' ? 'Cancelado: no se llenó a tiempo. Se ha devuelto todo.' : 'Cancelado por quien lo organizaba. Se ha devuelto todo.';
+        default:            $desc = '❌ **Torneo cancelado** ' . ($t['motivo'] === 'vacio' ? 'porque no se llenó a tiempo.' : 'por quien lo organizaba.')
+                                  . "\nSe han devuelto las entradas y los premios.";
     }
     $fields = [
         ['name' => 'Fecha y hora', 'value' => '<t:' . $ts . ':F>' . "\n" . '<t:' . $ts . ':R>', 'inline' => true],
@@ -424,11 +445,13 @@ function ajz_torEmbed(PDO $pdo, array $t): array {
     }
     $author = ['name' => $host['nombre']];
     if (!empty($host['foto'])) $author['icon_url'] = $web . '/' . ltrim($host['foto'], '/');
+    /* Cancelado: se nota de un vistazo (título, gris, sin enlace de apuntarse). */
+    $cancelado = $t['estado'] === 'cancelado';
     return [
-        'title'       => mb_substr('Torneo de ajedrez: ' . $t['nombre'], 0, 240),
+        'title'       => mb_substr(($cancelado ? '[CANCELADO] ' : '') . 'Torneo de ajedrez: ' . $t['nombre'], 0, 240),
         'url'         => $url,
         'description' => $desc,
-        'color'       => 0xFF66B2,   /* el mismo que los eventos */
+        'color'       => $cancelado ? 0x808080 : 0xFF66B2,   /* rosa = el mismo que los eventos */
         'author'      => $author,
         'fields'      => $fields,
         'footer'      => ['text' => 'Torneo creado por ' . $host['nombre'] . ' en Melon Hub'],
