@@ -2927,3 +2927,76 @@
 .pf2-inv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf2-inv-st { font-size: 10px; color: var(--text-faint, #808080); }
 .pf2-inv-row.is-cobrada .pf2-inv-st { color: var(--accent); font-weight: bold; }
+
+/* ══════════════════════════════════════════════════════════════════
+   AMIGOS ESTILO STEAM (assets/profile/amigos.php, apps/perfil.php)
+   Pestañas Win98 (98.css: menu[role=tablist] + .window[role=tabpanel]),
+   lista agrupada En línea / Desconectados, buscador y solicitudes.
+   Todo con las variables del tema.
+   ══════════════════════════════════════════════════════════════════ */
+#profile-view-social { flex-direction: column; min-height: 0; }
+.am-tabs { margin: 8px 0 -2px; padding-left: 3px; }
+.am-tabs [role=tab] { background: var(--win-bg); }
+.am-tabs [role=tab] a { color: var(--text); }
+.am-panelwin { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--win-bg); }
+.am-panelwin > .window-body { flex: 1; overflow: auto; margin: 8px; }
+.am-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.am-sec { font-weight: bold; margin: 10px 0 6px; color: var(--text); }
+.am-sec:first-child { margin-top: 0; }
+.am-nota { color: var(--text-muted); margin-bottom: 8px; }
+.am-buscar { display: flex; gap: 6px; }
+.am-buscar .am-input { margin-bottom: 0; flex: 1; }
+.am-vacio { color: var(--text-muted); padding: 8px 2px; }
+.am-grupo {
+    margin: 10px 0 6px; padding-bottom: 3px; font-weight: bold; color: var(--text);
+    border-bottom: 1px solid var(--bezel-dark-2);
+}
+.am-grupo:first-child { margin-top: 0; }
+.am-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+/* Cada amigo: foto con marco y punto, nombre y estado. */
+.am-amigo, .am-fila {
+    display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer;
+    background: var(--input-bg); color: var(--input-text);
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-2);
+}
+.am-amigo:hover, .am-fila:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+.am-fila { margin-bottom: 4px; cursor: default; }
+.am-fila .am-av { cursor: pointer; }
+.am-av { width: 36px; height: 36px; flex-shrink: 0; }
+.am-av .profile-avatar-img { width: 100%; height: 100%; object-fit: cover; }
+/* Sin foto: el 👤 del perfil es enorme (58 px); aquí, a la medida del cuadro. */
+.am-av .profile-avatar-placeholder {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1; overflow: hidden;
+}
+.am-txt { min-width: 0; flex: 1; }
+.am-nom { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-est { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+/* Colores del estado como en Steam (en línea, ausente, no molestar,
+   escuchando), legibles en fondo claro y oscuro. */
+.am-on .am-est   { color: #3a9d3a; }
+.am-away .am-est { color: #c99a0e; }
+.am-dnd .am-est  { color: #d04040; }
+.am-np .am-est   { color: var(--accent); }
+.am-off { opacity: .75; }
+.am-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.am-btns .button { min-width: 0; padding: 0 10px; }
+.am-badge {
+    display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 4px; box-sizing: border-box;
+    background: var(--badge-bg, #d72638); color: var(--badge-text, #fff); font-size: 10px; font-weight: bold;
+    text-align: center; line-height: 16px; border-radius: 8px;
+}
+.am-badge[hidden] { display: none; }
+#profile-nav-social .am-badge { margin-left: auto; }
+.am-notif-btns { display: flex; gap: 4px; margin-top: 4px; }
+.am-notif-btns .button { min-width: 0; padding: 0 10px; }
+/* Menú del clic derecho, como los de Win98. */
+.am-menu {
+    position: fixed; z-index: 10005; min-width: 150px; padding: 2px;
+    background: var(--btn-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2);
+}
+.am-menu > div[data-m] { padding: 4px 18px; cursor: default; }
+.am-menu > div[data-m]:hover { background: var(--accent); color: var(--accent-text); }
+.am-menu-sep { height: 1px; margin: 3px 2px; background: var(--bezel-dark-2); border-bottom: 1px solid var(--bezel-light-1); }

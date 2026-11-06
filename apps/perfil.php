@@ -330,7 +330,8 @@ if ($_perfilStandalone) {
                 <div id="profile-followed-nav"></div>
                 <div class="profile-nav-item" id="profile-nav-social" data-cat="social">
                     <span class="profile-nav-icon">+</span>
-                    <span class="profile-nav-label">Explorar</span>
+                    <span class="profile-nav-label">Amigos</span>
+                    <span class="am-badge" id="am-nav-badge" hidden></span>
                 </div>
             </div>
             <div id="profile-sidebar-footer">
@@ -467,10 +468,37 @@ if ($_perfilStandalone) {
                 </div>
             </div>
             <!-- SOCIAL VIEW -->
+            <!-- Amigos estilo Steam (assets/profile/amigos.php): tus amigos
+                 (en línea arriba), agregar por nombre de perfil y solicitudes. -->
             <div id="profile-view-social" style="display:none;">
-                <div class="profile-social-head">👥 Explorar</div>
-                <div id="profile-social-body">
-                    <div id="profile-social-explore" class="profile-social-list"></div>
+                <div class="profile-social-head">Amigos</div>
+                <menu role="tablist" class="am-tabs">
+                    <li role="tab" aria-selected="true" data-tab="amigos"><a href="#">Tus amigos <span id="am-n-amigos"></span></a></li>
+                    <li role="tab" data-tab="agregar"><a href="#">Agregar amigo</a></li>
+                    <li role="tab" data-tab="solicitudes"><a href="#">Solicitudes <span class="am-badge" id="am-n-sol" hidden></span></a></li>
+                </menu>
+                <div class="window am-panelwin" role="tabpanel">
+                    <div class="window-body" id="profile-social-body">
+                        <div class="am-panel" data-panel="amigos">
+                            <input type="search" id="am-filtro" class="am-input" placeholder="Buscar entre tus amigos">
+                            <div id="am-lista"></div>
+                        </div>
+                        <div class="am-panel" data-panel="agregar" hidden>
+                            <div class="am-sec">Agregar un amigo</div>
+                            <div class="am-nota">Busca a alguien por el nombre de su perfil y envíale una solicitud de amistad. Cuando la acepte, seréis amigos.</div>
+                            <form class="am-buscar" id="am-buscar-form">
+                                <input type="search" id="am-q" class="am-input" placeholder="Nombre del perfil" autocomplete="off">
+                                <button type="submit" class="button">Buscar</button>
+                            </form>
+                            <div id="am-resultados"></div>
+                        </div>
+                        <div class="am-panel" data-panel="solicitudes" hidden>
+                            <div class="am-sec">Recibidas</div>
+                            <div id="am-recibidas"></div>
+                            <div class="am-sec">Enviadas</div>
+                            <div id="am-enviadas"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <!-- MELON REVIEWS VIEW -->
@@ -860,6 +888,22 @@ if ($_perfilStandalone) {
         </div>
     </div>
 </div>
+
+<!-- Confirmar "Eliminar amigo" (amigos.php) -->
+<div class="window" id="am-confirm" style="display:none;position:fixed;z-index:10004;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;">
+    <div class="title-bar">
+        <div class="title-bar-text">Eliminar amigo</div>
+        <div class="title-bar-controls"><button aria-label="Close" id="am-confirm-x"></button></div>
+    </div>
+    <div class="window-body" style="padding:10px 12px 12px;">
+        <p id="am-confirm-msg" style="margin:0 0 12px;"></p>
+        <div class="field-row" style="justify-content:flex-end;gap:4px;">
+            <button class="button" id="am-confirm-no">Cancelar</button>
+            <button class="button" id="am-confirm-si">Eliminar</button>
+        </div>
+    </div>
+</div>
+<div id="am-menu" class="am-menu" style="display:none;"></div>
 
 <!-- PROFILE SOCIAL LINK ADD DIALOG (edit mode) -->
 <div class="window" id="profile-social-add-dialog" style="display:none;position:fixed;z-index:10002;width:280px;">
@@ -2896,10 +2940,11 @@ var PROFILE_USERS = <?php
                     profileNotifs.forEach(function(n) {
                         if (n && n.id != null && !_seenProfileNotifIds[n.id]) {
                             _seenProfileNotifIds[n.id] = true;
-                            if (!firstLoad && n.type === 'follow') newFollow = true;
+                            if (!firstLoad && (n.type === 'follow' || n.type === 'friend-request' || n.type === 'friend-accept')) newFollow = true;
                         }
                     });
                     if (newFollow) {
+                        amigosCargar();
                         loadMyFollowers(function() {
                             if (typeof renderFollowedNav === 'function') renderFollowedNav();
                             if (typeof renderSocialList   === 'function') renderSocialList();
@@ -2973,6 +3018,10 @@ var PROFILE_USERS = <?php
             msg.className = 'profile-notif-msg';
             if (n.type === 'follow') {
                 msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> te ha seguido';
+            } else if (n.type === 'friend-request') {
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> te ha enviado una solicitud de amistad';
+            } else if (n.type === 'friend-accept') {
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> ha aceptado tu solicitud de amistad';
             } else if (n.type === 'like') {
                 var snippet = n.postText ? n.postText : '';
                 if (snippet.length > 60) snippet = snippet.substring(0, 60) + '…';
@@ -3003,42 +3052,22 @@ var PROFILE_USERS = <?php
             info.appendChild(t);
             row.appendChild(info);
 
-            /* Botón "Seguir" para notifs de tipo follow */
-            if (n.type === 'follow') {
-                var fbBtn = document.createElement('button');
-                fbBtn.className = 'button profile-notif-follow-btn';
-                var nowFollowing = ownFollowing.indexOf(n.fromUser) !== -1;
-                fbBtn.textContent = nowFollowing ? '✓ Siguiendo' : '+ Seguir';
-                if (nowFollowing) fbBtn.classList.add('following');
-                (function(uk, b) {
-                    b.addEventListener('click', function(e) {
+            /* Solicitud de amistad: Aceptar / Rechazar (si sigue pendiente). */
+            if (n.type === 'friend-request' && amigosData.recibidas.indexOf(n.fromUser) !== -1) {
+                var amBox = document.createElement('div');
+                amBox.className = 'am-notif-btns';
+                [['Aceptar', 'friend-accept'], ['Rechazar', 'friend-reject']].forEach(function(par) {
+                    var bb = document.createElement('button');
+                    bb.className = 'button';
+                    bb.textContent = par[0];
+                    bb.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        if (b.dataset.busy === '1') return;
-                        b.dataset.busy = '1';
-                        fetch('assets/profile/api.php?action=toggle-follow', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ targetUser: uk })
-                        }).then(function(r) { return r.json(); })
-                          .then(function(d) {
-                              b.dataset.busy = '';
-                              if (!d || d.error) { if (d && d.error) alert(d.error); return; }
-                              ownFollowing = Array.isArray(d.list) ? d.list : ownFollowing;
-                              b.textContent = d.following ? '✓ Siguiendo' : '+ Seguir';
-                              b.classList.toggle('following', !!d.following);
-                              renderFollowedNav();
-                              /* La lista "Explorar" de la sección Social
-                                 filtra por `ownFollowing`. Tras seguir/
-                                 dejar de seguir, hay que repintarla para
-                                 que el usuario aparezca/desaparezca de
-                                 ahí en tiempo real. */
-                              if (typeof renderSocialList === 'function') renderSocialList();
-                              /* Si el perfil que se está viendo es este usuario, sincroniza también el botón principal */
-                              if (viewingUser === uk) updateFollowButton(!!d.following);
-                          }).catch(function() { b.dataset.busy = ''; });
+                        amBox.querySelectorAll('button').forEach(function(x) { x.disabled = true; });
+                        amigosAccion(par[1], n.fromUser).then(function() { amBox.textContent = par[1] === 'friend-accept' ? 'Ahora sois amigos' : 'Solicitud rechazada'; });
                     });
-                })(n.fromUser, fbBtn);
-                row.appendChild(fbBtn);
+                    amBox.appendChild(bb);
+                });
+                info.appendChild(amBox);
             }
 
             (function(uk, notif) {
@@ -3180,26 +3209,11 @@ var PROFILE_USERS = <?php
         if (!btn) return;
         btn.addEventListener('click', function() {
             if (!viewingUser || btn.dataset.busy === '1') return;
+            var uk = viewingUser;
+            if (amistadVista === 'amigos') { amConfirmarEliminar(uk); return; }
+            var act = { ninguna: 'friend-request', enviada: 'friend-cancel', recibida: 'friend-accept' }[amistadVista] || 'friend-request';
             btn.dataset.busy = '1';
-            fetch('assets/profile/api.php?action=toggle-follow', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUser: viewingUser })
-            }).then(function(r) { return r.json(); })
-              .then(function(d) {
-                  btn.dataset.busy = '';
-                  if (!d || d.error) { if (d && d.error) alert(d.error); return; }
-                  ownFollowing = Array.isArray(d.list) ? d.list : ownFollowing;
-                  updateFollowButton(!!d.following);
-                  loadMyFollowers(function() {
-                      renderFollowedNav();
-                      /* La sección "Social → Explorar" filtra por
-                         `ownFollowing`; el usuario que acabamos de
-                         seguir/dejar de seguir debe aparecer/
-                         desaparecer de la lista sin recargar la app. */
-                      if (typeof renderSocialList === 'function') renderSocialList();
-                  });
-              }).catch(function() { btn.dataset.busy = ''; });
+            amigosAccion(act, uk).then(function() { btn.dataset.busy = ''; }, function() { btn.dataset.busy = ''; });
         });
     })();
 
@@ -3741,7 +3755,7 @@ var PROFILE_USERS = <?php
         document.getElementById('profile-sidebar-back').style.display = 'block';
         document.getElementById('profile-info-edit-btn').style.display = 'none';
         renderSocialList();
-        loadProfile(function() { renderSocialList(); });
+        loadProfile(function() { amigosCargar(); });
     }
 
     /* ──── Melon reviews ──── */
@@ -4833,31 +4847,241 @@ var PROFILE_USERS = <?php
         return card;
     }
 
-    function renderSocialList() {
-        var exploreEl = document.getElementById('profile-social-explore');
-        if (!exploreEl) return;
-        exploreEl.innerHTML = '';
+    /* ──── Amigos estilo Steam (assets/profile/amigos.php) ────
+       amigosData = { amigos, recibidas, enviadas } (user_keys). Nombre y
+       foto salen de PROFILE_USERS; estado de lastOnlineSet / lastAwaySet /
+       lastDndSet / lastNowPlaying / lastSeenMap (el sondeo de presencia
+       de cada 20 s vuelve a pintar la lista: applyPresence). */
+    var amigosData = { amigos: [], recibidas: [], enviadas: [] };
+    var amigosTab = 'amigos';
 
-        var followingSet = {};
-        ownFollowing.forEach(function(k) { followingSet[k] = true; });
-        var exploreKeys = Object.keys(PROFILE_USERS)
-            .filter(function(k) { return k !== currentSessionUser && !followingSet[k]; });
-        exploreKeys.sort(function(a, b) {
-            var la = (PROFILE_USERS[a].label || '').toLowerCase();
-            var lb = (PROFILE_USERS[b].label || '').toLowerCase();
-            return la < lb ? -1 : la > lb ? 1 : 0;
-        });
-
-        exploreKeys.forEach(function(k) {
-            var card = buildSocialCard(k);
-            if (card) exploreEl.appendChild(card);
-        });
-        /* Re-aplica el estado de presencia conocido sin esperar al fetch. */
-        if (window.__applyPresence) window.__applyPresence();
-        if (!exploreKeys.length) {
-            exploreEl.innerHTML = '<div class="profile-social-empty">No hay más usuarios.</div>';
-        }
+    function amApi(action, user) {
+        return fetch('assets/profile/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: user })
+        }).then(function(r) { return r.json(); });
     }
+    function amigosCargar(cb) {
+        fetch('assets/profile/api.php?action=friends', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d && d.ok) amigosAplicar(d); if (cb) cb(); })
+            .catch(function() { if (cb) cb(); });
+    }
+    function amigosAplicar(d) {
+        amigosData = { amigos: d.amigos || [], recibidas: d.recibidas || [], enviadas: d.enviadas || [] };
+        if (Array.isArray(d.list)) ownFollowing = d.list;
+        myFollowers = amigosData.amigos.slice();   /* amigos = mutuos */
+        var n = amigosData.recibidas.length;
+        ['am-nav-badge', 'am-n-sol'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = n; el.hidden = !n; }
+        });
+        renderSocialList();
+        if (typeof renderFollowedNav === 'function') renderFollowedNav();
+    }
+    /* Tras cualquier acción: refresca lista, cabecera y barra lateral. */
+    function amigosAccion(action, uk) {
+        return amApi(action, uk).then(function(d) {
+            if (!d || !d.ok) { if (d && d.error) alert(d.error); return d; }
+            amigosAplicar(d);
+            if (viewingUser === uk) updateFollowButton(d.amistad);
+            return d;
+        });
+    }
+
+    function amUser(k) {
+        return PROFILE_USERS[k] || { label: k, image: '' };
+    }
+    function amAvatar(k) {
+        var u = amUser(k);
+        var dentro = u.image ? '<img class="profile-avatar-img" src="' + escHtml(u.image) + '" alt="">' : '<div class="profile-avatar-placeholder">👤</div>';
+        return '<div class="profile-avatar-frame has-presence-dot am-av" data-marco-user="' + escHtml(k) + '">' + dentro +
+               '<span class="pf-presence-dot" data-userkey="' + escHtml(k) + '"></span></div>';
+    }
+    function amHace(ts) {
+        if (!ts) return '';
+        var s = Math.max(0, Date.now() / 1000 - ts);
+        if (s < 3600) return 'hace ' + Math.max(1, Math.round(s / 60)) + ' min';
+        if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+        var d = Math.round(s / 86400);
+        return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+    }
+    /* Estado como en Steam: escuchando > no molestar > ausente > en línea;
+       si no, desconectado (hace X). */
+    function amEstado(k) {
+        if (lastOnlineSet[k]) {
+            var np = lastNowPlaying[k];
+            if (np && np.title) return { cls: 'np', txt: 'Escuchando: ' + np.title + (np.artist ? ' — ' + np.artist : '') };
+            if (lastDndSet[k])  return { cls: 'dnd',  txt: 'No molestar' };
+            if (lastAwaySet[k]) return { cls: 'away', txt: 'Ausente' };
+            return { cls: 'on', txt: 'En línea' };
+        }
+        var ts = (typeof lastSeenMap === 'object' && lastSeenMap) ? lastSeenMap[k] : 0;
+        return { cls: 'off', txt: 'Desconectado' + (ts ? ' · ' + amHace(ts) : '') };
+    }
+    function amNombre(a, b) {
+        var la = (amUser(a).label || '').toLowerCase(), lb = (amUser(b).label || '').toLowerCase();
+        return la < lb ? -1 : la > lb ? 1 : 0;
+    }
+
+    function amPintarLista() {
+        var box = document.getElementById('am-lista');
+        if (!box) return;
+        var f = (document.getElementById('am-filtro').value || '').trim().toLowerCase();
+        var lista = amigosData.amigos.filter(function(k) { return !f || (amUser(k).label || '').toLowerCase().indexOf(f) !== -1; });
+        var on = lista.filter(function(k) { return lastOnlineSet[k]; }).sort(amNombre);
+        var off = lista.filter(function(k) { return !lastOnlineSet[k]; }).sort(function(a, b) {
+            return ((lastSeenMap || {})[b] || 0) - ((lastSeenMap || {})[a] || 0) || amNombre(a, b);
+        });
+        document.getElementById('am-n-amigos').textContent = '(' + amigosData.amigos.length + ')';
+        if (!amigosData.amigos.length) {
+            box.innerHTML = '<div class="am-vacio">Todavía no tienes amigos. Búscalos en "Agregar amigo".</div>';
+            return;
+        }
+        var grupo = function(tit, keys) {
+            if (!keys.length) return '';
+            return '<div class="am-grupo">' + tit + ' — ' + keys.length + '</div><div class="am-grid">' + keys.map(function(k) {
+                var e = amEstado(k);
+                return '<div class="am-amigo am-' + e.cls + '" data-user="' + escHtml(k) + '">' + amAvatar(k) +
+                    '<div class="am-txt"><div class="am-nom">' + escHtml(amUser(k).label) + '</div>' +
+                    '<div class="am-est">' + escHtml(e.txt) + '</div></div></div>';
+            }).join('') + '</div>';
+        };
+        box.innerHTML = grupo('En línea', on) + grupo('Desconectados', off) +
+            (!on.length && !off.length ? '<div class="am-vacio">Ningún amigo se llama así.</div>' : '');
+        if (window.__applyPresence) window.__applyPresence();
+    }
+
+    /* Fila de usuario con botones (búsqueda y solicitudes). */
+    function amFila(k, botones, extra) {
+        return '<div class="am-fila" data-user="' + escHtml(k) + '">' + amAvatar(k) +
+            '<div class="am-txt"><div class="am-nom">' + escHtml(amUser(k).label) + '</div>' + (extra ? '<div class="am-est">' + escHtml(extra) + '</div>' : '') + '</div>' +
+            '<div class="am-btns">' + botones + '</div></div>';
+    }
+    function amBoton(txt, act, deshab) {
+        return '<button class="button" data-act="' + act + '"' + (deshab ? ' disabled' : '') + '>' + txt + '</button>';
+    }
+    function amBotonesPara(estado) {
+        if (estado === 'amigos')   return amBoton('Ya sois amigos', '', true);
+        if (estado === 'enviada')  return amBoton('Solicitud enviada', '', true) + amBoton('Cancelar', 'friend-cancel');
+        if (estado === 'recibida') return amBoton('Aceptar', 'friend-accept') + amBoton('Rechazar', 'friend-reject');
+        return amBoton('Agregar amigo', 'friend-request');
+    }
+
+    function amPintarSolicitudes() {
+        var r = document.getElementById('am-recibidas'), e = document.getElementById('am-enviadas');
+        if (!r) return;
+        r.innerHTML = amigosData.recibidas.length
+            ? amigosData.recibidas.map(function(k) { return amFila(k, amBotonesPara('recibida'), 'Quiere ser tu amigo'); }).join('')
+            : '<div class="am-vacio">No tienes solicitudes nuevas.</div>';
+        e.innerHTML = amigosData.enviadas.length
+            ? amigosData.enviadas.map(function(k) { return amFila(k, amBotonesPara('enviada'), 'Esperando respuesta'); }).join('')
+            : '<div class="am-vacio">No has enviado ninguna.</div>';
+        if (window.__applyPresence) window.__applyPresence();
+    }
+
+    var amUltimaBusqueda = '';
+    function amBuscar() {
+        var q = (document.getElementById('am-q').value || '').trim();
+        var box = document.getElementById('am-resultados');
+        amUltimaBusqueda = q;
+        if (!q) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="am-vacio">Buscando…</div>';
+        fetch('assets/profile/api.php?action=friend-search&q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (q !== amUltimaBusqueda) return;
+                var res = (d && d.resultados) || [];
+                box.innerHTML = res.length
+                    ? res.map(function(x) {
+                        if (!PROFILE_USERS[x.key]) PROFILE_USERS[x.key] = { label: x.nombre, image: '' };
+                        return amFila(x.key, amBotonesPara(x.estado));
+                    }).join('')
+                    : '<div class="am-vacio">No hay ningún perfil con ese nombre.</div>';
+                if (window.__applyPresence) window.__applyPresence();
+            })
+            .catch(function() { box.innerHTML = '<div class="am-vacio">Sin conexión, prueba otra vez.</div>'; });
+    }
+
+    function amTab(t) {
+        amigosTab = t;
+        document.querySelectorAll('.am-tabs [role=tab]').forEach(function(li) { li.setAttribute('aria-selected', li.dataset.tab === t ? 'true' : 'false'); });
+        document.querySelectorAll('#profile-view-social .am-panel').forEach(function(p) { p.hidden = p.dataset.panel !== t; });
+        if (t === 'agregar') setTimeout(function() { var q = document.getElementById('am-q'); if (q) q.focus(); }, 0);
+    }
+
+    /* Se llama desde muchos sitios (nombre de antes): repinta la página. */
+    function renderSocialList() {
+        amPintarLista();
+        amPintarSolicitudes();
+    }
+
+    /* Confirmación Win98 para eliminar. */
+    function amConfirmarEliminar(uk) {
+        var win = document.getElementById('am-confirm');
+        document.getElementById('am-confirm-msg').textContent = '¿Eliminar a ' + amUser(uk).label + ' de tus amigos?';
+        win.style.display = 'block';
+        var cerrar = function() { win.style.display = 'none'; };
+        document.getElementById('am-confirm-no').onclick = cerrar;
+        document.getElementById('am-confirm-x').onclick = cerrar;
+        document.getElementById('am-confirm-si').onclick = function() { cerrar(); amigosAccion('friend-remove', uk); };
+    }
+
+    /* Clic derecho en un amigo: mensaje, perfil, eliminar. */
+    function amMenu(x, y, uk) {
+        var m = document.getElementById('am-menu');
+        m.innerHTML = '<div data-m="chat">Enviar mensaje</div><div data-m="perfil">Ver perfil</div><div class="am-menu-sep"></div><div data-m="eliminar">Eliminar amigo</div>';
+        m.style.display = 'block';
+        m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 4) + 'px';
+        m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 4) + 'px';
+        m.onclick = function(e) {
+            var it = e.target.closest('[data-m]');
+            if (!it) return;
+            m.style.display = 'none';
+            if (it.dataset.m === 'chat') openChatWith(uk);
+            else if (it.dataset.m === 'perfil') amAbrirPerfil(uk);
+            else amConfirmarEliminar(uk);
+        };
+    }
+    function amAbrirPerfil(uk) {
+        if (typeof window.openProfileAtUser === 'function') window.openProfileAtUser(uk);
+        else viewOtherUser(uk);
+    }
+
+    (function setupAmigos() {
+        var view = document.getElementById('profile-view-social');
+        if (!view) return;
+        view.querySelectorAll('.am-tabs [role=tab]').forEach(function(li) {
+            li.addEventListener('click', function(e) { e.preventDefault(); amTab(li.dataset.tab); });
+        });
+        document.getElementById('am-filtro').addEventListener('input', amPintarLista);
+        var tBuscar = null;
+        document.getElementById('am-q').addEventListener('input', function() { clearTimeout(tBuscar); tBuscar = setTimeout(amBuscar, 300); });
+        document.getElementById('am-buscar-form').addEventListener('submit', function(e) { e.preventDefault(); amBuscar(); });
+        view.addEventListener('click', function(e) {
+            var btn = e.target.closest('button[data-act]');
+            var fila = e.target.closest('[data-user]');
+            if (btn && fila) {
+                if (!btn.dataset.act) return;
+                btn.disabled = true;
+                amigosAccion(btn.dataset.act, fila.dataset.user).then(function() { if (amUltimaBusqueda) amBuscar(); });
+                return;
+            }
+            if (fila && !e.target.closest('button')) amAbrirPerfil(fila.dataset.user);
+        });
+        view.addEventListener('contextmenu', function(e) {
+            var a = e.target.closest('.am-amigo');
+            if (!a) return;
+            e.preventDefault();
+            amMenu(e.clientX, e.clientY, a.dataset.user);
+        });
+        document.addEventListener('mousedown', function(e) {
+            var m = document.getElementById('am-menu');
+            if (m && m.style.display === 'block' && !m.contains(e.target)) m.style.display = 'none';
+        });
+        amigosCargar();
+    })();
 
     function renderFollowedNav() {
         var nav = document.getElementById('profile-followed-nav');
@@ -5116,7 +5340,7 @@ var PROFILE_USERS = <?php
                 document.getElementById('profile-info-edit-btn').style.display = 'none';
                 var newPostEl = document.getElementById('profile-new-post');
                 if (newPostEl) newPostEl.style.display = 'none';
-                updateFollowButton(!!data.isFollowing);
+                updateFollowButton(data.amistad || !!data.isFollowing);
                 var listasHdText = document.getElementById('profile-listas-heading-text');
                 if (listasHdText) listasHdText.textContent = 'Listas de ' + data.label;
                 var socialSec = document.getElementById('profile-social-section');
@@ -5176,13 +5400,22 @@ var PROFILE_USERS = <?php
         };
     })();
 
-    function updateFollowButton(isFollowing) {
+    /* Botón de amistad de la cabecera (amigos.php): ninguna → "+ Agregar
+       amigo"; enviada → "Solicitud enviada" (clic: cancelar); recibida →
+       "Aceptar solicitud"; amigos → "✓ Amigos" (clic: eliminar, con
+       confirmación). Acepta también el booleano de páginas viejas. */
+    var amistadVista = 'ninguna';
+    function updateFollowButton(estado) {
         var btn = document.getElementById('profile-follow-btn');
         if (!btn) return;
         if (!viewingUser) { btn.style.display = 'none'; return; }
+        if (estado === true) estado = 'amigos';
+        if (estado === false || !estado) estado = 'ninguna';
+        amistadVista = estado;
         btn.style.display = '';
-        btn.textContent = isFollowing ? '✓ Siguiendo' : '+ Seguir';
-        btn.classList.toggle('following', !!isFollowing);
+        btn.textContent = { ninguna: '+ Agregar amigo', enviada: 'Solicitud enviada', recibida: 'Aceptar solicitud', amigos: '✓ Amigos' }[estado] || '+ Agregar amigo';
+        btn.title = { enviada: 'Clic para cancelar la solicitud', amigos: 'Clic para eliminar de tus amigos' }[estado] || '';
+        btn.classList.toggle('following', estado === 'amigos' || estado === 'enviada');
     }
 
     function isMutual(userKey) {
@@ -5206,7 +5439,11 @@ var PROFILE_USERS = <?php
         });
         applyNowPlaying();
         if (window.PerfilV2) PerfilV2.refreshStatus();
+        /* Estados de la lista de amigos (en línea / escuchando / hace X). */
+        var amV = document.getElementById('profile-view-social');
+        if (amV && amV.style.display !== 'none' && !amPintando) { amPintando = true; amPintarLista(); amPintando = false; }
     }
+    var amPintando = false;
     /* Marquee clonado tal cual de apps/reproductor.php — el texto
        arranca en su posición natural (visible desde el principio),
        pausa `pauseMs`, se desplaza a la izquierda a `speed` px/seg,

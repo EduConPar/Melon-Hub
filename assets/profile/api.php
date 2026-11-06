@@ -36,7 +36,9 @@
    GET   ?action=steam-game-achievements&appid=N
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
-   POST  ?action=toggle-follow         { targetUser }
+   POST  ?action=toggle-follow         { targetUser }  (ahora solicitudes, ver amigos.php)
+   GET   ?action=friends / friend-search&q=…
+   POST  ?action=friend-request|friend-accept|friend-reject|friend-cancel|friend-remove { user }
    POST  ?action=toggle-post-like      { targetUser, postId }
    POST  ?action=mark-notifs-read      {}
    POST  ?action=send-message          { to, text }
@@ -63,6 +65,10 @@ require_once dirname(__DIR__, 2) . '/db.php';
 $u       = requireAuth();
 $userKey = $u['key'];
 $action  = $_GET['action'] ?? $_POST['action'] ?? '';
+
+/* Amigos estilo Steam (solicitudes): assets/profile/amigos.php. */
+require_once __DIR__ . '/amigos.php';
+amigos_ensure($pdo);
 
 /* Auto-migración: tabla user_presence — un row por usuario, last_at
    actualizado vía heartbeat cada 30s desde la shell. Online = last_at
@@ -1563,35 +1569,64 @@ case 'leave-collab': {
 /* ─── Seguimiento / likes / notifs ───────────────────────── */
 
 case 'toggle-follow': {
+    /* Ya no hay "seguir": ahora son solicitudes de amistad (amigos.php).
+       Se mantiene para páginas viejas (el móvil): sin relación → envía
+       solicitud; enviada → la cancela; recibida → la acepta; amigos →
+       elimina la amistad. `following` = amigos o solicitud enviada. */
     global $loginUsers;
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     $target = preg_replace('/[^a-z0-9_]/i', '', jsonBody()['targetUser'] ?? '');
     if (!$target || !isset($loginUsers[$target])) jsonError('Usuario no encontrado');
-    if ($target === $userKey)                     jsonError('No puedes seguirte');
+    if ($target === $userKey)                     jsonError('No puedes agregarte a ti');
     $tid = pf_uid($pdo, $target);
     if (!$tid) jsonError('Usuario no encontrado');
-
-    $stmt = $pdo->prepare("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?");
-    $stmt->execute([$uid, $tid]);
-    $alreadyFollowing = (bool)$stmt->fetch();
-
-    if ($alreadyFollowing) {
-        $pdo->prepare("DELETE FROM follows WHERE follower_id = ? AND followee_id = ?")
-            ->execute([$uid, $tid]);
-        pf_deleteNotifsMatching($pdo, $tid, 'follow', $uid);
-        $following = false;
-    } else {
-        $pdo->prepare("INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)")
-            ->execute([$uid, $tid]);
-        pf_addNotif($pdo, $tid, 'follow', $uid);
-        $following = true;
-    }
-
+    $e = amigos_estado($pdo, $uid, $tid);
+    if ($e === 'ninguna')      $e = amigos_enviar($pdo, $uid, $tid);
+    elseif ($e === 'enviada')  $e = amigos_cancelar($pdo, $uid, $tid);
+    elseif ($e === 'recibida') $e = amigos_aceptar($pdo, $uid, $tid);
+    else                       $e = amigos_eliminar($pdo, $uid, $tid);
     jsonResponse([
-        'ok' => true, 'following' => $following,
+        'ok' => true, 'following' => in_array($e, ['amigos', 'enviada'], true), 'amistad' => $e,
         'list' => pf_loadFollowing($pdo, $uid),
     ]);
+}
+
+/* ─── Amigos (amigos.php) ─── */
+case 'friends': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + amigos_lista($pdo, $uid));
+}
+
+case 'friend-search': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true, 'resultados' => amigos_buscar($pdo, $uid, (string)($_GET['q'] ?? ''))]);
+}
+
+case 'friend-request':
+case 'friend-accept':
+case 'friend-reject':
+case 'friend-cancel':
+case 'friend-remove': {
+    global $loginUsers;
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $target = preg_replace('/[^a-z0-9_]/i', '', jsonBody()['user'] ?? '');
+    $tid = $target !== '' ? pf_uid($pdo, $target) : 0;
+    if (!$tid) jsonError('Usuario no encontrado');
+    try {
+        if ($action === 'friend-request')     $e = amigos_enviar($pdo, $uid, $tid);
+        elseif ($action === 'friend-accept')  $e = amigos_aceptar($pdo, $uid, $tid);
+        elseif ($action === 'friend-reject')  $e = amigos_rechazar($pdo, $uid, $tid);
+        elseif ($action === 'friend-cancel')  $e = amigos_cancelar($pdo, $uid, $tid);
+        else                                  $e = amigos_eliminar($pdo, $uid, $tid);
+    } catch (InvalidArgumentException $ex) {
+        jsonResponse(['ok' => false, 'error' => $ex->getMessage()]);
+    }
+    jsonResponse(['ok' => true, 'amistad' => $e, 'list' => pf_loadFollowing($pdo, $uid)] + amigos_lista($pdo, $uid));
 }
 
 case 'toggle-post-like': {
@@ -2285,6 +2320,7 @@ case 'view-user': {
         'profile'     => $profile,
         'lists'       => $lists,
         'isFollowing' => $isFollowing,
+        'amistad'     => amigos_estado($pdo, $uid, $tid),
         'v2'          => pf2_profile($pdo, $tid, $uid),
     ]);
 }
