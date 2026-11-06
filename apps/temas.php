@@ -365,6 +365,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
         }
         .pers-item-icon img { max-width:100%; max-height:100%; display:block; }
         .pers-item-name { line-height:1.2; word-break:break-word; }
+        /* Fuentes: "Aa" y el nombre con su fuente. */
+        .pers-fuente .pers-item-icon { font-size:30px; }
+        .pers-fuente .pers-item-icon { white-space:nowrap; }
+        .pers-fuente .pers-item-name { font-size:12px; }
         .pers-item-badge {
             position:absolute;
             top:3px; right:3px;
@@ -567,6 +571,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             <section class="pers-section">
                 <h3 class="pers-section-title"><img src="../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Interfaces</h3>
                 <div class="pers-grid" id="pers-themes-grid"></div>
+            </section>
+            <section class="pers-section">
+                <h3 class="pers-section-title"><img src="../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Fuentes</h3>
+                <div class="pers-grid" id="pers-fonts-grid"></div>
             </section>
             <section class="pers-section">
                 <h3 class="pers-section-title"><img src="../assets/img/appIcons/temasIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Iconos</h3>
@@ -1600,6 +1608,9 @@ function loadPersonalize() {
     /* Interfaces: ahora vienen del filesystem (assets/interfaces/) en
        lugar del inventario de la tienda. Selección persiste en cookie. */
     renderInterfacePacks();
+    /* Fuentes: las que tienes (assets/php/fuentes.php); cada interfaz
+       guarda la suya. */
+    renderFontPacks();
     /* Iconos: lista construida desde el filesystem (scandir de
        assets/img/appIcons/). Selección persiste en localStorage. */
     renderIconPacks();
@@ -1665,6 +1676,61 @@ function renderInterfacePacks() {
             });
         });
     });
+}
+
+/* Fuentes que tienes (las de serie, las compradas en la tienda y las que
+   vienen con una interfaz tuya). La de cada tarjeta se ve con su fuente
+   (mh-fuente-muestra la libra de la fuente puesta en la página). Click →
+   set-font para la interfaz activa y recarga, como las interfaces. */
+function renderFontPacks() {
+    var grid = document.getElementById('pers-fonts-grid');
+    if (!grid) return;
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    fetch('../assets/personalize/api.php?action=fonts', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (!d || !d.ok) throw new Error(d && d.error || 'error');
+            var mias = (d.fuentes || []).filter(function(f){ return f.tiene; });
+            mias.forEach(function(f){
+                if (!f.url || document.querySelector('link[data-fuente="' + f.slug + '"]')) return;
+                var l = document.createElement('link');
+                l.rel = 'stylesheet'; l.href = f.url; l.dataset.fuente = f.slug;
+                document.head.appendChild(l);
+            });
+            grid.innerHTML = mias.map(function(f){
+                var on = f.slug === d.activa;
+                var fam = 'font-family:&quot;' + esc(f.familia) + '&quot;, sans-serif;';
+                return '<div class="pers-item pers-fuente' + (on ? ' active' : '') + '" data-fuente="' + esc(f.slug) + '"' +
+                    (f.slug === d.defecto ? ' title="La de serie de esta interfaz"' : '') + '>' +
+                    '<div class="pers-item-icon mh-fuente-muestra" style="' + fam + '">Aa</div>' +
+                    '<div class="pers-item-name mh-fuente-muestra" style="' + fam + '">' + esc(f.nombre) + '</div>' +
+                    (on ? '<div class="pers-item-badge">ACTIVA</div>' : '') +
+                '</div>';
+            }).join('');
+            grid.querySelectorAll('[data-fuente]').forEach(function(card){
+                card.addEventListener('click', function(){
+                    if (card.classList.contains('active')) return;
+                    try {
+                        var topStorage = (window.top && window.top.sessionStorage) || sessionStorage;
+                        topStorage.setItem('temas-restore-tab', 'personalize');
+                    } catch (_) {}
+                    fetch('../assets/personalize/api.php?action=set-font', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slug: card.dataset.fuente, interface: d.interfaz })
+                    }).catch(function(){}).finally(function() {
+                        try { window.top.location.reload(); }
+                        catch (_) { location.reload(); }
+                    });
+                });
+            });
+        })
+        .catch(function(){ grid.innerHTML = ''; });
 }
 
 function renderIconPacks() {

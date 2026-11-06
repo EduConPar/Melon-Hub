@@ -1,0 +1,18 @@
+# ─── Timbre (assets/php/timbre.php) ────────────────────────────────────
+# JSON pequeños que PHP reescribe cuando cambia algo y que las ventanas
+# miran cada pocos segundos. Siempre frescos: el navegador pregunta con
+# If-None-Match / If-Modified-Since y LiteSpeed contesta 304 sin PHP ni
+# base de datos. Nada de caché intermedia (ni la CDN de Hostinger).
+<IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive Off
+</IfModule>
+
+# Solo los .json: ni PHP ni los archivos de control (cerrojo, temporales).
+<FilesMatch "^\.|\.(php|phtml|phar|tmp)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

@@ -55,6 +55,19 @@ if (!isset($_SESSION['user']) || $_SESSION['user'] !== $desktopUserKey) {
     exit;
 }
 
+/* Timbre (assets/php/timbre.php): archivo estático del usuario que el
+   aviso del haro del ajedrez mira en vez de llamar a la API cada 10 s.
+   Se crea ya si no existe, para que no dé 404 al mirarlo. */
+require_once __DIR__ . '/assets/php/timbre.php';
+$rtTimbre = (function () use ($pdo, $desktopUserKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$desktopUserKey]);
+    $uid = (int)$st->fetchColumn();
+    if ($uid <= 0) return '';
+    rt_asegurarUsuario($uid);
+    return rt_urlUsuario($uid);
+})();
+
 /* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
    lo abre melonOpenLink al cargar. */
 require_once __DIR__ . '/assets/links.php';
@@ -118,6 +131,20 @@ require_once __DIR__ . '/assets/desktop/downloads.php';
         ]);
         $_COOKIE['activeInterface'] = $slug;
     }
+})();
+
+/* FUENTE POR USUARIO/INTERFAZ (assets/php/fuentes.php): la de la
+   interfaz activa pasa de la BD a la cookie melonFuente, que lee
+   emitInterfaceCss() aquí y en las apps (iframes). La de serie = sin
+   cookie. */
+(function() use (&$pdo, $desktopUserKey) {
+    require_once __DIR__ . '/assets/php/fuentes.php';
+    $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $stmt->execute([$desktopUserKey]);
+    $uid = (int)($stmt->fetchColumn() ?: 0);
+    $iface = getActiveInterface();
+    $slug = melonFuenteActiva($pdo, $uid, $iface);
+    melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
 })();
 
 /* ICON PACK POR USUARIO/INTERFAZ:
@@ -2546,10 +2573,17 @@ window.notifSystem = (function() {
 
     /* Ajedrez: aviso del haro con los retos que te llegan (Aceptar /
        Rechazar), las partidas que te esperan (reto aceptado, ronda de
-       torneo: "Jugar") y los torneos cancelados en los que estabas. Cada 10 s; esa llamada es también la que hace
-       avanzar lo que caduca (assets/juegos/ajedrez.php, ajz_tick). Si
+       torneo: "Jugar") y los torneos cancelados en los que estabas. Si
        Juegos ya está enseñando el ajedrez, la partida entra sola y no
-       hace falta avisar. */
+       hace falta avisar.
+       No se llama a la API cada 10 s desde cada escritorio abierto (con
+       mucha gente era carga fija para el servidor): se mira el archivo
+       estático del timbre del usuario (rt/u/…, assets/php/timbre.php; no
+       gasta PHP ni BD) y se pide ajz-avisos solo cuando cambia su
+       "aviso". También a la hora en que empieza su próximo torneo
+       (prox): esa llamada es la que lo arranca (ajz_tick) aunque nadie
+       tenga abierto el ajedrez. Si el archivo no responde, como antes:
+       la API cada 10 s. */
     function ajzViendo() {
         var win = document.getElementById('juegos-window');
         if (!juegosLoaded || !win || win.style.display === 'none') return null;
@@ -2564,12 +2598,37 @@ window.notifSystem = (function() {
     function ajzError(msg) {
         window.notifSystem.show({ id: 'ajz-err-' + Date.now(), type: 'info', title: AJZ_TIT, message: msg });
     }
+    var AJZ_TIMBRE = <?= json_encode($rtTimbre) ?>;
+    var ajzVisto = null, ajzPlazo = null, ajzPidiendo = false, ajzOtra = false;
+    /* A la hora de su próximo torneo, con un poco de margen al azar para
+       que no lleguen todos los escritorios a la vez. */
+    function ajzProgramar(d) {
+        if (ajzPlazo) { clearTimeout(ajzPlazo); ajzPlazo = null; }
+        var falta = d.prox && d.ahora ? d.prox - d.ahora : -1;
+        if (falta > 0 && falta < 6 * 3600000) ajzPlazo = setTimeout(pollAjedrez, falta + 300 + Math.random() * 1500);
+    }
+    function ajzMirarTimbre() {
+        if (!AJZ_TIMBRE) { pollAjedrez(); setTimeout(ajzMirarTimbre, 10000); return; }
+        fetch(AJZ_TIMBRE, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r) { if (!r.ok) throw new Error('timbre ' + r.status); return r.json(); })
+            .then(function(t) {
+                var v = t.aviso || 0;
+                if (ajzVisto !== null && v !== ajzVisto) pollAjedrez();
+                ajzVisto = v;
+                setTimeout(ajzMirarTimbre, document.hidden ? 10000 : 3000);
+            })
+            .catch(function() { pollAjedrez(); setTimeout(ajzMirarTimbre, 10000); });
+    }
     function pollAjedrez() {
         if (!window.notifSystem) return;
+        /* Nunca dos a la vez; si se pide mientras va, se repite al acabar. */
+        if (ajzPidiendo) { ajzOtra = true; return; }
+        ajzPidiendo = true;
         fetch('assets/juegos/api.php?action=ajz-avisos', { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (!d || !d.ok) return;
+                ajzProgramar(d);
                 (d.retos || []).forEach(function(x) {
                     var u = x.de || {};
                     window.notifSystem.show({
@@ -2622,10 +2681,14 @@ window.notifSystem = (function() {
                     });
                 });
             })
-            .catch(function() {});
+            .catch(function() {})
+            .then(function() {
+                ajzPidiendo = false;
+                if (ajzOtra) { ajzOtra = false; pollAjedrez(); }
+            });
     }
     setTimeout(pollAjedrez, 4000);
-    setInterval(pollAjedrez, 10000);
+    setTimeout(ajzMirarTimbre, 5000);
 })();
 
 /* =========================

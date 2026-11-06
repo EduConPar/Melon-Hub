@@ -30,6 +30,7 @@
    ────────────────────────────────────────────────────────────────────── */
 
 require_once __DIR__ . '/buscaminas-gen.php';
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
 
 const BM_TZ = 'Europe/Madrid';
 const BM_NIVELES = [
@@ -63,11 +64,12 @@ function bm_hoy(): string {
 }
 function bm_ms(): int { return (int)floor(microtime(true) * 1000); }
 
+/* Tablas: una vez por versión de este archivo (assets/php/esquema.php). */
 function bm_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
+    melon_esquema($pdo, 'buscaminas', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS bm_tableros (
             id     INT AUTO_INCREMENT PRIMARY KEY,
             w      TINYINT NOT NULL,
@@ -113,7 +115,7 @@ function bm_ensure(PDO $pdo): void {
             mejor      INT NOT NULL DEFAULT 0,
             mejor_en   TIMESTAMP NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE */ }
+    });
 }
 
 function bm_sumarPuntos(PDO $pdo, int $uid, int $p): void {

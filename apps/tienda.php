@@ -406,6 +406,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
       image-rendering: -webkit-optimize-contrast;
     }
     .tienda-card-name { font-size: 12px; font-weight: bold; text-align: center; color: var(--text); }
+    /* Fuentes: la muestra y el nombre van con su fuente (y la clase
+       mh-fuente-muestra los libra de la fuente puesta en la página). */
+    .tienda-fuente-prev { font-size: 30px; line-height: 1.1; color: var(--text); text-align: center; padding: 0 6px; white-space: nowrap; }
+    .tienda-card.is-fuente .tienda-card-name { font-size: 15px; }
     .tienda-card-desc { font-size: 10px; color: var(--text-muted); text-align: center; min-height: 26px; }
     /* Badge de precio anclado arriba-derecha de la imagen del item. */
     .tienda-card-price {
@@ -866,21 +870,35 @@ function renderItems(){
         } else if (it.categoria === 'perfil') {
             /* Huecos de expositor: icono del perfil del pack del tema. */
             iconHtml = '<img class="tienda-card-icon-img" src="../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">';
+        } else if (it.fuente) {
+            iconHtml = fuenteMuestra(it);
         } else {
             iconHtml = esc(it.icono || '🎁');
         }
-        return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+        if (it.fuente) nameStyle = ' style="' + fuenteEstilo(it) + '"';
+        return '<div class="tienda-card' + (owned ? ' is-owned' : '') + (it.fuente ? ' is-fuente' : '') + '" data-cat-item="' + (it.fuente ? 'fuente' : 'otro') + '">' +
             '<div class="tienda-card-icon">' +
                 iconHtml +
                 '<span class="tienda-card-price">' + it.precio + ' <img src="../assets/img/appIcons/puntosAutismo.png" class="punto-autismo-ic" alt=""></span>' +
             '</div>' +
-            '<div class="tienda-card-name"' + nameStyle + '>' + esc(displayName) + '</div>' +
+            '<div class="tienda-card-name' + (it.fuente ? ' mh-fuente-muestra' : '') + '"' + nameStyle + '>' + esc(displayName) + '</div>' +
             '<div class="tienda-card-desc">' + esc(desc) + '</div>' +
             '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '"' + btnAttrs + '>' + btnLabel + '</button>' +
         '</div>';
-    }).join('');
+    });
     var sec = SECCION_TAB[_activeCat];
-    view.innerHTML = sec ? perfilSeccion(sec[0], sec[1], cards, 'tienda-sec-grid') : cards;
+    if (_activeCat === 'interfaces') {
+        /* Interfaces y FUENTES (assets/php/fuentes.php), cada una en su
+           sección. Las muestras se pintan con la fuente de cada tarjeta. */
+        var ifc = [], fts = [];
+        items.forEach(function(it, i){ (it.fuente ? fts : ifc).push(cards[i]); });
+        view.innerHTML = (ifc.length ? perfilSeccion(sec[0], sec[1], ifc.join(''), 'tienda-sec-grid') : '') +
+            (fts.length ? perfilSeccion('FUENTES', 'Cambian la letra de todo Melon Hub. Cada interfaz guarda la suya. Se elige en Temas, en Personalización.', fts.join(''), 'tienda-sec-grid') : '');
+        cargaFuentes(items);
+    } else {
+        cards = cards.join('');
+        view.innerHTML = sec ? perfilSeccion(sec[0], sec[1], cards, 'tienda-sec-grid') : cards;
+    }
     view.querySelectorAll('[data-buy-id]').forEach(function(btn){
         btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
     });
@@ -1099,6 +1117,26 @@ function rachaFuego() {
     Object.keys(dentro).forEach(function(y){ var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="#ffd34d"/>'; });
     return '<svg class="tienda-card-icon-img" viewBox="0 0 12 14" shape-rendering="crispEdges" style="width:48px;height:56px;">' + r + '</svg>';
 }
+/* FUENTES: muestra "Aa Ññ" escrita con la fuente (la clase
+   mh-fuente-muestra la libra de la fuente puesta en la página, ver
+   assets/php/fuentes.php) y su CSS de Google Fonts, una vez cada una. */
+function fuenteEstilo(it) {
+    return 'font-family:&quot;' + esc(it.fuente.familia) + '&quot;, sans-serif;';
+}
+function fuenteMuestra(it) {
+    return '<span class="tienda-fuente-prev mh-fuente-muestra" style="' + fuenteEstilo(it) + '">Aa Ññ</span>';
+}
+var _fuentesCargadas = {};
+function cargaFuentes(items) {
+    items.forEach(function(it){
+        var u = it.fuente && it.fuente.url;
+        if (!u || _fuentesCargadas[u]) return;
+        _fuentesCargadas[u] = true;
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = u;
+        document.head.appendChild(l);
+    });
+}
 /* Icono de un objeto para las ventanas de regalo (como en sus tarjetas). */
 function itemIconHtml(it, foto) {
     if (it.categoria === 'haros' && it.slug) {
@@ -1109,6 +1147,7 @@ function itemIconHtml(it, foto) {
         return '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto || '../assets/img/appIcons/profileIcon.png') + '" alt=""></span>';
     }
     if (it.slug === 'protector-racha') return rachaFuego();
+    if (it.fuente) { cargaFuentes([it]); return fuenteMuestra(it); }
     if (it.categoria === 'perfil') {
         return '<img class="tienda-card-icon-img" src="../assets/img/appIcons/' + perfilIcono(it.slug) + '.png" alt="" style="image-rendering:pixelated;">';
     }

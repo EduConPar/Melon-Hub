@@ -323,6 +323,12 @@ function _ensureThemesInterfaceColumn(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
+    /* Una vez por versión de este archivo (melon_esquema), no un SHOW
+       COLUMNS en cada página o API que use los temas. */
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'temas-interfaz', __FILE__, '_ensureThemesInterfaceColumnYa');
+}
+function _ensureThemesInterfaceColumnYa(PDO $pdo): void {
     try {
         $col = $pdo->query("SHOW COLUMNS FROM themes LIKE 'interface_name'")->fetch();
         if ($col) return;

@@ -59,8 +59,17 @@
 
    El SSE item-notifications-stream.php lee directamente de item_invites.
    ─────────────────────────────────────────────────────────── */
+/* Lo que el escritorio pide solo cada pocos segundos (chats sin leer,
+   presencia, notificaciones, heartbeat): si la BD está saturada, un solo
+   reintento corto (melon_pdo en assets/config.php) en vez de ocupar un
+   proceso PHP esperando; ya volverá a preguntar. */
+if (in_array($_GET['action'] ?? $_POST['action'] ?? '', ['get-unread-chats', 'presence', 'get-profile-notifs', 'heartbeat'], true)) {
+    define('MELON_DB_RAPIDO', true);
+}
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
+melon_esquemaVigilar();
 
 $u       = requireAuth();
 $userKey = $u['key'];
@@ -70,118 +79,125 @@ $action  = $_GET['action'] ?? $_POST['action'] ?? '';
 require_once __DIR__ . '/amigos.php';
 amigos_ensure($pdo);
 
-/* Auto-migración: tabla user_presence — un row por usuario, last_at
-   actualizado vía heartbeat cada 30s desde la shell. Online = last_at
-   en los últimos 60s. `state` = 'online' | 'away' — el cliente lo
-   manda en cada heartbeat según inactividad / pantalla bloqueada. */
-try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS user_presence (
-            user_id INT PRIMARY KEY,
-            last_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            state   VARCHAR(10) NOT NULL DEFAULT 'online',
-            INDEX idx_last_at (last_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* ALTER idempotente para BDs antiguas que tenían la tabla sin
-       la columna `state`. */
+/* Tablas y columnas de la API del perfil: una vez por versión de este
+   archivo (melon_esquema, assets/php/esquema.php), no en cada petición.
+   Eran ~13 sentencias (CREATE, SHOW COLUMNS y ALTER que fallan porque la
+   columna ya existe) en cada llamada, y el escritorio llama a esta API
+   ~20 veces por minuto (chats sin leer, presencia, notificaciones). */
+melon_esquema($pdo, 'perfil', __FILE__, function (PDO $pdo) {
+    /* Auto-migración: tabla user_presence — un row por usuario, last_at
+       actualizado vía heartbeat cada 30s desde la shell. Online = last_at
+       en los últimos 60s. `state` = 'online' | 'away' — el cliente lo
+       manda en cada heartbeat según inactividad / pantalla bloqueada. */
     try {
-        $hasState = $pdo->query("SHOW COLUMNS FROM user_presence LIKE 'state'")->fetch();
-        if (!$hasState) {
-            $pdo->exec("ALTER TABLE user_presence ADD COLUMN state VARCHAR(10) NOT NULL DEFAULT 'online' AFTER last_at");
-        }
-    } catch (Throwable $_) {}
-} catch (Throwable $e) { /* silencio */ }
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS user_presence (
+                user_id INT PRIMARY KEY,
+                last_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                state   VARCHAR(10) NOT NULL DEFAULT 'online',
+                INDEX idx_last_at (last_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* ALTER idempotente para BDs antiguas que tenían la tabla sin
+           la columna `state`. */
+        try {
+            $hasState = $pdo->query("SHOW COLUMNS FROM user_presence LIKE 'state'")->fetch();
+            if (!$hasState) {
+                $pdo->exec("ALTER TABLE user_presence ADD COLUMN state VARCHAR(10) NOT NULL DEFAULT 'online' AFTER last_at");
+            }
+        } catch (Throwable $_) {}
+    } catch (Throwable $e) { /* silencio */ }
 
-/* Auto-migración: tabla chat_mutes — silenciado de notificaciones de un
-   chat. mute_until = timestamp futuro (o muy lejano para indefinido). */
-try {
+    /* Auto-migración: tabla chat_mutes — silenciado de notificaciones de un
+       chat. mute_until = timestamp futuro (o muy lejano para indefinido). */
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS chat_mutes (
+                user_id      INT NOT NULL,
+                with_user_id INT NOT NULL,
+                mute_until   TIMESTAMP NOT NULL,
+                PRIMARY KEY (user_id, with_user_id),
+                INDEX idx_until (mute_until)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $e) { /* silencio */ }
+
+    /* Auto-migración: tabla chat_nicknames — apodo que MI usuario asignó al
+       otro lado del chat. Reemplaza el label visible (label original oculto). */
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS chat_nicknames (
+                user_id      INT NOT NULL,
+                with_user_id INT NOT NULL,
+                nickname     VARCHAR(60) NOT NULL,
+                PRIMARY KEY (user_id, with_user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $e) { /* silencio */ }
+
+    /* Auto-migración: columnas edited_at + deleted_at en messages para
+       soportar editar (con indicador "(editado)") y borrado soft. Se
+       intentan ALTER por separado — si ya existen lanza SQLSTATE 42S21
+       que ignoramos. */
+    try { $pdo->exec("ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    try { $pdo->exec("ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* runtime del item: minutos (pelis) o nº de capítulos (series/libros).
+       Se pone AL CREAR el item (autorrellenable). La moda entre los items
+       del mismo título (varios usuarios) es la que se muestra en reseñas. */
+    try { $pdo->exec("ALTER TABLE list_items ADD COLUMN runtime INT NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* Cumpleaños del perfil (fecha completa). La edad sale de aquí; la
+       columna `age` (edad escrita a mano) solo queda para quien aún no ha
+       puesto el cumpleaños. Los amigos mutuos lo ven como recordatorio
+       anual en el calendario (assets/couple/api.php, cumplesDeAmigos). */
+    try { $pdo->exec("ALTER TABLE profile ADD COLUMN birthday DATE NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* Capítulos de series — COMPARTIDOS por título (series_key = título en
+       minúsculas). Cualquier usuario añade/quita capítulos. La duración va
+       en minutos. El estado (visto + reseña) es POR USUARIO. */
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS chat_mutes (
-            user_id      INT NOT NULL,
-            with_user_id INT NOT NULL,
-            mute_until   TIMESTAMP NOT NULL,
-            PRIMARY KEY (user_id, with_user_id),
-            INDEX idx_until (mute_until)
+        CREATE TABLE IF NOT EXISTS series_episodes (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            series_key  VARCHAR(200) NOT NULL,
+            position    INT NOT NULL DEFAULT 0,
+            title       VARCHAR(255) NOT NULL,
+            image       VARCHAR(2000) NULL,
+            duration    INT NULL,            /* minutos */
+            created_by  INT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_series (series_key, position)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-} catch (Throwable $e) { /* silencio */ }
-
-/* Auto-migración: tabla chat_nicknames — apodo que MI usuario asignó al
-   otro lado del chat. Reemplaza el label visible (label original oculto). */
-try {
+    /* Temporadas: cada capítulo pertenece a una temporada (entero, por defecto
+       1). Compartidas por título igual que los capítulos. */
+    try { $pdo->exec("ALTER TABLE series_episodes ADD COLUMN season INT NOT NULL DEFAULT 1"); }
+    catch (Throwable $e) { /* ya existe */ }
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS chat_nicknames (
-            user_id      INT NOT NULL,
-            with_user_id INT NOT NULL,
-            nickname     VARCHAR(60) NOT NULL,
-            PRIMARY KEY (user_id, with_user_id)
+        CREATE TABLE IF NOT EXISTS series_episode_state (
+            episode_id  INT NOT NULL,
+            user_id     INT NOT NULL,
+            watched     TINYINT NOT NULL DEFAULT 0,
+            stars       DECIMAL(2,1) NULL,
+            comment     TEXT NULL,
+            reviewed_at TIMESTAMP NULL,
+            PRIMARY KEY (episode_id, user_id),
+            INDEX idx_ep (episode_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-} catch (Throwable $e) { /* silencio */ }
-
-/* Auto-migración: columnas edited_at + deleted_at en messages para
-   soportar editar (con indicador "(editado)") y borrado soft. Se
-   intentan ALTER por separado — si ya existen lanza SQLSTATE 42S21
-   que ignoramos. */
-try { $pdo->exec("ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-try { $pdo->exec("ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-/* runtime del item: minutos (pelis) o nº de capítulos (series/libros).
-   Se pone AL CREAR el item (autorrellenable). La moda entre los items
-   del mismo título (varios usuarios) es la que se muestra en reseñas. */
-try { $pdo->exec("ALTER TABLE list_items ADD COLUMN runtime INT NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-/* Cumpleaños del perfil (fecha completa). La edad sale de aquí; la
-   columna `age` (edad escrita a mano) solo queda para quien aún no ha
-   puesto el cumpleaños. Los amigos mutuos lo ven como recordatorio
-   anual en el calendario (assets/couple/api.php, cumplesDeAmigos). */
-try { $pdo->exec("ALTER TABLE profile ADD COLUMN birthday DATE NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-/* Capítulos de series — COMPARTIDOS por título (series_key = título en
-   minúsculas). Cualquier usuario añade/quita capítulos. La duración va
-   en minutos. El estado (visto + reseña) es POR USUARIO. */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS series_episodes (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        series_key  VARCHAR(200) NOT NULL,
-        position    INT NOT NULL DEFAULT 0,
-        title       VARCHAR(255) NOT NULL,
-        image       VARCHAR(2000) NULL,
-        duration    INT NULL,            /* minutos */
-        created_by  INT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_series (series_key, position)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-/* Temporadas: cada capítulo pertenece a una temporada (entero, por defecto
-   1). Compartidas por título igual que los capítulos. */
-try { $pdo->exec("ALTER TABLE series_episodes ADD COLUMN season INT NOT NULL DEFAULT 1"); }
-catch (Throwable $e) { /* ya existe */ }
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS series_episode_state (
-        episode_id  INT NOT NULL,
-        user_id     INT NOT NULL,
-        watched     TINYINT NOT NULL DEFAULT 0,
-        stars       DECIMAL(2,1) NULL,
-        comment     TEXT NULL,
-        reviewed_at TIMESTAMP NULL,
-        PRIMARY KEY (episode_id, user_id),
-        INDEX idx_ep (episode_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-/* Libros: enlace a un PDF COMPARTIDO por título (book_key = título en
-   minúsculas). Cualquier usuario lo pone y todos los que tengan ese libro
-   lo abren con el botón "Leer". */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS book_pdfs (
-        book_key   VARCHAR(200) PRIMARY KEY,
-        url        VARCHAR(2000) NOT NULL,
-        set_by     INT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+    /* Libros: enlace a un PDF COMPARTIDO por título (book_key = título en
+       minúsculas). Cualquier usuario lo pone y todos los que tengan ese libro
+       lo abren con el botón "Leer". */
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS book_pdfs (
+            book_key   VARCHAR(200) PRIMARY KEY,
+            url        VARCHAR(2000) NOT NULL,
+            set_by     INT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+});
 
 /* ── user_key → usuarios.id (cacheado por petición) ──────── */
 function pf_uid(PDO $pdo, string $userKey): ?int {

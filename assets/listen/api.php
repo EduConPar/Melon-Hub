@@ -37,6 +37,10 @@
    No es WebSocket — usa polling cada 2s. Tradeoff: ~2s de lag, pero
    simple, sin infra extra.
 ═════════════════════════════════════════════════════════════════════ */
+/* Los sondeos (invitaciones cada 5 s, invitado cada 2 s): si la BD está
+   saturada, un solo reintento corto (melon_pdo en assets/config.php) en
+   vez de ocupar un proceso PHP esperando; ya volverá a preguntar. */
+if (in_array($_GET['action'] ?? '', ['invites', 'poll'], true)) define('MELON_DB_RAPIDO', true);
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__, 2) . '/assets/themes/theme-helpers.php';
 
@@ -58,60 +62,66 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
 /* ── Auto-migración de tablas ──────────────────────────────────── */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_sessions (
-        id              INT AUTO_INCREMENT PRIMARY KEY,
-        host_user_id    INT NOT NULL,
-        video_id        VARCHAR(20)  NULL,
-        track_title     VARCHAR(255) NULL,
-        track_artist    VARCHAR(255) NULL,
-        cover_url       VARCHAR(500) NULL,
-        current_time_s  INT  NOT NULL DEFAULT 0,
-        duration_s      INT  NOT NULL DEFAULT 0,
-        is_playing      TINYINT NOT NULL DEFAULT 0,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        closed_at       TIMESTAMP NULL,
-        INDEX idx_host (host_user_id, closed_at),
-        INDEX idx_updated (updated_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_participants (
-        session_id    INT NOT NULL,
-        user_id       INT NOT NULL,
-        joined_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        left_at       TIMESTAMP NULL,
-        PRIMARY KEY (session_id, user_id),
-        INDEX idx_user (user_id, left_at),
-        INDEX idx_last_seen (last_seen_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_invites (
-        id            INT AUTO_INCREMENT PRIMARY KEY,
-        session_id    INT NOT NULL,
-        from_user_id  INT NOT NULL,
-        to_user_id    INT NOT NULL,
-        status        ENUM('pending','accepted','declined','expired') DEFAULT 'pending',
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        responded_at  TIMESTAMP NULL,
-        INDEX idx_to (to_user_id, status),
-        INDEX idx_session (session_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+/* Una vez por versión de este archivo (melon_esquema, assets/php/
+   esquema.php), no en cada petición: el escritorio llama a esta API cada
+   5 s (invitaciones) o 2 s (escuchando de invitado). */
+require_once dirname(__DIR__) . '/php/esquema.php';
+melon_esquema($pdo, 'escuchar-juntos', __FILE__, function (PDO $pdo) {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_sessions (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            host_user_id    INT NOT NULL,
+            video_id        VARCHAR(20)  NULL,
+            track_title     VARCHAR(255) NULL,
+            track_artist    VARCHAR(255) NULL,
+            cover_url       VARCHAR(500) NULL,
+            current_time_s  INT  NOT NULL DEFAULT 0,
+            duration_s      INT  NOT NULL DEFAULT 0,
+            is_playing      TINYINT NOT NULL DEFAULT 0,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            closed_at       TIMESTAMP NULL,
+            INDEX idx_host (host_user_id, closed_at),
+            INDEX idx_updated (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_participants (
+            session_id    INT NOT NULL,
+            user_id       INT NOT NULL,
+            joined_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            left_at       TIMESTAMP NULL,
+            PRIMARY KEY (session_id, user_id),
+            INDEX idx_user (user_id, left_at),
+            INDEX idx_last_seen (last_seen_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_invites (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            session_id    INT NOT NULL,
+            from_user_id  INT NOT NULL,
+            to_user_id    INT NOT NULL,
+            status        ENUM('pending','accepted','declined','expired') DEFAULT 'pending',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            responded_at  TIMESTAMP NULL,
+            INDEX idx_to (to_user_id, status),
+            INDEX idx_session (session_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_join_requests (
-        id            INT AUTO_INCREMENT PRIMARY KEY,
-        host_user_id  INT NOT NULL,
-        from_user_id  INT NOT NULL,
-        status        ENUM('pending','done','expired') DEFAULT 'pending',
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_host (host_user_id, status)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_join_requests (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            host_user_id  INT NOT NULL,
+            from_user_id  INT NOT NULL,
+            status        ENUM('pending','done','expired') DEFAULT 'pending',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_host (host_user_id, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+});
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 function getActiveSessionAsHost(PDO $pdo, int $userId): ?array {

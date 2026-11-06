@@ -139,6 +139,14 @@ function emitInterfaceCss(string $relPrefix = ''): void {
     echo '<link rel="stylesheet" id="active-interface-link" href="'
         . htmlspecialchars($rel) . '?v=' . $cssV . '">';
 
+    /* Fuente elegida para esta interfaz (cookie melonFuente; la pone
+       desktop-base.php desde la BD). Ver assets/php/fuentes.php. */
+    $fuente = preg_replace('/[^a-z0-9_-]/', '', (string)($_COOKIE['melonFuente'] ?? ''));
+    if ($fuente !== '') {
+        require_once __DIR__ . '/fuentes.php';
+        echo melonFuenteHead($fuente, $name);
+    }
+
     /* init.js opcional. */
     $jsAbs = dirname(__DIR__, 2) . '/assets/interfaces/' . $name . '/init.js';
     if (is_file($jsAbs)) {

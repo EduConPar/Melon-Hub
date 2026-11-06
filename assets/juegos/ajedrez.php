@@ -19,9 +19,13 @@
    pierde aunque le quede reloj.
    Todo lo decide el servidor (reglas en ajedrez-reglas.php, tiempo del
    servidor, jugadas en UCI). No hay cron: lo que caduca (retos, relojes,
-   ausencias, torneos que empiezan) se mira en cada petición del ajedrez y
-   en el aviso del haro, que llama cada 10 s desde todos los escritorios
-   abiertos (ajz_tick).
+   ausencias, torneos que empiezan) se mira en las peticiones del ajedrez
+   (ajz_tick) y en la señal de vida de cada partida.
+   Timbre (assets/php/timbre.php): cada cambio deja un JSON estático en
+   rt/ (la partida, el torneo, la lista de torneos y el de cada usuario).
+   Las ventanas miran esos archivos, que no gastan PHP ni BD, y solo
+   llaman a la API cuando cambian; la partida ya no se pide cada segundo
+   (ver .claude/notas/rendimiento.md).
    Partida en `ajz_partidas` (fen, jugadas UCI y SAN separadas por
    espacios, claves de posición para la triple repetición), retos en
    `ajz_retos`.
@@ -29,21 +33,29 @@
 
 require_once __DIR__ . '/ajedrez-reglas.php';
 require_once __DIR__ . '/buscaminas.php';            /* bm_usuarios, bm_ms */
+require_once dirname(__DIR__) . '/php/esquema.php';  /* melon_esquema */
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_* */
 require_once dirname(__DIR__) . '/social-helpers.php'; /* isMutualFollow, mutualFollowerIds */
 require_once __DIR__ . '/ajedrez-torneos.php';
 
 const AJZ_RETO_MS        = 300000;
 const AJZ_PRESENTARSE_MS = 120000;
 const AJZ_AUSENTE_MS     = 60000;
+/* La ventana da señales de vida cada 5 s (ajedrez.js, SENAL_MS): el
+   "se ha desconectado, pierde en N s" sale a los 15 s sin ninguna, para
+   que un retraso de red no lo haga parpadear. */
+const AJZ_FUERA_AVISO_MS = 15000;
 const AJZ_MIN_MAX        = 180;   /* minutos de reloj, como mucho */
 const AJZ_INC_MAX        = 180;   /* segundos de incremento, como mucho */
 const AJZ_APUESTA_MAX    = 1000000;
 
+/* Tablas: una vez por versión de este archivo (assets/php/esquema.php),
+   no en cada petición. Si un CREATE falla no queda marca y se reintenta. */
 function ajz_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
+    melon_esquema($pdo, 'ajedrez', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS ajz_partidas (
             id           INT AUTO_INCREMENT PRIMARY KEY,
             blanco_id    INT NOT NULL,
@@ -87,19 +99,23 @@ function ajz_ensure(PDO $pdo): void {
             INDEX idx_a (a_id, estado),
             INDEX idx_de (de_id, estado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE */ }
+    });
     ajz_torEnsure($pdo);
 }
 
 /* ── Utilidades ── */
 
 /* Transacción; si ya hay una abierta (p. ej. un torneo que avanza al
-   acabar una partida), se hace dentro de esa. */
+   acabar una partida), se hace dentro de esa. Los archivos del timbre se
+   escriben al confirmar la de fuera (antes, una ventana podría ver el
+   archivo nuevo y leer de la BD lo de antes) y se tiran si se deshace. */
 function ajz_tx(PDO $pdo, callable $fn) {
     if ($pdo->inTransaction()) return $fn();
     $pdo->beginTransaction();
-    try { $r = $fn(); $pdo->commit(); return $r; }
-    catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+    try { $r = $fn(); $pdo->commit(); }
+    catch (Throwable $e) { $pdo->rollBack(); rt_descartar(); throw $e; }
+    rt_vaciar();
+    return $r;
 }
 /* Quita puntos solo si los tiene (false si no llega). */
 function ajz_cobrar(PDO $pdo, int $uid, int $n): bool {
@@ -140,22 +156,38 @@ function ajz_crearPartida(PDO $pdo, int $blanco, int $negro, int $baseMs, int $i
                                              t_blanco, t_negro, creada)
                    VALUES (?,?,?,?,?,?,?,'','',?,?,?,?)")
         ->execute([$blanco, $negro, $baseMs, $incMs, $apuesta, $torneo, AJZ_INICIAL, ajz_clave($e), $baseMs, $baseMs, bm_ms()]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    /* Los dos tienen una partida que les espera: menú y aviso del haro. */
+    rt_usuario($blanco, 'ajz', 'aviso');
+    rt_usuario($negro, 'ajz', 'aviso');
+    rt_partida($id, 0, 'esperando');
+    if ($torneo) rt_torneo($torneo);
+    return $id;
+}
+
+/* Fila de ajz_partidas con los números como números. */
+function ajz_tipos(array $p): array {
+    foreach (['id', 'blanco_id', 'negro_id', 'base_ms', 'inc_ms', 'apuesta', 't_blanco', 't_negro', 'turno_desde',
+              'creada', 'visto_blanco', 'visto_negro'] as $k) $p[$k] = (int)$p[$k];
+    $p['torneo_id'] = $p['torneo_id'] !== null ? (int)$p['torneo_id'] : null;
+    $p['tablas_de'] = $p['tablas_de'] !== null ? (int)$p['tablas_de'] : null;
+    return $p;
 }
 
 /* Abre la partida bloqueada, deja que $fn la cambie y la guarda. Si con
-   eso ha acabado y es de un torneo, el torneo sigue (ajz_torPartidaAcabada). */
+   eso ha acabado y es de un torneo, el torneo sigue (ajz_torPartidaAcabada).
+   Si ha cambiado algo que ve el rival (jugada, estado, oferta de tablas),
+   se reescribe el archivo de la partida del timbre; si ha cambiado el
+   estado, también el menú de los dos y el torneo. */
 function ajz_conPartida(PDO $pdo, int $id, callable $fn) {
     return ajz_tx($pdo, function () use ($pdo, $id, $fn) {
         $st = $pdo->prepare("SELECT * FROM ajz_partidas WHERE id = ? FOR UPDATE");
         $st->execute([$id]);
         $p = $st->fetch(PDO::FETCH_ASSOC);
         if (!$p) throw new InvalidArgumentException('No existe esa partida');
-        foreach (['id', 'blanco_id', 'negro_id', 'base_ms', 'inc_ms', 'apuesta', 't_blanco', 't_negro', 'turno_desde',
-                  'creada', 'visto_blanco', 'visto_negro'] as $k) $p[$k] = (int)$p[$k];
-        $p['torneo_id'] = $p['torneo_id'] !== null ? (int)$p['torneo_id'] : null;
-        $p['tablas_de'] = $p['tablas_de'] !== null ? (int)$p['tablas_de'] : null;
+        $p = ajz_tipos($p);
         $antes = $p['estado'];
+        $firma = $p['fen'] . '|' . $p['estado'] . '|' . $p['tablas_de'];
         $r = $fn($p);
         $pdo->prepare("UPDATE ajz_partidas SET fen = ?, jugadas = ?, sans = ?, claves = ?, estado = ?, resultado = ?, motivo = ?,
                               t_blanco = ?, t_negro = ?, turno_desde = ?, empezada = ?, fin = ?, visto_blanco = ?, visto_negro = ?,
@@ -163,6 +195,14 @@ function ajz_conPartida(PDO $pdo, int $id, callable $fn) {
             ->execute([$p['fen'], $p['jugadas'], $p['sans'], $p['claves'], $p['estado'], $p['resultado'], $p['motivo'],
                        $p['t_blanco'], $p['t_negro'], $p['turno_desde'], $p['empezada'], $p['fin'], $p['visto_blanco'],
                        $p['visto_negro'], $p['tablas_de'], $p['id']]);
+        if ($firma !== $p['fen'] . '|' . $p['estado'] . '|' . $p['tablas_de']) {
+            rt_partida($p['id'], $p['jugadas'] === '' ? 0 : substr_count($p['jugadas'], ' ') + 1, $p['estado']);
+        }
+        if ($antes !== $p['estado']) {
+            rt_usuario($p['blanco_id'], 'ajz');
+            rt_usuario($p['negro_id'], 'ajz');
+            if ($p['torneo_id']) rt_torneo($p['torneo_id']);
+        }
         if ($antes !== 'terminada' && $p['estado'] === 'terminada' && $p['torneo_id']) ajz_torPartidaAcabada($pdo, $p);
         return $r;
     });
@@ -287,10 +327,10 @@ function ajz_vista(PDO $pdo, array $p, int $uid, int $ahora): array {
         $out['esperando'] = ['quedan' => max(0, $p['creada'] + AJZ_PRESENTARSE_MS - $ahora),
                              'w' => $p['visto_blanco'] > 0, 'b' => $p['visto_negro'] > 0];
     }
-    /* Rival sin dar señales unos segundos: "pierde en N s" si no vuelve. */
+    /* Rival sin dar señales un rato: "pierde en N s" si no vuelve. */
     if ($p['estado'] === 'jugando' && $yo) {
         $suyo = $yo === 'w' ? $p['visto_negro'] : $p['visto_blanco'];
-        if ($ahora - $suyo > 5000) $out['rivalFuera'] = max(0, $suyo + AJZ_AUSENTE_MS - $ahora);
+        if ($ahora - $suyo > AJZ_FUERA_AVISO_MS) $out['rivalFuera'] = max(0, $suyo + AJZ_AUSENTE_MS - $ahora);
     }
     /* Lo que me llevo de la apuesta (lo que gano por encima de lo puesto). */
     if ($p['estado'] === 'terminada' && $yo && $p['apuesta'] > 0) {
@@ -300,8 +340,51 @@ function ajz_vista(PDO $pdo, array $p, int $uid, int $ahora): array {
     return $out;
 }
 
-/* GET de la partida (cada segundo desde la ventana): señal + revisar. */
+/* ¿Hay que cambiar algo de la partida ahora mismo? (empezar, sin tiempo,
+   ausencias, primera vez que entra). Lo mismo que mira ajz_revisar, sin
+   tocar nada, contando con la señal que $yo está dando ahora. */
+function ajz_hayQueRevisar(array $p, string $yo, int $ahora): bool {
+    $mio = $yo === 'w' ? 'visto_blanco' : 'visto_negro';
+    $suyo = $yo === 'w' ? 'visto_negro' : 'visto_blanco';
+    if ($p['estado'] === 'esperando') {
+        /* La primera señal de cada uno va por el camino con cerrojo: si
+           entran los dos a la vez, el segundo ve al primero y empieza. */
+        return $p[$mio] === 0 || $p[$suyo] > 0 || $ahora >= $p['creada'] + AJZ_PRESENTARSE_MS;
+    }
+    if ($p['estado'] !== 'jugando') return false;
+    $r = ajz_relojes($p, $ahora);
+    return $r[$r['corre']] <= 0 || $p[$suyo] < $ahora - AJZ_AUSENTE_MS;
+}
+
+/* GET de la partida: la pide la ventana al abrirla, cuando el archivo del
+   timbre dice que ha cambiado y cada 5 s como señal de vida.
+   Casi siempre no hay nada que cambiar: entonces se lee sin cerrojo y la
+   señal es un UPDATE de una columna, sin transacción ni reescribir la
+   fila entera (antes eran SELECT … FOR UPDATE + UPDATE de todo, y los dos
+   jugadores se esperaban el uno al otro cada segundo). Si toca cambiar
+   algo, va por ajz_conPartida como siempre. */
 function ajz_partidaVer(PDO $pdo, int $uid, int $id): array {
+    $st = $pdo->prepare("SELECT * FROM ajz_partidas WHERE id = ?");
+    $st->execute([$id]);
+    $fila = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$fila) throw new InvalidArgumentException('No existe esa partida');
+    $p = ajz_tipos($fila);
+    $yo = ajz_color($p, $uid);
+    if (!$yo) throw new InvalidArgumentException('No juegas esta partida');
+    /* Partida de antes del timbre: se le crea el archivo. */
+    if (!rt_existe(rt_urlPartida($id))) rt_partida($id, $p['jugadas'] === '' ? 0 : substr_count($p['jugadas'], ' ') + 1, $p['estado']);
+    $ahora = bm_ms();
+    if (!ajz_hayQueRevisar($p, $yo, $ahora)) {
+        if (in_array($p['estado'], ['esperando', 'jugando'], true)) {
+            $col = $yo === 'w' ? 'visto_blanco' : 'visto_negro';
+            /* GREATEST: si a la vez se guarda la fila entera con una señal
+               anterior (ajz_conPartida), no se pierde esta. */
+            $pdo->prepare("UPDATE ajz_partidas SET $col = GREATEST($col, ?) WHERE id = ? AND estado IN ('esperando','jugando')")
+                ->execute([$ahora, $id]);
+            $p[$col] = $ahora;
+        }
+        return $p;
+    }
     return ajz_conPartida($pdo, $id, function (array &$p) use ($pdo, $uid) {
         $yo = ajz_color($p, $uid);
         if (!$yo) throw new InvalidArgumentException('No juegas esta partida');
@@ -393,13 +476,17 @@ function ajz_tablas(PDO $pdo, int $uid, int $id, string $tipo): array {
 /* ── Retos ── */
 
 function ajz_caducarRetos(PDO $pdo, int $ahora): void {
-    $st = $pdo->prepare("SELECT id, de_id, apuesta FROM ajz_retos WHERE estado = 'pendiente' AND creado < ?");
+    $st = $pdo->prepare("SELECT id, de_id, a_id, apuesta FROM ajz_retos WHERE estado = 'pendiente' AND creado < ?");
     $st->execute([$ahora - AJZ_RETO_MS]);
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         ajz_tx($pdo, function () use ($pdo, $r, $ahora) {
             $u = $pdo->prepare("UPDATE ajz_retos SET estado = 'caducado', resuelto = ? WHERE id = ? AND estado = 'pendiente'");
             $u->execute([$ahora, $r['id']]);
-            if ($u->rowCount() === 1) ajz_pagar($pdo, (int)$r['de_id'], (int)$r['apuesta']);
+            if ($u->rowCount() === 1) {
+                ajz_pagar($pdo, (int)$r['de_id'], (int)$r['apuesta']);
+                rt_usuario((int)$r['de_id'], 'ajz');
+                rt_usuario((int)$r['a_id'], 'ajz');
+            }
         });
     }
 }
@@ -420,6 +507,8 @@ function ajz_retar(PDO $pdo, int $uid, string $amigoKey, $min, $inc, $apuesta): 
         if (!ajz_cobrar($pdo, $uid, $apuesta)) throw new InvalidArgumentException('No tienes puntos suficientes para esa apuesta');
         $pdo->prepare("INSERT INTO ajz_retos (de_id, a_id, base_ms, inc_ms, apuesta, creado) VALUES (?,?,?,?,?,?)")
             ->execute([$uid, $aid, $base, $incMs, $apuesta, $ahora]);
+        rt_usuario($aid, 'ajz', 'aviso');
+        rt_usuario($uid, 'ajz');
         return ['reto' => (int)$pdo->lastInsertId()];
     });
 }
@@ -436,6 +525,8 @@ function ajz_responder(PDO $pdo, int $uid, int $id, bool $aceptar): array {
         if ($r['estado'] !== 'pendiente') {
             throw new InvalidArgumentException($r['estado'] === 'caducado' ? 'El reto ha caducado' : 'El reto ya no está pendiente');
         }
+        rt_usuario((int)$r['de_id'], 'ajz');
+        rt_usuario($uid, 'ajz');
         if (!$aceptar) {
             $pdo->prepare("UPDATE ajz_retos SET estado = 'rechazado', resuelto = ? WHERE id = ?")->execute([$ahora, $id]);
             ajz_pagar($pdo, (int)$r['de_id'], (int)$r['apuesta']);
@@ -458,6 +549,8 @@ function ajz_cancelarReto(PDO $pdo, int $uid, int $id): void {
         if (!$r || (int)$r['de_id'] !== $uid || $r['estado'] !== 'pendiente') return;
         $pdo->prepare("UPDATE ajz_retos SET estado = 'cancelado', resuelto = ? WHERE id = ?")->execute([bm_ms(), $id]);
         ajz_pagar($pdo, $uid, (int)$r['apuesta']);
+        rt_usuario($uid, 'ajz');
+        rt_usuario((int)$r['a_id'], 'ajz');
     });
 }
 
@@ -491,6 +584,8 @@ function ajz_tick(PDO $pdo): void {
         } catch (Throwable $e) { error_log('[ajedrez] tick ' . $r['id'] . ': ' . $e->getMessage()); }
     }
     ajz_torTick($pdo);
+    /* Archivos del timbre de partidas de hace días (de vez en cuando). */
+    if (random_int(1, 500) === 1) rt_limpiarPartidas();
 }
 
 /* Menú del ajedrez: saldo, retos, mis partidas y torneos. */
@@ -531,8 +626,13 @@ function ajz_estado(PDO $pdo, int $uid): array {
             'nueva'   => $p['estado'] === 'esperando' && (int)($w ? $p['visto_blanco'] : $p['visto_negro']) === 0,
         ];
     }
+    /* Los archivos que mira el menú (el suyo y el de la lista), por si
+       aún no existen. ahora: hora del servidor, para que la ventana vuelva
+       a pedir justo cuando empieza un torneo o caduca un reto. */
+    rt_asegurarUsuario($uid);
+    if (!rt_existe('rt/ajz.json')) rt_listaTorneos();
     return ['autismo' => ajz_saldo($pdo, $uid), 'recibidos' => $rec, 'enviados' => $env, 'partidas' => $mias,
-            'torneos' => ajz_torLista($pdo, $uid)];
+            'torneos' => ajz_torLista($pdo, $uid), 'ahora' => bm_ms()];
 }
 
 /* Aviso del haro (desktop-base.php, cada 10 s): retos recibidos y
@@ -569,5 +669,15 @@ function ajz_avisos(PDO $pdo, int $uid): array {
         $out['partidas'][] = ['id' => (int)$p['id'], 'rival' => $us[$rival] ?? null, 'torneo' => $p['torneo_nombre'], 'torneoId' => $p['torneo_id'] ? (int)$p['torneo_id'] : null,
                               'ts' => intdiv((int)$p['creada'], 1000), 'quedan' => max(0, (int)$p['creada'] + AJZ_PRESENTARSE_MS - $ahora)];
     }
+    /* Cuándo empieza el siguiente torneo en el que está apuntado: el
+       escritorio vuelve a llamar a esa hora (y así empieza a tiempo aunque
+       nadie tenga abierto el ajedrez; ya no se llama cada 10 s). */
+    $st = $pdo->prepare("SELECT MIN(t.empieza) FROM ajz_torneos t JOIN ajz_inscritos i ON i.torneo_id = t.id
+                          WHERE i.user_id = ? AND t.estado = 'inscripcion'");
+    $st->execute([$uid]);
+    $prox = $st->fetchColumn();
+    $out['prox'] = $prox ? (int)$prox : null;
+    $out['ahora'] = $ahora;
+    rt_asegurarUsuario($uid);
     return $out;
 }

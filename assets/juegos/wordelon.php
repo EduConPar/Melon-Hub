@@ -27,6 +27,8 @@
        cuadrícula de colores, sin letras, para no destripar la palabra.
    ────────────────────────────────────────────────────────────────────── */
 
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
+
 const WORDELON_NOMBRE      = 'Wordelon';
 const WORDELON_TZ          = 'Europe/Madrid';
 const WORDELON_INICIO      = '2026-11-05';            /* día del Wordelon nº 1 */
@@ -37,11 +39,13 @@ const WORDELON_NO_REPETIR  = 365;                      /* días sin repetir pala
 const WORDELON_CANAL       = '1567977480667529277';
 const WORDELON_WEB         = 'https://melonhub.es';
 
+/* Tablas: una vez por versión de este archivo (assets/php/esquema.php),
+   no en cada petición. Si el CREATE falla no queda marca y se reintenta. */
 function wordelon_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
+    melon_esquema($pdo, 'wordelon', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS wordelon_dias (
             dia                DATE PRIMARY KEY,
             palabra            VARCHAR(16) NOT NULL,
@@ -58,11 +62,12 @@ function wordelon_ensure(PDO $pdo): void {
             PRIMARY KEY (user_id, dia),
             INDEX idx_dia (dia, terminado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE: fallará al usarlas */ }
-    /* Cuándo puso la primera palabra: orden de las tarjetas (no cambia al
-       terminar). Las partidas de antes de la columna van por updated_at. */
-    try { $pdo->exec("ALTER TABLE wordelon_partidas ADD COLUMN IF NOT EXISTS empezada TIMESTAMP NULL DEFAULT NULL"); }
-    catch (Throwable $e) { /* sin permisos de ALTER */ }
+        /* Cuándo puso la primera palabra: orden de las tarjetas (no cambia
+           al terminar). Las partidas de antes de la columna van por
+           updated_at. */
+        try { $pdo->exec("ALTER TABLE wordelon_partidas ADD COLUMN IF NOT EXISTS empezada TIMESTAMP NULL DEFAULT NULL"); }
+        catch (Throwable $e) { /* sin permisos de ALTER */ }
+    });
 }
 
 function wordelon_hoy(): string {

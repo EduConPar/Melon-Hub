@@ -102,6 +102,11 @@ if ($_perfilStandalone) {
        el link correcto. Restauramos luego para no afectar más PHP. */
     $_origIfaceCookie = $_COOKIE['activeInterface'] ?? null;
     $_COOKIE['activeInterface'] = $_lookIface;
+    /* Y la fuente que esa persona tiene en esa interfaz (fuentes.php). */
+    require_once dirname(__DIR__) . '/assets/php/fuentes.php';
+    $_origFuenteCookie = $_COOKIE['melonFuente'] ?? null;
+    $_lookFuente = melonFuenteActiva($pdo, $_lookUid, $_lookIface);
+    $_COOKIE['melonFuente'] = $_lookFuente === melonFuenteDefecto($_lookIface) ? '' : $_lookFuente;
 
     /* Pareja del viewer (para keys de funciones que la usan). */
     $stmtP = $pdo->prepare("SELECT p.id FROM parejas p
@@ -173,6 +178,8 @@ if ($_perfilStandalone) {
            ya tomó el override. Evita afectar otros require's posteriores. */
         if ($_origIfaceCookie === null) unset($_COOKIE['activeInterface']);
         else $_COOKIE['activeInterface'] = $_origIfaceCookie;
+        if ($_origFuenteCookie === null) unset($_COOKIE['melonFuente']);
+        else $_COOKIE['melonFuente'] = $_origFuenteCookie;
     ?>
     <script src="assets/js/interface-loader.js?v=fs1"></script>
     <style>

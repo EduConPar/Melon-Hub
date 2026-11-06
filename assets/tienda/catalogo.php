@@ -78,6 +78,15 @@ function tiendaCatalogo(): ?array {
                ruta de la imagen (assets/img/marcos/…). No va a la BD: lo lee
                assets/profile/marcos.php del archivo. */
             'marco'           => tiendaMarcoValido($o['marco'] ?? null),
+            /* Fuentes (categoria interfaces, slug fuente-…): familia de
+               Google Fonts (o una que ya carga la web, con "local": true),
+               pesos a pedir ("400;700") y la interfaz que la incluye
+               ("incluida": "kawaii" → quien tiene esa interfaz la tiene).
+               Lo lee assets/php/fuentes.php. */
+            'fuente'          => (is_string($o['fuente'] ?? null) && preg_match('/^[A-Za-z0-9 ]{1,40}$/', $o['fuente'])) ? $o['fuente'] : null,
+            'fuente_local'    => !empty($o['local']),
+            'fuente_pesos'    => (is_string($o['pesos'] ?? null) && preg_match('/^\d{3}(;\d{3})*$/', $o['pesos'])) ? $o['pesos'] : '',
+            'incluida'        => $slugOk($o['incluida'] ?? null) ? $o['incluida'] : null,
         ];
     }
 

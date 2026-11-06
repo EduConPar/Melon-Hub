@@ -201,6 +201,38 @@ case 'set-icon-pack': {
     jsonResponse(['ok' => true]);
 }
 
+/* ── FUENTES (assets/php/fuentes.php) ──
+   fonts: todas las del catálogo con si las tienes, la puesta en la
+   interfaz activa y la de serie. set-font {slug, interface}: la guarda
+   para esa interfaz y, si es la activa, pone la cookie melonFuente (la
+   página recarga después). */
+case 'fonts':
+case 'set-font': {
+    require_once dirname(__DIR__) . '/php/fuentes.php';
+    if ($action === 'set-font') {
+        $body  = jsonBody();
+        $slug  = (string)($body['slug'] ?? '');
+        $iface = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($body['interface'] ?? '')) ?: getActiveInterface();
+        if (!isset(melonFuentes()[$slug])) jsonError('Fuente no encontrada', 404);
+        if (!isset(melonFuentesPoseidas($pdo, $uid)[$slug])) jsonError('No tienes esta fuente', 403);
+        $stmt = $pdo->prepare("INSERT INTO user_settings (user_id, key_name, value)
+                               VALUES (?, ?, ?)
+                               ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP");
+        $stmt->execute([$uid, 'fuente:' . $iface, json_encode($slug)]);
+        if ($iface === getActiveInterface()) melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
+        jsonResponse(['ok' => true]);
+    }
+    $iface = getActiveInterface();
+    $tiene = melonFuentesPoseidas($pdo, $uid);
+    $out = [];
+    foreach (melonFuentes() as $slug => $f) {
+        $out[] = ['slug' => $slug, 'nombre' => $f['nombre'], 'familia' => $f['familia'],
+                  'url' => melonFuenteUrl($f), 'tiene' => isset($tiene[$slug])];
+    }
+    jsonResponse(['ok' => true, 'interfaz' => $iface, 'fuentes' => $out,
+                  'activa' => melonFuenteActiva($pdo, $uid, $iface), 'defecto' => melonFuenteDefecto($iface)]);
+}
+
 /* ── GET LOOK ──
    Devuelve el "look" visual completo de un usuario: interfaz activa
    (slug), icon pack activo, tema activo (nombre + colores + assets).

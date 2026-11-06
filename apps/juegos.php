@@ -1284,8 +1284,15 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
    Discord, ver openJuegos en desktop-base.php). */
 $_jgAbrir = (string)($_GET['abrir'] ?? '');
 if (!preg_match('/^(partida|torneo):[0-9]{1,10}$/', $_jgAbrir)) $_jgAbrir = '';
+/* Archivo del timbre del usuario (assets/php/timbre.php): el menú del
+   ajedrez lo mira para saber cuándo volver a pedir sus retos y partidas. */
+require_once dirname(__DIR__) . '/assets/php/timbre.php';
+$_jgSt = $pdo->prepare('SELECT id FROM usuarios WHERE user_key = ?');
+$_jgSt->execute([$userKey]);
+$_jgUid = (int)$_jgSt->fetchColumn();
+rt_asegurarUsuario($_jgUid);
 ?>
-<script>window.JG_ABRIR = <?= json_encode($_jgAbrir) ?>;</script>
+<script>window.JG_ABRIR = <?= json_encode($_jgAbrir) ?>; window.JG_TIMBRE = <?= json_encode($_jgUid > 0 ? rt_urlUsuario($_jgUid) : '') ?>;</script>
 <script src="../assets/juegos/ajedrez.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/juegos/ajedrez.js') ?>"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@
   "label": "MelonOS Overdose",
   "description": "Estilo kawaii Y2K — paleta rosa pastel con title-bars y bordes púrpura oscuro, patrón de cuadrícula en el escritorio y acentos rosa neón. Inspirado en aesthetic cyber-cute.",
   "author": "Melon Hub",
+  "fuente": "fuente-pixelify",
   "isDefault": false,
   "tokens": {
     "winBg":         { "label": "Fondo de ventana",       "default": "#FFE4F0" },

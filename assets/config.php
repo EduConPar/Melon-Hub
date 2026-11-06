@@ -67,46 +67,64 @@ define('DB_NAME', env('DB_NAME', 'scrapbook_melon'));
 define('DB_USER', env('DB_USER', 'root'));
 define('DB_PASS', env('DB_PASS', ''));
 
+/* ─── Una sola conexión a la BD por petición ───
+   La abre quien la pida primero (ensureLoginUsers, aquí abajo, o db.php)
+   y se queda en $GLOBALS['pdo'] para todos. Antes ensureLoginUsers abría
+   la suya, la cerraba, y db.php abría otra: dos conexiones por petición,
+   el doble de lo necesario contra el tope de la cuenta en Hostinger
+   (conexiones a la vez y por hora; ver .claude/notas/rendimiento.md).
+
+   Reintento corto con backoff: en hosting compartido (LiteSpeed +
+   CloudLinux/LVE) el connect puede fallar con
+   SQLSTATE[HY000] [2002] Operation not permitted cuando la cuenta roza
+   su tope de procesos/conexiones (un EPERM en el connect(), no una
+   credencial mala). Es transitorio y unos cientos de ms lo salvan.
+   Esperas: ~1.85 s en el peor caso. Con 450 ms no bastaba (la ráfaga de
+   un cambio de interfaz recarga el shell y todas las apps a la vez).
+
+   Las peticiones que se repiten solas cada pocos segundos (sondeos)
+   definen MELON_DB_RAPIDO antes de incluir esto: un solo reintento
+   corto. Si la BD está saturada, esperar dormido ocupa un proceso PHP
+   más y empeora el atasco; el sondeo ya volverá a preguntar.
+   Si falla, no se reintenta otra vez en la misma petición (db.php lo
+   pediría de nuevo tras ensureLoginUsers y esperaría el doble). */
+function melon_pdo(): ?PDO {
+    if (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) return $GLOBALS['pdo'];
+    if (isset($GLOBALS['_melonPdoError'])) return null;
+    $esperas = defined('MELON_DB_RAPIDO') ? [100000] : [100000, 250000, 500000, 1000000];
+    $ultimo  = '';
+    for ($intento = 0; $intento <= count($esperas); $intento++) {
+        try {
+            $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+                           DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $GLOBALS['pdo'] = $pdo;
+            return $pdo;
+        } catch (PDOException $e) {
+            $ultimo = $e->getMessage();
+            if ($intento < count($esperas)) usleep($esperas[$intento]);
+        }
+    }
+    /* El detalle va al log del servidor, NUNCA al navegador: lleva host,
+       usuario y ruta del socket. */
+    error_log('[db] conexión fallida tras ' . (count($esperas) + 1) . ' intentos: ' . $ultimo);
+    $GLOBALS['_melonPdoError'] = $ultimo;
+    return null;
+}
+
 /* ─── $loginUsers viene de la tabla `usuarios` (incluye hash bcrypt) ───
    La contraseña no se valida con ===; usar password_verify($plain, $hash).
-   Carga perezosa: si algo necesita $loginUsers, ensureLoginUsers() lo
-   rellena la primera vez abriendo su propia conexión PDO (config.php se
-   incluye antes que db.php en muchos sitios, así que no podemos depender
-   de $GLOBALS['pdo'] aquí). */
+   Se rellena al incluir este archivo, con la conexión compartida de
+   melon_pdo() (la misma que usará luego db.php). */
 $loginUsers = [];
 $GLOBALS['_loginUsersError'] = null;
 function ensureLoginUsers(): void {
     global $loginUsers;
     if (!empty($loginUsers)) return;
     try {
-        /* Reintento con backoff, igual que en db.php. Esta ruta NO pasa
-           por db.php (config.php se carga antes en muchos sitios), así
-           que necesita su propia protección. En hosting compartido el
-           connect falla con [2002] Operation not permitted cuando la
-           cuenta roza su tope de conexiones — y sin $loginUsers la app
-           degrada a la pantalla de "No hay usuarios para mostrar".
-           Pasa sobre todo al cambiar de interfaz: recarga el shell y
-           todas las apps abiertas a la vez, en ráfaga. */
-        $pdo = isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO
-            ? $GLOBALS['pdo']
-            : null;
-        if (!$pdo) {
-            /* Mismas esperas que db.php: ~1.85s en el peor caso. */
-            $esperas     = [100000, 250000, 500000, 1000000];
-            $ultimoError = null;
-            for ($intento = 0; $intento <= count($esperas); $intento++) {
-                try {
-                    $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-                                   DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-                    break;
-                } catch (PDOException $e) {
-                    $pdo         = null;
-                    $ultimoError = $e;
-                    if ($intento < count($esperas)) usleep($esperas[$intento]);
-                }
-            }
-            if (!$pdo) throw $ultimoError;
-        }
+        /* Sin $loginUsers la app degrada a la pantalla de "No hay
+           usuarios para mostrar": melon_pdo() ya reintenta. */
+        $pdo = melon_pdo();
+        if (!$pdo) throw new RuntimeException('sin conexión: ' . ($GLOBALS['_melonPdoError'] ?? ''));
         $stmt = $pdo->query("SELECT id, user_key, label, password FROM usuarios ORDER BY id ASC");
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -193,6 +211,14 @@ function _ensureUserPhotoColumns(PDO $pdo): void
     static $done = false;
     if ($done) return;
     $done = true;
+    /* Una vez por versión de este archivo (melon_esquema): antes eran 10
+       SHOW COLUMNS en cada petición que pintara a un usuario sin la foto
+       en disco (p. ej. cada vez que se pedía una partida de ajedrez). */
+    require_once __DIR__ . '/php/esquema.php';
+    melon_esquema($pdo, 'fotos-usuarios', __FILE__, '_ensureUserPhotoColumnsYa');
+}
+function _ensureUserPhotoColumnsYa(PDO $pdo): void
+{
     $cols = [
         ['usuarios', 'photo_data',       'LONGBLOB',    'label'],
         ['usuarios', 'photo_ext',        'VARCHAR(8)',  'photo_data'],
@@ -223,6 +249,15 @@ function _ensureUserPhotoColumns(PDO $pdo): void
    blob / la columna no existe / falla la escritura. */
 function _restorePhotoFromDb(string $label, string $safe): string
 {
+    /* Quien no tiene foto ni en disco ni en la BD (no ha subido ninguna)
+       pasaba por aquí en CADA petición que lo pintara: una consulta por
+       usuario y petición (un torneo de 32, 32 consultas). Se recuerda 10
+       min con un archivo vacío; al subir una foto se escribe su archivo,
+       que se encuentra antes (getUserImage, paso 1). */
+    static $sinFoto = [];
+    if (isset($sinFoto[$safe])) return '';
+    $marca = dirname(__DIR__) . '/uploads/profile-photos/.sin-foto-' . $safe;
+    if (@filemtime($marca) > time() - 600) { $sinFoto[$safe] = true; return ''; }
     try {
         require_once dirname(__DIR__) . '/db.php';
         global $pdo;
@@ -231,7 +266,11 @@ function _restorePhotoFromDb(string $label, string $safe): string
         $stmt = $pdo->prepare("SELECT photo_data, photo_ext FROM usuarios WHERE label = ? AND photo_data IS NOT NULL LIMIT 1");
         $stmt->execute([$label]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row || empty($row['photo_data']) || empty($row['photo_ext'])) return '';
+        if (!$row || empty($row['photo_data']) || empty($row['photo_ext'])) {
+            $sinFoto[$safe] = true;
+            if (is_dir(dirname($marca))) @touch($marca);
+            return '';
+        }
         $ext = preg_replace('/[^a-z0-9]/', '', strtolower($row['photo_ext']));
         if (!in_array($ext, ['jpg','jpeg','png','gif','webp'], true)) return '';
         $dir = dirname(__DIR__) . '/uploads/profile-photos';

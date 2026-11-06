@@ -67,6 +67,11 @@ case 'state': {
     $ownStmt = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ? AND consumido_en IS NULL');
     $ownStmt->execute([$userId]);
     $ownedIds = array_map('intval', $ownStmt->fetchAll(PDO::FETCH_COLUMN));
+    /* Fuentes que vienen con una interfaz tuya (Pixelify Sans con
+       MelonOS Overdose): también "Ya lo tienes". */
+    require_once dirname(__DIR__) . '/php/fuentes.php';
+    $ownedIds = array_values(array_unique(array_merge($ownedIds, melonFuentesIncluidasIds($pdo, $userId))));
+    $fuentes = melonFuentes();
 
     /* Resolvemos el nombre del rol de Discord de cada item (cacheado 1h). */
     $roles = discordGetRoles($pdo);
@@ -75,6 +80,9 @@ case 'state': {
     $marcos = marcos_defs();
     foreach ($itemsRows as &$it) {
         $it['marco'] = ($it['categoria'] === 'perfil' && isset($marcos[$it['slug']])) ? $marcos[$it['slug']] : null;
+        /* Fuentes: familia y su CSS de Google Fonts, para la muestra. */
+        $f = ($it['categoria'] === 'interfaces') ? ($fuentes[$it['slug']] ?? null) : null;
+        $it['fuente'] = $f ? ['familia' => $f['familia'], 'url' => melonFuenteUrl($f), 'incluida' => $f['incluida']] : null;
         $rid = (string)($it['discord_role_id'] ?? '');
         $it['has_role'] = $rid !== '';      /* da un rol (aunque no se sepa su nombre) */
         if ($rid !== '' && isset($roles[$rid])) {
@@ -156,6 +164,11 @@ case 'buy': {
         if ($ownChk->fetchColumn()) {
             $pdo->rollBack();
             jsonError('Ya tienes este item', 409);
+        }
+        require_once dirname(__DIR__) . '/php/fuentes.php';
+        if (in_array($itemId, melonFuentesIncluidasIds($pdo, $userId), true)) {
+            $pdo->rollBack();
+            jsonError('Ya tienes esta fuente: viene con una interfaz tuya.', 409);
         }
 
         /* Compras en cadena del perfil (huecos de expositor, mejoras de
@@ -294,6 +307,8 @@ case 'gift-answer': {
         $st = $pdo->prepare('SELECT DISTINCT item_id FROM tienda_compras WHERE user_id = ? AND consumido_en IS NULL');
         $st->execute([(int)$t['id']]);
         $owned = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        require_once dirname(__DIR__) . '/php/fuentes.php';
+        $owned = array_values(array_unique(array_merge($owned, melonFuentesIncluidasIds($pdo, (int)$t['id']))));
         $st = $pdo->prepare("SELECT DISTINCT item_id FROM tienda_regalos WHERE to_user_id = ? AND estado = 'pendiente'");
         $st->execute([(int)$t['id']]);
         $pending = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
@@ -322,6 +337,8 @@ case 'gift-answer': {
             $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? AND consumido_en IS NULL LIMIT 1');
             $chk->execute([$toId, $itemId]);
             if ($chk->fetchColumn()) { $pdo->rollBack(); jsonError('Ya lo tiene.', 409); }
+            require_once dirname(__DIR__) . '/php/fuentes.php';
+            if (in_array($itemId, melonFuentesIncluidasIds($pdo, $toId), true)) { $pdo->rollBack(); jsonError('Ya la tiene: viene con una interfaz suya.', 409); }
             $chk = $pdo->prepare("SELECT 1 FROM tienda_regalos WHERE to_user_id = ? AND item_id = ? AND estado = 'pendiente' LIMIT 1");
             $chk->execute([$toId, $itemId]);
             if ($chk->fetchColumn()) { $pdo->rollBack(); jsonError('Ya tiene ese regalo pendiente de abrir.', 409); }
@@ -391,7 +408,8 @@ case 'gift-answer': {
             $chk = $pdo->prepare('SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ? AND consumido_en IS NULL LIMIT 1');
             $chk->execute([$userId, (int)$g['item_id']]);
             $prev = tiendaPrevSlug((string)($g['slug'] ?? ''));
-            if ($chk->fetchColumn()) {
+            require_once dirname(__DIR__) . '/php/fuentes.php';
+            if ($chk->fetchColumn() || in_array((int)$g['item_id'], melonFuentesIncluidasIds($pdo, $userId), true)) {
                 $refund('devuelto'); $refunded = 'Ya lo tenías: se le devuelven los puntos a quien te lo regaló.';
             } elseif ($prev !== null && !$ownsSlug($userId, $prev)) {
                 $refund('devuelto'); $refunded = 'Te falta la mejora anterior: se le devuelven los puntos a quien te lo regaló.';

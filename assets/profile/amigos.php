@@ -19,11 +19,14 @@
    La página está en el Perfil (sección Social → Amigos, apps/perfil.php).
    ────────────────────────────────────────────────────────────────────── */
 
+/* Tablas y migración única: una vez por versión de este archivo
+   (melon_esquema, assets/php/esquema.php), no en cada petición. */
 function amigos_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'amigos', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS friend_requests (
             from_id    INT NOT NULL,
             to_id      INT NOT NULL,
@@ -47,7 +50,7 @@ function amigos_ensure(PDO $pdo): void {
                           LEFT JOIN follows r ON r.follower_id = f.followee_id AND r.followee_id = f.follower_id
                          WHERE r.follower_id IS NULL");
         }
-    } catch (Throwable $e) { error_log('[amigos] ensure: ' . $e->getMessage()); }
+    });
 }
 
 function amigos_uid(PDO $pdo, string $key): int {

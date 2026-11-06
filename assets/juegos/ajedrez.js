@@ -6,10 +6,22 @@
    El navegador no sabe de reglas: el servidor le manda las jugadas que
    valen (legales, en UCI) cuando le toca, y cada jugada va al servidor
    (ajz-mover). Mientras llega la respuesta, la pieza se ve ya movida
-   (moverLocal). La partida se pide cada segundo: así se ve la jugada del
-   rival y además es la señal de vida (60 s sin ella = partida perdida).
-   El menú y el torneo se piden cada 3 s y, si te ha tocado una partida
-   sin abrir (reto aceptado, ronda nueva), entran solos en ella.
+   (moverLocal).
+   Para saber si hay algo nuevo no se pregunta a la API: se miran los
+   archivos del timbre (rt/, assets/php/timbre.php), JSON estáticos que el
+   servidor reescribe cuando cambia algo y que no gastan PHP ni BD. La
+   partida mira el suyo cada segundo y solo pide ajz-partida cuando
+   cambia; además la pide cada 5 s como señal de vida (60 s sin ella =
+   partida perdida) y en cuanto se acaba un plazo (reloj a 0, el rival no
+   entra o no vuelve), para que el servidor lo resuelva. El menú y el
+   torneo miran los suyos cada 2 s, piden a la API de respaldo cada 30 s
+   y justo cuando caduca un reto o empieza un torneo; si te ha tocado una
+   partida sin abrir (reto aceptado, ronda nueva), entran solos en ella.
+   Nunca hay dos peticiones iguales a la vez y, si fallan, se espera más
+   (bucle). Si el timbre no responde, la API como antes (1 s / 3 s).
+   Antes se pedía todo cada 1–3 s con setInterval: con 8 jugadores el
+   servidor no daba abasto y las peticiones se amontonaban (torneo del
+   6/11, .claude/notas/rendimiento.md).
    Piezas: SVG lisas clásicas dibujadas aquí (pieza()), blancas y negras
    fijas; las casillas, con los colores del tema (juegos.php, .az-sq).
    Nada de confirm()/alert(): bloquean las pruebas de Electron (az-conf).
@@ -22,7 +34,9 @@
     var $ = JG.$;
 
     var vista = null;          /* 'menu' | 'crear' | 'torneo' | 'partida' */
-    var menuTimer = null, torTimer = null, partTimer = null, relojTimer = null;
+    var relojTimer = null;     /* relojes de la partida (solo pinta, no llama a nadie) */
+    var ciclo = 0;             /* sube al cambiar de vista: los bucles de la anterior se paran solos */
+    var esperas = [];          /* setTimeout pendientes de la vista (pararTodo) */
     var estado = null;         /* ajz-estado */
     var torneoId = 0, torneo = null;
     var partida = null;        /* ajz-partida (vista del servidor) */
@@ -79,9 +93,100 @@
         return h + ' h' + (min % 60 ? ' ' + (min % 60) + ' min' : '');
     }
     function pararTodo() {
-        [menuTimer, torTimer, partTimer].forEach(function (t) { if (t) clearInterval(t); });
+        ciclo++;
+        esperas.forEach(clearTimeout);
+        esperas = [];
         if (relojTimer) clearInterval(relojTimer);
-        menuTimer = torTimer = partTimer = relojTimer = null;
+        relojTimer = null;
+    }
+
+    /* ── Sondeos ── */
+    /* Cada cuánto, en ms. Mirar un archivo del timbre no gasta PHP ni BD;
+       la API, solo cuando cambia, como señal de vida y de respaldo. Sin
+       timbre (no responde), la API como antes. */
+    var MIRAR_PARTIDA = 1000, MIRAR_OTROS = 2000;
+    var SENAL_MS = 5000, RESPALDO_MS = 30000;
+    var SIN_TIMBRE_PARTIDA = 1000, SIN_TIMBRE_OTROS = 3000;
+
+    /* setTimeout de la vista actual: no se ejecuta si ya se ha cambiado. */
+    function despues(ms, fn) {
+        var c = ciclo;
+        var t = setTimeout(function () {
+            esperas = esperas.filter(function (x) { return x !== t; });
+            if (c === ciclo) fn();
+        }, ms);
+        esperas.push(t);
+        return t;
+    }
+    /* Repite fn esperando a que acabe la vez anterior (fn devuelve una
+       promesa; 'fin' para parar). Si falla (false o error), la siguiente
+       espera el doble, hasta 30 s: con el servidor apurado no se
+       amontonan peticiones. cada: ms, o una función que los da (se mira
+       en cada vuelta). primera: espera antes de la primera vez. */
+    function bucle(cada, fn, primera) {
+        var c = ciclo, veces = 1;
+        function vuelta() {
+            if (c !== ciclo) return;
+            Promise.resolve().then(fn).catch(function () { return false; }).then(function (r) {
+                if (r === 'fin' || c !== ciclo) return;
+                veces = r === false ? Math.min(veces * 2, 32) : 1;
+                despues(Math.min((typeof cada === 'function' ? cada() : cada) * veces, 30000), vuelta);
+            });
+        }
+        if (primera == null) vuelta(); else despues(primera, vuelta);
+    }
+    /* Una llamada a la API que nunca va dos veces a la vez: si se pide
+       mientras va, se repite una vez al acabar. Devuelve true/false. */
+    function unaALaVez(fn) {
+        var va = null, otra = false;
+        return function correr() {
+            if (va) { otra = true; return va; }
+            va = Promise.resolve().then(fn).catch(function () { return false; }).then(function (r) {
+                va = null;
+                if (otra) { otra = false; correr(); }
+                return r;
+            });
+            return va;
+        };
+    }
+    /* Mira un archivo del timbre (ruta desde la raíz de la web; las mismas
+       que rt_url* de assets/php/timbre.php) cada `cada` ms y llama a
+       alCambiar cuando cambian sus `claves`, o cuando opc.distinto(datos)
+       dice que no cuadra con lo que se enseña. La primera lectura solo
+       apunta lo que hay: por eso la vista la espera (listo) antes de su
+       primera llamada a la API; al revés, un cambio entre la respuesta y
+       esa lectura no se notaría. opc.seguir: false para dejar de mirar.
+       Devuelve { ok (el archivo responde), listo (promesa) }. */
+    function mirarTimbre(url, cada, claves, alCambiar, opc) {
+        opc = opc || {};
+        var est = { ok: false }, visto = null, primera = true, avisar;
+        est.listo = new Promise(function (r) { avisar = r; setTimeout(r, 1500); });
+        bucle(cada, function () {
+            if (opc.seguir && !opc.seguir()) return 'fin';
+            return fetch('../' + url, { cache: 'no-cache', credentials: 'same-origin' }).then(function (r) {
+                if (!r.ok) { est.ok = false; return false; }
+                return r.json().then(function (d) {
+                    est.ok = true;
+                    var firma = claves.map(function (k) { return d[k]; }).join('|');
+                    if ((visto !== null && firma !== visto) || (opc.distinto && opc.distinto(d))) alCambiar(d);
+                    visto = firma;
+                    return true;
+                });
+            }).catch(function () { est.ok = false; return false; }).then(function (r) {
+                if (primera) { primera = false; avisar(); }
+                return r;
+            });
+        });
+        return est;
+    }
+    /* Vuelve a pedir algo justo cuando caduca un plazo (empieza un torneo,
+       caduca un reto), con un poco de margen al azar para que no lleguen
+       todos a la vez. Solo uno pendiente. */
+    var plazoT = null;
+    function plazo(msHasta, fn) {
+        if (plazoT) { clearTimeout(plazoT); plazoT = null; }
+        if (msHasta == null || msHasta < 0 || msHasta > 6 * 3600000) return;
+        plazoT = despues(msHasta + 300 + Math.random() * 1500, fn);
     }
 
     /* Ventanita de confirmación (Win98, en vez de confirm()). */
@@ -159,8 +264,17 @@
         pararTodo();
         vista = 'menu';
         JG.show('jg-ajz');
-        cargarMenu();
-        menuTimer = setInterval(cargarMenu, 3000);
+        /* Mi archivo (retos, partidas) y el de la lista de torneos; el
+           menú, en cuanto se han leído, y de respaldo cada 30 s (3 s si
+           el timbre no va). */
+        var c = ciclo;
+        var tYo = mirarTimbre(window.JG_TIMBRE, MIRAR_OTROS, ['ajz'], cargarMenu);
+        var tLista = mirarTimbre('rt/ajz.json', MIRAR_OTROS, ['v'], cargarMenu);
+        Promise.all([tYo.listo, tLista.listo]).then(function () {
+            if (c !== ciclo) return;
+            bucle(function () { return tYo.ok && tLista.ok ? RESPALDO_MS : SIN_TIMBRE_OTROS; }, cargarMenu);
+        });
+        bucle(1000, pintaCuentas, 1000);
         JG.api('ajz-amigos').then(function (r) {
             var s = $('az-amigo'), prev = s.value;
             if (!r || !r.ok) return;
@@ -176,15 +290,36 @@
         }).catch(function () {});
     }
 
-    function cargarMenu() {
+    var cargarMenu = unaALaVez(function () {
         return JG.api('ajz-estado').then(function (r) {
-            if (!r || !r.ok || vista !== 'menu') return;
+            if (!r || !r.ok) return false;
+            if (vista !== 'menu') return true;
             estado = r;
             pintaMenu();
+            plazoMenu();
             /* Reto aceptado / ronda de torneo sin abrir: se entra solo. */
             var nueva = r.partidas.filter(function (p) { return p.nueva && !autoAbiertas[p.id]; })[0];
             if (nueva) { autoAbiertas[nueva.id] = 1; abrirPartida(nueva.id, 'menu'); }
-        }).catch(function () {});
+            return true;
+        });
+    });
+    /* Lo próximo que caduca en el menú: un reto (mío o recibido) o el
+       inicio de un torneo de la lista. */
+    function plazoMenu() {
+        var r = estado, ms = null;
+        var min = function (x) { if (x > 0 && (ms === null || x < ms)) ms = x; };
+        r.recibidos.forEach(function (x) { min(x.quedan); });
+        r.enviados.forEach(function (x) { if (x.estado === 'pendiente') min(x.quedan); });
+        if (r.ahora) r.torneos.forEach(function (t) { if (t.estado === 'inscripcion') min(t.empieza - r.ahora); });
+        plazo(ms, cargarMenu);
+    }
+    /* El "caduca en" de los retos corre aunque no se pida el menú. */
+    function pintaCuentas() {
+        if (vista !== 'menu') return 'fin';
+        Array.prototype.forEach.call(document.querySelectorAll('#az-mios .az-caduca'), function (el) {
+            el.textContent = 'caduca en ' + mmss(+el.dataset.hasta - Date.now());
+        });
+        return true;
     }
 
     function pintaSaldo(n) {
@@ -223,7 +358,8 @@
         });
         r.recibidos.forEach(function (x) {
             var nom = x.de ? esc(x.de.nombre) : '?';
-            fila(x.de, nom + ' te reta', chip('Reto', 'acento') + chip(x.ritmo) + apuestaChip(x.apuesta) + '<span>caduca en ' + mmss(x.quedan) + '</span>',
+            fila(x.de, nom + ' te reta', chip('Reto', 'acento') + chip(x.ritmo) + apuestaChip(x.apuesta) +
+                 '<span class="az-caduca" data-hasta="' + (Date.now() + x.quedan) + '">caduca en ' + mmss(x.quedan) + '</span>',
                  [boton('Rechazar', function (b) { responder(x.id, false, b); }),
                   boton('Aceptar', function (b) { responder(x.id, true, b); })]);
         });
@@ -367,24 +503,34 @@
         torneoId = id;
         JG.show('jg-ajz-torneo');
         $('azt-body').innerHTML = '<div class="az-vacio">Cargando…</div>';
-        cargarTorneo();
-        torTimer = setInterval(cargarTorneo, 3000);
+        /* El archivo del torneo; el torneo, en cuanto se ha leído, y de
+           respaldo cada 30 s (3 s si el timbre no va). */
+        var c = ciclo;
+        var tT = mirarTimbre('rt/t/' + id + '.json', MIRAR_OTROS, ['v'], cargarTorneo);
+        tT.listo.then(function () {
+            if (c !== ciclo) return;
+            bucle(function () { return tT.ok ? RESPALDO_MS : SIN_TIMBRE_OTROS; }, cargarTorneo);
+        });
     }
-    function cargarTorneo() {
+    var cargarTorneo = unaALaVez(function () {
         var id = torneoId;
         return JG.api('ajz-torneo&id=' + id).then(function (r) {
-            if (vista !== 'torneo' || torneoId !== id) return;
-            if (!r || !r.ok) { $('azt-body').innerHTML = '<div class="az-vacio">' + esc((r && r.error) || 'No se ha podido cargar') + '</div>'; return; }
+            if (vista !== 'torneo' || torneoId !== id) return true;
+            if (!r || !r.ok) { $('azt-body').innerHTML = '<div class="az-vacio">' + esc((r && r.error) || 'No se ha podido cargar') + '</div>'; return false; }
             torneo = r.torneo;
             if (estado) estado.autismo = r.autismo;
             pintaTorneo(r.autismo);
+            /* A su hora se pide justo entonces: el servidor lo arranca
+               (o lo cancela si no está lleno) en esa misma petición. */
+            plazo(torneo.estado === 'inscripcion' ? torneo.empieza - torneo.ahora : null, cargarTorneo);
             /* Ronda nueva: a tu partida sin tocar nada. */
             if (torneo.miPartida && !autoAbiertas[torneo.miPartida]) {
                 autoAbiertas[torneo.miPartida] = 1;
                 abrirPartida(torneo.miPartida, 'torneo');
             }
-        }).catch(function () {});
-    }
+            return true;
+        });
+    });
 
     function pintaTorneo(saldo) {
         var t = torneo;
@@ -499,17 +645,44 @@
         Array.prototype.forEach.call(document.querySelectorAll('#azp-wrap .az-capa'), function (c) { c.remove(); });
         $('azp-fin').classList.remove('on');
         $('azp-estado').textContent = 'Cargando…';
-        pedirPartida(id);
-        partTimer = setInterval(function () { pedirPartida(id); }, 1000);
+        reclamado = 0;
+        var c = ciclo;
+        var sigue = function () { return !(partida && partida.id === id && (partida.estado === 'terminada' || partida.estado === 'anulada')); };
+        /* El archivo de la partida, cada segundo: cada jugada del rival se
+           ve en cuanto cambia (o si dice otra cosa que lo que se enseña).
+           La partida, en cuanto se ha leído, y luego cada 5 s como señal de
+           vida (cada segundo si el timbre no va). */
+        var tP = mirarTimbre('rt/p/' + id + '.json', MIRAR_PARTIDA, ['v'], function () { pedirPartida(id); }, {
+            seguir: sigue,
+            distinto: function (d) { return !enviando && partida && partida.id === id && (d.n !== partida.n || d.e !== partida.estado); }
+        });
+        tP.listo.then(function () {
+            if (c !== ciclo) return;
+            bucle(function () { return tP.ok ? SENAL_MS : SIN_TIMBRE_PARTIDA; }, function () {
+                return sigue() ? pedirPartida(id) : 'fin';
+            });
+        });
         relojTimer = setInterval(pintaRelojes, 100);
     }
+    /* Nunca dos a la vez: si se pide mientras va otra, se repite al acabar
+       (con la partida que se pidió la última). */
+    var pidiendo = null, pedirOtra = 0, reclamado = 0;
     function pedirPartida(id) {
+        if (pidiendo) { pedirOtra = id; return pidiendo; }
         var v = version;
-        return JG.api('ajz-partida&id=' + id).then(function (r) {
-            if (vista !== 'partida' || v !== version || enviando) return;
-            if (!r || !r.ok) { $('azp-estado').textContent = (r && r.error) || 'No se ha podido cargar'; return; }
+        pidiendo = JG.api('ajz-partida&id=' + id).then(function (r) {
+            if (vista !== 'partida' || v !== version || enviando) return !!(r && r.ok);
+            if (!r || !r.ok) { $('azp-estado').textContent = (r && r.error) || 'No se ha podido cargar'; return false; }
             recibir(r.partida);
-        }).catch(function () {});
+            return true;
+        }).catch(function () { return false; }).then(function (ok) {
+            pidiendo = null;
+            var otra = pedirOtra;
+            pedirOtra = 0;
+            if (otra && vista === 'partida') pedirPartida(otra);
+            return ok;
+        });
+        return pidiendo;
     }
     function recibir(p) {
         var antes = partida;
@@ -518,9 +691,6 @@
         /* Si ha cambiado la posición, lo elegido ya no vale. */
         if (!antes || antes.n !== p.n || antes.estado !== p.estado) sel = -1;
         pintaPartida();
-        if (p.estado === 'terminada' || p.estado === 'anulada') {
-            if (partTimer) { clearInterval(partTimer); partTimer = null; }
-        }
     }
 
     function pintaPartida() {
@@ -677,6 +847,16 @@
         if (q && p.esperando) q.textContent = mmss(p.esperando.quedan - pasado);
         var f = document.querySelector('#azp-aviso .az-fuera');
         if (f && p.rivalFuera != null) f.textContent = Math.max(0, Math.ceil((p.rivalFuera - pasado) / 1000));
+        /* Se ha acabado un plazo (un reloj, entrar, volver): se pide la
+           partida ya y el servidor lo resuelve (ajz_revisar). Antes lo
+           resolvía la petición de cada segundo; ahora va cada 5 s. Como
+           mucho una vez cada 2 s, por si el reloj de aquí va adelantado. */
+        if ((p.estado === 'jugando' || p.estado === 'esperando') && !enviando && Date.now() - reclamado > 2000) {
+            var vence = (p.estado === 'jugando' && p.reloj.corre && p.reloj[p.reloj.corre] - pasado <= 0) ||
+                        (p.esperando && p.esperando.quedan - pasado <= 0) ||
+                        (p.rivalFuera != null && p.rivalFuera - pasado <= 0);
+            if (vence) { reclamado = Date.now(); pedirPartida(p.id); }
+        }
     }
 
     var MOTIVOS = {

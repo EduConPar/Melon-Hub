@@ -38,6 +38,14 @@
 @ini_set('display_errors', '0');
 header('Cache-Control: no-cache, no-store, must-revalidate');
 
+/* Lo que las ventanas piden solas (señal de vida de la partida, menú,
+   torneo, aviso del haro): si la BD está saturada, un solo reintento
+   corto (melon_pdo en assets/config.php). Esperar dormido ocupa un
+   proceso PHP más y empeora el atasco; la ventana ya volverá a pedir. */
+if (in_array($_GET['action'] ?? '', ['ajz-estado', 'ajz-avisos', 'ajz-partida', 'ajz-torneo'], true)) {
+    define('MELON_DB_RAPIDO', true);
+}
+
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once __DIR__ . '/wordelon.php';
@@ -211,5 +219,6 @@ try {
     }
 } catch (Throwable $e) {
     error_log('[juegos] ' . $e->getMessage());
+    melon_esquemaRevisar($e);
     jsonError('Error del servidor', 500);
 }

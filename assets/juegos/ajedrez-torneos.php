@@ -22,6 +22,11 @@
    Cancelado: aviso del haro a cada apuntado (menos a quien lo cancela)
    con lo que se le ha devuelto (tabla ajz_cancelados, se entrega una vez
    en ajz-avisos) y deja de salir en la lista de torneos del menú.
+   Timbre (assets/php/timbre.php): cada cambio reescribe rt/t/<id>.json
+   (la ventana del torneo lo mira y solo entonces pide ajz-torneo) y
+   rt/ajz.json (la lista del menú). A quien se apunta o se borra se le
+   avisa en su archivo ('aviso'): su escritorio vuelve a mirar cuándo
+   empieza su próximo torneo para llamar a esa hora.
    Tablas: ajz_torneos, ajz_inscritos (pagado = la entrada guardada),
    ajz_cruces (ronda, slot; la final es slot 0 de la última ronda y el
    3.er puesto el slot 1; juegos = partidas jugadas en ese cruce, para
@@ -34,8 +39,9 @@ const AJZ_TOR_MIN_ANTES = 300000;                /* hay que crearlo al menos 5 m
 const AJZ_TOR_MAX_DIAS  = 60;
 const AJZ_TOR_PUNTOS_MAX = 1000000;
 
+/* Tablas: una vez por versión de este archivo (assets/php/esquema.php). */
 function ajz_torEnsure(PDO $pdo): void {
-    try {
+    melon_esquema($pdo, 'ajedrez-torneos', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS ajz_torneos (
             id          INT AUTO_INCREMENT PRIMARY KEY,
             host_id     INT NOT NULL,
@@ -87,7 +93,7 @@ function ajz_torEnsure(PDO $pdo): void {
             UNIQUE KEY uq_cruce (torneo_id, ronda, slot),
             INDEX idx_partida (partida_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE */ }
+    });
 }
 
 function ajz_torRondas(int $plazas): int { return (int)round(log($plazas, 2)); }
@@ -140,7 +146,9 @@ function ajz_torCrear(PDO $pdo, int $uid, array $d): array {
         $pdo->prepare("INSERT INTO ajz_torneos (host_id, nombre, plazas, entrada, premio1, premio2, premio3, base_ms, inc_ms, empieza)
                        VALUES (?,?,?,?,?,?,?,?,?,?)")
             ->execute([$uid, $nombre, $plazas, $n['entrada'], $n['premio1'], $n['premio2'], $n['premio3'], $base, $inc, $empieza]);
-        return (int)$pdo->lastInsertId();
+        $id = (int)$pdo->lastInsertId();
+        rt_torneo($id);
+        return $id;
     });
     ajz_torDiscordLuego($pdo, $id);
     return ['torneo' => $id];
@@ -156,6 +164,8 @@ function ajz_torApuntarse(PDO $pdo, int $uid, int $id): void {
         $pago = $uid === $t['host_id'] ? 0 : $t['entrada'];
         if (!ajz_cobrar($pdo, $uid, $pago)) throw new InvalidArgumentException('No tienes puntos suficientes para la entrada');
         $pdo->prepare("INSERT INTO ajz_inscritos (torneo_id, user_id, pagado, orden) VALUES (?,?,?,?)")->execute([$id, $uid, $pago, bm_ms()]);
+        rt_torneo($id);
+        rt_usuario($uid, 'ajz', 'aviso');
     });
     ajz_torDiscordLuego($pdo, $id);
 }
@@ -170,6 +180,8 @@ function ajz_torSalir(PDO $pdo, int $uid, int $id): void {
         if ($pagado === false) return;
         $pdo->prepare("DELETE FROM ajz_inscritos WHERE torneo_id = ? AND user_id = ?")->execute([$id, $uid]);
         ajz_pagar($pdo, $uid, (int)$pagado);
+        rt_torneo($id);
+        rt_usuario($uid, 'ajz', 'aviso');
     });
     ajz_torDiscordLuego($pdo, $id);
 }
@@ -183,10 +195,12 @@ function ajz_torCancelarDentro(PDO $pdo, array $t, string $motivo): void {
         if (!($motivo === 'anfitrion' && (int)$i['user_id'] === $t['host_id'])) {
             $aviso->execute([(int)$i['user_id'], $t['id'], (int)$i['pagado'], bm_ms()]);
         }
+        rt_usuario((int)$i['user_id'], 'ajz', 'aviso');
     }
     $pdo->prepare("UPDATE ajz_inscritos SET pagado = 0 WHERE torneo_id = ?")->execute([$t['id']]);
     ajz_pagar($pdo, $t['host_id'], $t['premio1'] + $t['premio2'] + $t['premio3']);
     $pdo->prepare("UPDATE ajz_torneos SET estado = 'cancelado', motivo = ? WHERE id = ?")->execute([$motivo, $t['id']]);
+    rt_torneo($t['id']);
 }
 function ajz_torCancelar(PDO $pdo, int $uid, int $id): void {
     ajz_tx($pdo, function () use ($pdo, $uid, $id) {
@@ -229,6 +243,7 @@ function ajz_torArrancar(PDO $pdo, int $id): void {
         shuffle($jug);
         for ($k = 0; $k < count($jug); $k += 2) ajz_torNuevoCruce($pdo, $t, 1, intdiv($k, 2), $jug[$k], $jug[$k + 1]);
         $pdo->prepare("UPDATE ajz_torneos SET estado = 'jugando', ronda = 1 WHERE id = ?")->execute([$id]);
+        rt_torneo($id);
         return true;
     });
     if ($cambio) ajz_torDiscordLuego($pdo, $id);
@@ -258,6 +273,7 @@ function ajz_torPartidaAcabada(PDO $pdo, array $p): void {
     $st->execute([$p['id']]);
     $c = $st->fetch(PDO::FETCH_ASSOC);
     if (!$c || $c['ganador_id'] !== null) return;
+    rt_torneo($t['id']);
     if ($p['resultado'] === '1/2') { ajz_torPartidaCruce($pdo, $t, (int)$c['id']); return; }
     $gana = $p['resultado'] === '1-0' ? $p['blanco_id'] : $p['negro_id'];
     $pdo->prepare("UPDATE ajz_cruces SET ganador_id = ? WHERE id = ?")->execute([$gana, $c['id']]);
@@ -285,6 +301,7 @@ function ajz_torAvanzar(PDO $pdo, array $t): void {
         if ($p3) ajz_pagar($pdo, $p3, $t['premio3']);
         $pdo->prepare("UPDATE ajz_torneos SET estado = 'terminado', primero = ?, segundo = ?, tercero = ? WHERE id = ?")
             ->execute([$p1, $p2, $p3, $t['id']]);
+        rt_torneo($t['id']);
         ajz_torDiscordLuego($pdo, $t['id']);
         return;
     }
@@ -296,6 +313,7 @@ function ajz_torAvanzar(PDO $pdo, array $t): void {
         for ($k = 0; $k < count($gan); $k += 2) ajz_torNuevoCruce($pdo, $t, $sig, intdiv($k, 2), $gan[$k], $gan[$k + 1]);
     }
     $pdo->prepare("UPDATE ajz_torneos SET ronda = ? WHERE id = ?")->execute([$sig, $t['id']]);
+    rt_torneo($t['id']);
     ajz_torDiscordLuego($pdo, $t['id']);
 }
 
@@ -349,6 +367,8 @@ function ajz_torLista(PDO $pdo, int $uid): array {
 function ajz_torVer(PDO $pdo, int $uid, int $id): array {
     ajz_tick($pdo);
     $t = ajz_torCargar($pdo, $id);
+    /* Torneo de antes del timbre: se le crea el archivo. */
+    if (!rt_existe(rt_urlTorneo($id))) rt_torneo($id);
     $ins = ajz_torInscritos($pdo, $id);
     $st = $pdo->prepare("SELECT c.*, p.estado AS p_estado, p.resultado AS p_resultado, p.blanco_id AS p_blanco
                            FROM ajz_cruces c LEFT JOIN ajz_partidas p ON p.id = c.partida_id
