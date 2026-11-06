@@ -526,6 +526,7 @@ function ajz_estado(PDO $pdo, int $uid): array {
             'apuesta' => (int)$p['apuesta'],
             'estado'  => $p['estado'],
             'torneo'  => $p['torneo_id'] ? (int)$p['torneo_id'] : null,
+            'miTurno' => $p['estado'] === 'jugando' && ajz_fen($p['fen'])['t'] === ($w ? 'w' : 'b'),
             /* Sin abrir todavía (para entrar sola desde el menú). */
             'nueva'   => $p['estado'] === 'esperando' && (int)($w ? $p['visto_blanco'] : $p['visto_negro']) === 0,
         ];

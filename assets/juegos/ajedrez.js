@@ -193,43 +193,53 @@
         Array.prototype.forEach.call(document.querySelectorAll('.azc-pt'), function (e) { e.innerHTML = JG.PT; });
     }
 
+    /* Piezas sueltas de adorno: etiquetas, vacíos y copa. */
+    function chip(html, cls) { return '<span class="az-chip' + (cls ? ' ' + cls : '') + '">' + html + '</span>'; }
+    function vacio(txt, letra) { return '<div class="az-vacio-g">' + pieza(letra || 'n') + '<span>' + txt + '</span></div>'; }
+    var COPA = '<svg class="az-copa" viewBox="0 0 13 13" shape-rendering="crispEdges" aria-hidden="true">' +
+        '<path fill="#8a6a10" d="M3 1h7v1h2v3h-1v1h-1v1H9v1H8v1H7v1h2v2H4v-2h2V9H5V8H4V7H3V6H2V5H1V2h2zM2 2v2h1V2zM10 2v2h1V2z"/>' +
+        '<path fill="#e8c547" d="M4 2h5v4H8v1H5V6H4z"/><path fill="#fff2a8" d="M5 2h1v3H5z"/></svg>';
+    function apuestaChip(a) { return a > 0 ? chip(a + ' ' + JG.PT) : chip('Sin apuesta'); }
+
     function pintaMenu() {
         var r = estado;
         pintaSaldo(r.autismo);
         var box = $('az-mios');
         box.innerHTML = '';
-        var fila = function (u, titulo, sub, botones) {
+        var fila = function (u, titulo, chips, botones) {
             var d = document.createElement('div');
             d.className = 'az-item';
-            d.innerHTML = avatar(u) + '<div class="az-item-t"><b>' + titulo + '</b><div class="az-item-sub">' + sub + '</div></div>';
+            d.innerHTML = avatar(u) + '<div class="az-item-t"><b>' + titulo + '</b><div class="az-item-sub">' + chips + '</div></div>';
             var bs = document.createElement('div'); bs.className = 'az-item-btns';
             (botones || []).forEach(function (b) { bs.appendChild(b); });
             d.appendChild(bs);
             box.appendChild(d);
         };
-        var apuestaTxt = function (a) { return a > 0 ? ' · apuesta ' + pts(a) : ' · sin apuesta'; };
         r.partidas.forEach(function (p) {
             var nom = p.rival ? esc(p.rival.nombre) : '?';
-            fila(p.rival, 'Contra ' + nom, p.ritmo + (p.torneo ? ' · torneo' : apuestaTxt(p.apuesta)) + (p.estado === 'esperando' ? ' · empezando' : ' · en juego'),
+            var est = p.estado === 'esperando' ? chip('Empezando', 'acento az-pulso') : (p.miTurno ? chip('Tu turno', 'acento') : chip('Su turno', 'suave'));
+            fila(p.rival, 'Contra ' + nom, est + chip(p.ritmo) + (p.torneo ? chip('Torneo') : apuestaChip(p.apuesta)),
                  [boton(p.estado === 'esperando' ? 'Jugar' : 'Volver', function () { abrirPartida(p.id, 'menu'); })]);
         });
         r.recibidos.forEach(function (x) {
             var nom = x.de ? esc(x.de.nombre) : '?';
-            fila(x.de, nom + ' te reta', x.ritmo + apuestaTxt(x.apuesta) + ' · caduca en ' + mmss(x.quedan),
+            fila(x.de, nom + ' te reta', chip('Reto', 'acento') + chip(x.ritmo) + apuestaChip(x.apuesta) + '<span>caduca en ' + mmss(x.quedan) + '</span>',
                  [boton('Rechazar', function (b) { responder(x.id, false, b); }),
                   boton('Aceptar', function (b) { responder(x.id, true, b); })]);
         });
         r.enviados.forEach(function (x) {
             var nom = x.a ? esc(x.a.nombre) : '?';
             if (x.estado === 'pendiente') {
-                fila(x.a, 'Has retado a ' + nom, x.ritmo + apuestaTxt(x.apuesta) + ' · esperando respuesta',
+                fila(x.a, 'Has retado a ' + nom, chip('Esperando', 'suave az-pulso') + chip(x.ritmo) + apuestaChip(x.apuesta),
                      [boton('Cancelar', function (b) { b.disabled = true; JG.api('ajz-reto-cancelar', { id: x.id }).then(cargarMenu); })]);
             } else {
                 fila(x.a, x.estado === 'rechazado' ? nom + ' ha rechazado tu reto' : 'Tu reto a ' + nom + ' ha caducado',
-                     x.apuesta > 0 ? 'Se te ha devuelto la apuesta' : x.ritmo, []);
+                     '<span>' + (x.apuesta > 0 ? 'Se te ha devuelto la apuesta' : x.ritmo) + '</span>', []);
             }
         });
-        if (!box.children.length) box.innerHTML = '<div class="az-vacio">No tienes partidas ni retos pendientes.</div>';
+        var total = box.children.length;
+        $('az-mios-n').textContent = total ? String(total) : '';
+        if (!total) box.innerHTML = vacio('No tienes partidas ni retos pendientes.<br>¡Reta a un amigo!', 'p');
         pintaListaTorneos();
         $('jg-ajz-state').textContent = r.recibidos.length ? r.recibidos.length + (r.recibidos.length === 1 ? ' reto' : ' retos') : '';
     }
@@ -242,16 +252,23 @@
             d.className = 'az-item az-tor';
             var badge = { inscripcion: t.apuntado ? 'Apuntado' : 'Abierto', jugando: 'En juego', terminado: 'Terminado', cancelado: 'Cancelado' }[t.estado];
             var gris = t.estado === 'terminado' || t.estado === 'cancelado';
-            d.innerHTML = '<div class="az-item-t"><b>' + esc(t.nombre) + '</b>' +
-                '<div class="az-item-sub">Organiza ' + esc(t.host ? t.host.nombre : '?') + ' · ' + fechaCorta(t.empieza) + ' · ' + t.ritmo +
-                ' · ' + t.apuntados + '/' + t.plazas + ' jugadores</div>' +
-                '<div class="az-item-sub">Entrada ' + (t.entrada > 0 ? pts(t.entrada) : 'gratis') +
-                ' · Premios ' + t.premios[0] + ' / ' + t.premios[1] + ' / ' + t.premios[2] + ' ' + JG.PT + '</div></div>' +
-                '<span class="az-badge' + (gris ? ' gris' : '') + '">' + badge + '</span>';
+            var o = madrid(t.empieza);
+            var lleno = Math.round(100 * t.apuntados / t.plazas);
+            d.innerHTML =
+                '<div class="az-dia az-hundido"><i>' + MESES[+o.month - 1] + '</i><b>' + (+o.day) + '</b><small>' + o.hour + ':' + o.minute + '</small></div>' +
+                '<div class="az-item-t"><b>' + esc(t.nombre) + '</b>' +
+                    '<div class="az-item-sub"><span>Organiza ' + esc(t.host ? t.host.nombre : '?') + '</span>' + chip(t.ritmo) +
+                    chip(t.entrada > 0 ? 'Entrada ' + t.entrada + ' ' + JG.PT : 'Entrada gratis') + '</div>' +
+                    '<div class="az-plazas"><div class="az-barra az-hundido"><span style="width:' + lleno + '%"></span></div>' +
+                    '<span class="az-item-sub">' + t.apuntados + '/' + t.plazas + ' jugadores</span></div></div>' +
+                '<div class="az-tor-der"><span class="az-badge' + (gris ? ' gris' : '') + '">' + badge + '</span>' +
+                    '<div class="az-meds">' + [0, 1, 2].map(function (i) {
+                        return '<span><i class="bm-med m' + (i + 1) + '">' + (i + 1) + '</i>' + t.premios[i] + '</span>';
+                    }).join('') + JG.PT + '</div></div>';
             d.addEventListener('click', function () { abrirTorneo(t.id); });
             box.appendChild(d);
         });
-        if (!box.children.length) box.innerHTML = '<div class="az-vacio">No hay torneos. ¡Crea uno!</div>';
+        if (!box.children.length) box.innerHTML = vacio('No hay torneos ahora mismo.<br>¡Crea el primero!', 'k');
     }
 
     function responder(id, aceptar, b) {
@@ -290,13 +307,43 @@
             $('azc-empieza').value = o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute;
         }
         if (estado) pintaSaldo(estado.autismo);
-        coste();
+        resumen();
     }
-    function coste() {
-        var p = ['azc-p1', 'azc-p2', 'azc-p3'].reduce(function (s, id) { return s + Math.max(0, +$(id).value || 0); }, 0);
-        $('azc-coste').innerHTML = p > 0 ? 'Al crearlo se te quitan <b>' + p + '</b> ' + JG.PT + ' para los premios.' : 'Sin premios: crearlo no te cuesta nada.';
+    /* Fecha de un <input type=datetime-local> (hora de Madrid) en texto. */
+    function fechaInput(v) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || '');
+        if (!m) return '—';
+        var wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+        return DIAS[wd] + ' ' + (+m[3]) + ' ' + MESES[+m[2] - 1] + ', ' + m[4] + ':' + m[5];
     }
-    ['azc-p1', 'azc-p2', 'azc-p3'].forEach(function (id) { $(id).addEventListener('input', coste); });
+    /* Podio de premios: 2.º, 1.º, 3.º (con las fotos si ya hay ganadores). */
+    function podio(us, premios) {
+        return '<div class="az-podio">' + [1, 0, 2].map(function (i) {
+            var u = us && us[i];
+            return '<div class="az-podio-col p' + (i + 1) + '">' +
+                (u ? avatar(u) + '<span class="az-podio-nom">' + esc(u.nombre) + '</span>' : '') +
+                '<span class="az-podio-pt">' + premios[i] + JG.PT + '</span>' +
+                '<div class="az-podio-caja az-relieve"><i class="bm-med m' + (i + 1) + '">' + (i + 1) + '</i></div></div>';
+        }).join('') + '</div>';
+    }
+    function resumen() {
+        var v = function (id) { return Math.max(0, +$(id).value || 0); };
+        var pr = [v('azc-p1'), v('azc-p2'), v('azc-p3')], coste = pr[0] + pr[1] + pr[2];
+        var plazas = +$('azc-plazas').value, rondas = Math.round(Math.log(plazas) / Math.LN2), entrada = v('azc-entrada');
+        var fila = function (a, b) { return '<div class="az-res-fila"><span>' + a + '</span><b>' + b + '</b></div>'; };
+        $('azc-resumen').innerHTML = podio(null, pr) +
+            '<div>' +
+            fila('Empieza', fechaInput($('azc-empieza').value)) +
+            fila('Ritmo', v('azc-min') + '+' + v('azc-inc')) +
+            fila('Rondas', rondas + ' (' + nombreRonda(1, rondas) + (rondas > 1 ? ' → Final' : '') + ')') +
+            fila('Entradas', entrada > 0 ? 'hasta ' + (entrada * plazas) + ' ' + JG.PT : 'gratis') +
+            '</div>' +
+            '<div class="az-res-total az-hundido">Te cuesta ahora<br><b>' + coste + '</b> ' + JG.PT + '</div>';
+    }
+    ['azc-p1', 'azc-p2', 'azc-p3', 'azc-entrada', 'azc-min', 'azc-inc', 'azc-empieza', 'azc-plazas'].forEach(function (id) {
+        $(id).addEventListener('input', resumen);
+        $(id).addEventListener('change', resumen);
+    });
     $('azc-crear').addEventListener('click', function () {
         var b = $('azc-crear'), msg = $('azc-msg');
         msg.textContent = '';
@@ -343,39 +390,33 @@
         var t = torneo;
         $('azt-title').textContent = t.nombre;
         $('azt-sub').innerHTML = 'Organiza ' + esc(t.host ? t.host.nombre : '?') + ' · tienes ' + pts(saldo);
-        var h = '';
-        h += '<div class="az-tor-campos">' +
-            '<div class="bm-campo"><small>Empieza</small><b>' + fechaCorta(t.empieza) + '</b></div>' +
-            '<div class="bm-campo"><small>Ritmo</small><b>' + t.ritmo + '</b></div>' +
-            '<div class="bm-campo"><small>Jugadores</small><b>' + t.apuntados + '/' + t.plazas + '</b></div>' +
-            '<div class="bm-campo"><small>Entrada</small><b>' + (t.entrada > 0 ? t.entrada : 'Gratis') + '</b>' + (t.entrada > 0 ? JG.PT : '') + '</div>' +
-            '<div class="bm-campo ancho"><small>Premios</small><b class="az-pod">' +
-                '<span><i class="bm-med m1">1</i>' + t.premios[0] + '</span><span><i class="bm-med m2">2</i>' + t.premios[1] +
-                '</span><span><i class="bm-med m3">3</i>' + t.premios[2] + '</span></b></div>' +
-            '</div>';
-        var est = '';
-        if (t.estado === 'inscripcion') {
-            var falta = t.empieza - t.ahora;
-            est = 'Empieza dentro de ' + dentroDe(falta) + '. Si a esa hora no está lleno, se cancela y se devuelve todo.';
-        } else if (t.estado === 'jugando') est = 'En juego · ' + t.rondaNombre;
-        else if (t.estado === 'terminado') est = 'Terminado';
-        else est = t.motivo === 'vacio' ? 'Cancelado: no se llenó a tiempo. Se ha devuelto todo.' : 'Cancelado por quien lo organizaba. Se ha devuelto todo.';
-        h += '<section class="bm-win"><div class="bm-win-bar"><span>' + esc(est) + '</span></div><div class="bm-win-body">';
-        if (t.podio) {
-            h += '<div class="az-pod" style="margin-bottom:8px">' + t.podio.map(function (u, i) {
-                return u ? '<span><i class="bm-med m' + (i + 1) + '">' + (i + 1) + '</i>' + avatar(u) + ' <b>' + esc(u.nombre) + '</b> +' + pts(t.premios[i]) + '</span>' : '';
-            }).join('') + '</div>';
+        var est, badge;
+        if (t.estado === 'inscripcion') { est = 'Inscripción abierta'; badge = 'Empieza en ' + dentroDe(t.empieza - t.ahora); }
+        else if (t.estado === 'jugando') { est = t.rondaNombre; badge = 'En juego'; }
+        else if (t.estado === 'terminado') { est = t.podio && t.podio[0] ? 'Campeón: ' + t.podio[0].nombre : 'Terminado'; badge = 'Terminado'; }
+        else { est = t.motivo === 'vacio' ? 'Cancelado: no se llenó a tiempo' : 'Cancelado por quien lo organizaba'; badge = 'Cancelado'; }
+        var campo = function (k, v) { return '<div class="bm-campo"><small>' + k + '</small><b>' + v + '</b></div>'; };
+        var h = '<section class="bm-win"><div class="bm-win-bar">' + COPA.replace('az-copa', 'bm-ic az-copa" width="13" height="13') +
+            '<span>' + esc(est) + '</span><span class="bm-win-bar-r"><span class="az-badge' + (t.estado === 'cancelado' || t.estado === 'terminado' ? ' gris' : '') + '">' + esc(badge) + '</span></span></div>' +
+            '<div class="bm-win-body az-tor-cab"><div>' +
+                '<div class="az-tor-datos">' + campo('Empieza', fechaCorta(t.empieza)) + campo('Ritmo', t.ritmo) +
+                    campo('Jugadores', t.apuntados + '/' + t.plazas) + campo('Entrada', t.entrada > 0 ? t.entrada + ' ' + JG.PT : 'Gratis') + '</div>' +
+                (t.estado === 'inscripcion' ? '<div class="bm-nota">Si a la hora de inicio no está lleno, se cancela y se devuelve todo.</div>' : '') +
+                (t.estado === 'cancelado' ? '<div class="bm-nota">Se ha devuelto todo: entradas y premios.</div>' : '') +
+                '<div class="az-acc" id="azt-acc" style="justify-content:flex-start;margin-top:8px"></div><div class="az-err" id="azt-msg" style="margin-top:4px"></div>' +
+            '</div>' + podio(t.podio, t.premios) + '</div></section>';
+        if (t.cuadro.length) {
+            h += '<section class="bm-win"><div class="bm-win-bar"><span>Cuadro</span></div><div class="bm-win-body"><div class="az-cuadro-scroll">' + cuadroHtml(t) + '</div></div></section>';
         }
-        h += '<div class="az-acc" id="azt-acc" style="justify-content:flex-start"></div><div class="az-err" id="azt-msg" style="margin-top:4px"></div></div></section>';
-        if (t.cuadro.length) h += '<section class="bm-win"><div class="bm-win-bar"><span>Cuadro</span></div><div class="bm-win-body"><div class="az-cuadro">' + cuadroHtml(t) + '</div></div></section>';
-        h += '<section class="bm-win"><div class="bm-win-bar"><span>Apuntados (' + t.apuntados + '/' + t.plazas + ')</span></div><div class="bm-win-body"><div class="az-apuntados">' +
-            (t.lista.length ? t.lista.map(function (u) { return '<span>' + avatar(u) + esc(u.nombre) + '</span>'; }).join('') : '<span class="az-vacio">Todavía no hay nadie.</span>') +
-            '</div></div></section>';
+        var chips = t.lista.map(function (u) { return '<span class="az-pj az-relieve' + (u.key === t.yoKey ? ' yo' : '') + '">' + avatar(u) + esc(u.nombre) + '</span>'; });
+        if (t.estado === 'inscripcion') for (var k = t.lista.length; k < t.plazas; k++) chips.push('<span class="az-pj libre">Libre</span>');
+        h += '<section class="bm-win"><div class="bm-win-bar"><span>Jugadores</span><span class="bm-win-bar-r">' + t.apuntados + '/' + t.plazas + '</span></div>' +
+            '<div class="bm-win-body"><div class="az-apuntados">' + (chips.length ? chips.join('') : '<span class="az-vacio">Todavía no hay nadie.</span>') + '</div></div></section>';
         var prevMsg = $('azt-msg') ? $('azt-msg').textContent : '';
-        var body = $('azt-body'), top = body.scrollTop, cq = body.querySelector('.az-cuadro'), izq = cq ? cq.scrollLeft : 0;
+        var body = $('azt-body'), top = body.scrollTop, cq = body.querySelector('.az-cuadro-scroll'), izq = cq ? cq.scrollLeft : 0;
         body.innerHTML = h;
         body.scrollTop = top;
-        if (body.querySelector('.az-cuadro')) body.querySelector('.az-cuadro').scrollLeft = izq;
+        if (body.querySelector('.az-cuadro-scroll')) body.querySelector('.az-cuadro-scroll').scrollLeft = izq;
         $('azt-msg').textContent = prevMsg;
         var acc = $('azt-acc');
         var hacer = function (accion, b) {
@@ -385,11 +426,11 @@
                 cargarTorneo();
             }).catch(function () { b.disabled = false; });
         };
-        if (t.miPartida) acc.appendChild(boton('Ir a mi partida', function () { abrirPartida(t.miPartida, 'torneo'); }));
+        if (t.miPartida) acc.appendChild(boton('Ir a mi partida', function () { abrirPartida(t.miPartida, 'torneo'); }, 'az-retar-btn'));
         if (t.estado === 'inscripcion') {
             if (!t.apuntado && t.apuntados < t.plazas) {
                 var precio = t.soyHost || t.entrada <= 0 ? 'Apuntarme' : 'Apuntarme (' + t.entrada + ' puntos)';
-                acc.appendChild(boton(precio, function (b) { hacer('ajz-torneo-apuntarse', b); }));
+                acc.appendChild(boton(precio, function (b) { hacer('ajz-torneo-apuntarse', b); }, 'az-retar-btn'));
             }
             if (t.apuntado) acc.appendChild(boton('Borrarme', function (b) { hacer('ajz-torneo-salir', b); }));
             if (t.soyHost) acc.appendChild(boton('Cancelar torneo', function (b) {
@@ -400,21 +441,27 @@
         if (!acc.children.length) acc.style.display = 'none';
     }
 
+    /* Cuadro: una columna por ronda, cruces repartidos a lo alto (cada
+       celda ocupa lo mismo que sus dos de la ronda anterior) y líneas que
+       los unen (.az-linea / .az-entra en juegos.php); al final, el campeón
+       y, debajo, la partida por el 3.er puesto. */
     function cuadroHtml(t) {
         var porRonda = {};
         t.cuadro.forEach(function (c) { (porRonda[c.ronda] = porRonda[c.ronda] || []).push(c); });
-        var yo = t.yoKey || null;
-        var html = '';
+        var html = '<div class="az-cuadro">';
         for (var r = 1; r <= t.rondas; r++) {
             var cs = porRonda[r] || [];
             var n = r < t.rondas ? t.plazas / Math.pow(2, r) : 1;
-            html += '<div class="az-ronda"><div class="az-ronda-tit">' + esc(nombreRonda(r, t.rondas)) + '</div><div class="az-ronda-cr">';
-            for (var s = 0; s < n; s++) html += cruceHtml(cs.filter(function (c) { return c.slot === s; })[0], yo);
-            if (r === t.rondas) {
-                html += '<div class="az-ronda-tit" style="margin-top:6px">3.er puesto</div>' + cruceHtml(cs.filter(function (c) { return c.slot === 1; })[0], yo);
-            }
+            html += '<div class="az-ronda' + (r < t.rondas ? ' az-linea' : '') + (r > 1 ? ' az-entra' : '') + '">' +
+                '<div class="az-ronda-tit">' + esc(nombreRonda(r, t.rondas)) + '</div><div class="az-ronda-cr">';
+            for (var s = 0; s < n; s++) html += '<div class="az-celda">' + cruceHtml(cs.filter(function (c) { return c.slot === s; })[0], t.yoKey) + '</div>';
             html += '</div></div>';
         }
+        var camp = t.podio && t.podio[0];
+        html += '<div class="az-campeon"><div class="az-ronda-tit">Campeón</div><div class="az-campeon-caja">' + COPA +
+            (camp ? avatar(camp) + '<b>' + esc(camp.nombre) + '</b>' : '<span class="az-vacio">?</span>') + '</div></div></div>';
+        var ter = (porRonda[t.rondas] || []).filter(function (c) { return c.slot === 1; })[0];
+        html += '<div class="az-tercero"><b>3.er puesto</b>' + cruceHtml(ter, t.yoKey) + '</div>';
         return html;
     }
     function nombreRonda(r, total) {
@@ -422,15 +469,20 @@
         return f === 0 ? 'Final' : (['Semifinales', 'Cuartos', 'Octavos', 'Dieciseisavos'][f - 1] || 'Ronda ' + r);
     }
     function cruceHtml(c, yo) {
-        if (!c) return '<div class="az-cruce"><div class="az-cr-j"><span class="az-vacio">—</span></div><div class="az-cr-j"><span class="az-vacio">—</span></div></div>';
+        if (!c) return '<div class="az-cruce az-hundido"><div class="az-cr-j"><span class="az-cr-nom az-vacio">Por decidir</span></div><div class="az-cr-j"><span class="az-cr-nom az-vacio">Por decidir</span></div></div>';
+        var mio = yo && ((c.a && c.a.key === yo) || (c.b && c.b.key === yo));
         var j = function (u, lado) {
             var cls = c.ganador ? (c.ganador === lado ? ' gana' : ' pierde') : '';
             if (u && yo && u.key === yo) cls += ' yo';
-            return '<div class="az-cr-j' + cls + '">' + avatar(u, 18) + '<span class="az-cr-nom">' + esc(u ? u.nombre : '?') + '</span></div>';
+            return '<div class="az-cr-j' + cls + '">' + avatar(u, 18) + '<span class="az-cr-nom">' + esc(u ? u.nombre : '?') + '</span>' +
+                (c.ganador === lado ? '<i class="bm-med m1" style="width:13px;height:13px;font-size:8px">✓</i>' : '') + '</div>';
         };
-        var est = c.estado === 'hecho' ? '' : (c.estado === 'jugando' ? 'Jugando' : 'Empezando');
+        var est = '';
+        if (c.estado === 'jugando') est = '<span class="az-punto"></span>Jugando';
+        else if (c.estado !== 'hecho') est = 'Empezando';
         if (c.estado !== 'hecho' && c.juegos > 1) est += ' · desempate ' + (c.juegos - 1);
-        return '<div class="az-cruce">' + j(c.a, 'a') + j(c.b, 'b') + (est ? '<div class="az-cr-est">' + est + '</div>' : '') + '</div>';
+        return '<div class="az-cruce az-hundido' + (mio && c.estado !== 'hecho' ? ' mio' : '') + '">' + j(c.a, 'a') + j(c.b, 'b') +
+            (est ? '<div class="az-cr-est">' + est + '</div>' : '') + '</div>';
     }
 
     /* ── Partida ── */
@@ -439,10 +491,12 @@
         vista = 'partida';
         volverA = desde || 'menu';
         partida = null; sel = -1; enviando = false;
-        pintadoId = 0; firmaTablero = ''; jugadasPintadas = -1;
+        pintadoId = 0; firmaTablero = ''; jugadasPintadas = -1; animClave = ''; finMostrado = 0;
         version++;
         JG.show('jg-ajz-partida');
+        ajustaTablero();
         $('azp-board').innerHTML = '';
+        Array.prototype.forEach.call(document.querySelectorAll('#azp-wrap .az-capa'), function (c) { c.remove(); });
         $('azp-fin').classList.remove('on');
         $('azp-estado').textContent = 'Cargando…';
         pedirPartida(id);
@@ -476,14 +530,18 @@
         $('azp-sub').innerHTML = p.torneo ? esc(p.torneo.ronda) + ' · ' + p.ritmo : p.ritmo + (p.apuesta > 0 ? ' · apuesta ' + pts(p.apuesta) : ' · sin apuesta');
         $('azp-back').textContent = volverA === 'torneo' ? '< Torneo' : '< Ajedrez';
         var jug = function (u, color) {
-            return avatar(u) + '<div class="az-jug-nom">' + esc(u ? u.nombre : '?') + '<small>' + (color === 'w' ? 'Blancas' : 'Negras') + '</small></div>' +
-                '<div class="az-reloj" data-c="' + color + '"></div>';
+            return '<div class="az-jug-top">' + avatar(u) + '<div class="az-jug-nom">' + esc(u ? u.nombre : '?') +
+                '<small><i class="az-color ' + color + '"></i>' + (color === 'w' ? 'Blancas' : 'Negras') + '</small></div>' +
+                '<div class="az-reloj az-hundido" data-c="' + color + '"></div></div><div class="az-comidas" data-c="' + color + '"></div>';
         };
+        var cR = p.yo === 'b' ? 'w' : 'b', cY = p.yo === 'b' ? 'b' : 'w';
         if (pintadoId !== p.id) {
             pintadoId = p.id;
-            $('azp-rival').innerHTML = jug(rival, p.yo === 'b' ? 'w' : 'b');
-            $('azp-yo').innerHTML = jug(yo, p.yo === 'b' ? 'b' : 'w');
+            $('azp-rival').innerHTML = jug(rival, cR);
+            $('azp-yo').innerHTML = jug(yo, cY);
         }
+        $('azp-rival').classList.toggle('turno', p.estado === 'jugando' && p.turno === cR);
+        $('azp-yo').classList.toggle('turno', p.estado === 'jugando' && p.turno === cY);
         /* El tablero, si ha cambiado algo (y nunca a media pieza arrastrada). */
         var firma = p.fen + '|' + p.estado + '|' + sel + '|' + p.legales.length;
         if (firma !== firmaTablero && !arr) pintaTablero();
@@ -492,7 +550,46 @@
         pintaEstado(rival);
     }
 
-    var pintadoId = 0, firmaTablero = '', jugadasPintadas = -1;
+    /* Piezas comidas por cada uno y ventaja de material (lo que falta de
+       las 16 de salida; las coronadas de más cuentan como peones comidos). */
+    var INICIO = { q: 1, r: 2, b: 2, n: 2, p: 8 }, VALOR = { q: 9, r: 5, b: 3, n: 3, p: 1 };
+    function pintaComidas(b) {
+        var cuenta = { w: {}, b: {} }, mat = { w: 0, b: 0 };
+        for (var i = 0; i < 64; i++) {
+            var x = b[i];
+            if (x === '.' || x.toLowerCase() === 'k') continue;
+            var c = x === x.toUpperCase() ? 'w' : 'b', t = x.toLowerCase();
+            cuenta[c][t] = (cuenta[c][t] || 0) + 1;
+            mat[c] += VALOR[t];
+        }
+        ['w', 'b'].forEach(function (c) {
+            var otro = c === 'w' ? 'b' : 'w', cnt = cuenta[otro], extra = 0, h = '';
+            ['q', 'r', 'b', 'n'].forEach(function (t) { extra += Math.max(0, (cnt[t] || 0) - INICIO[t]); });
+            ['q', 'r', 'b', 'n', 'p'].forEach(function (t) {
+                var falta = t === 'p' ? Math.max(0, 8 - (cnt.p || 0) - extra) : Math.max(0, INICIO[t] - (cnt[t] || 0));
+                for (var k = 0; k < falta; k++) {
+                    var svg = pieza(otro === 'w' ? t.toUpperCase() : t);
+                    h += k === 0 && h ? svg.replace('class="az-pz', 'class="az-pz sep') : svg;
+                }
+            });
+            var dif = mat[c] - mat[otro];
+            if (dif > 0) h += '<b>+' + dif + '</b>';
+            var el = document.querySelector('#jg-ajz-partida .az-comidas[data-c="' + c + '"]');
+            if (el) el.innerHTML = h;
+        });
+    }
+
+    /* Tamaño de casilla según el sitio que deja la ventana. */
+    function ajustaTablero() {
+        var m = $('azp-main');
+        if (!m || !m.clientWidth) return;
+        var lado = Math.min(m.clientWidth, m.clientHeight) - 8;
+        var sq = Math.max(32, Math.min(80, Math.floor(lado / 8)));
+        document.documentElement.style.setProperty('--az-sq', sq + 'px');
+    }
+    if (window.ResizeObserver) new ResizeObserver(ajustaTablero).observe($('azp-main'));
+
+    var pintadoId = 0, firmaTablero = '', jugadasPintadas = -1, animClave = '', sinAnim = false, finMostrado = 0;
     function pintaTablero() {
         var p = partida, b = tableroDe(p.fen), flip = p.yo === 'b';
         firmaTablero = p.fen + '|' + p.estado + '|' + sel + '|' + p.legales.length;
@@ -518,20 +615,37 @@
             h += '<div class="' + cls + '" data-s="' + s + '">' + coord + (b[s] !== '.' ? pieza(b[s]) : '') + '</div>';
         }
         board.innerHTML = h;
+        /* La última jugada se ve deslizarse (no si la acabas de soltar tú
+           arrastrando, ni al abrir la partida). */
+        var clave = p.fen.split(' ')[0] + (p.ultima || '');
+        if (p.ultima && animClave && clave !== animClave && !sinAnim) {
+            var de = board.querySelector('[data-s="' + ult[0] + '"]'), a = board.querySelector('[data-s="' + ult[1] + '"]');
+            var pz = a && a.querySelector('.az-pz');
+            if (de && pz) {
+                var r1 = de.getBoundingClientRect(), r2 = a.getBoundingClientRect();
+                pz.style.transform = 'translate(' + (r1.left - r2.left) + 'px,' + (r1.top - r2.top) + 'px)';
+                pz.getBoundingClientRect();
+                pz.classList.add('mueve');
+                pz.style.transform = '';
+            }
+        }
+        animClave = clave;
+        sinAnim = false;
+        pintaComidas(b);
         pintaCapa();
     }
 
     /* Encima del tablero: esperando a que entre el rival. */
     function pintaCapa() {
         var p = partida, wrap = $('azp-wrap');
-        var vieja = wrap.querySelector('.az-capa:not(.coronar)');
+        var vieja = wrap.querySelector('.az-capa.espera');
         if (p.estado !== 'esperando') { if (vieja) vieja.remove(); return; }
         if (vieja) return;
         var rival = p.yo === 'b' ? p.blanco : p.negro;
         var capa = document.createElement('div');
-        capa.className = 'az-capa';
+        capa.className = 'az-capa espera';
         capa.innerHTML = '<div class="window"><div class="title-bar"><div class="title-bar-text">Empezando</div></div><div class="window-body">' +
-            'Esperando a <b>' + esc(rival ? rival.nombre : '?') + '</b>…<br>Si no entra en <b class="az-quedan"></b>, ' +
+            avatar(rival, 40) + '<br>Esperando a <b>' + esc(rival ? rival.nombre : '?') + '</b>…<br>Si no entra en <b class="az-quedan"></b>, ' +
             (p.torneo ? 'gana quien está.' : 'se anula y se devuelve la apuesta.') + '</div></div>';
         wrap.appendChild(capa);
         pintaRelojes();
@@ -580,8 +694,10 @@
         $('azp-btns').style.display = activa ? '' : 'none';
         $('azp-tablas').disabled = p.estado !== 'jugando' || p.tablas === 'yo';
         $('azp-tablas').textContent = p.tablas === 'yo' ? 'Tablas ofrecidas' : 'Ofrecer tablas';
+        var miTurno = p.estado === 'jugando' && p.turno === p.yo;
+        est.className = 'az-estado' + (miTurno ? (p.jaque ? ' jaque' : ' yo') : '');
         if (p.estado === 'esperando') est.textContent = 'Esperando a ' + (rival ? rival.nombre : 'tu rival');
-        else if (p.estado === 'jugando') est.textContent = (p.turno === p.yo ? 'Te toca' : 'Le toca a ' + (rival ? rival.nombre : 'tu rival')) + (p.jaque ? ' · ¡Jaque!' : '');
+        else if (p.estado === 'jugando') est.textContent = miTurno ? (p.jaque ? '¡Jaque! Te toca' : 'Te toca') : 'Le toca a ' + (rival ? rival.nombre : 'tu rival') + (p.jaque ? ' · jaque' : '');
         else est.textContent = '';
         if (p.estado === 'jugando' && p.tablas === 'rival') {
             aviso.innerHTML = '<div class="az-aviso"><b>' + nomR + '</b> ofrece tablas<div class="az-btns" style="margin-top:4px"></div></div>';
@@ -592,23 +708,45 @@
             aviso.innerHTML = '<div class="az-aviso"><b>' + nomR + '</b> se ha desconectado.<br>Si no vuelve en <b class="az-fuera"></b> s, ganas.</div>';
         }
         if (activa) { fin.classList.remove('on'); return; }
-        var h;
+
+        /* Final: ventana encima del tablero (una vez) y resumen a la derecha. */
+        var titulo, texto = '', ptsTxt = '', ic;
+        var miRey = p.yo === 'b' ? 'k' : 'K', suRey = p.yo === 'b' ? 'K' : 'k';
         if (p.estado === 'anulada') {
-            h = '<b>Partida anulada</b><br>' + nomR + ' no entró a tiempo.' + (p.apuesta > 0 ? '<br>Se ha devuelto la apuesta.' : '');
+            titulo = 'Partida anulada';
+            texto = nomR + ' no entró a tiempo.';
+            if (p.apuesta > 0) ptsTxt = 'Se te devuelve la apuesta';
+            ic = pieza(miRey) + pieza(suRey);
         } else {
             var gano = (p.resultado === '1-0' && p.yo === 'w') || (p.resultado === '0-1' && p.yo === 'b');
-            var titulo = p.resultado === '1/2' ? 'Tablas' : (gano ? '¡Has ganado!' : 'Has perdido');
-            h = '<b>' + titulo + '</b><br>' + esc(MOTIVOS[p.motivo] || '').replace(/^./, function (c) { return c.toUpperCase(); });
-            if (p.puntos > 0) h += '<br>+' + pts(p.puntos * 2) + ' (la apuesta de los dos)';
-            else if (p.puntos < 0) h += '<br>Pierdes los ' + pts(-p.puntos) + ' de la apuesta';
-            else if (p.apuesta > 0 && p.resultado === '1/2') h += '<br>Cada uno recupera su apuesta';
-            if (p.torneo && p.resultado === '1/2') h += '<br>Se juega otra con los colores cambiados.';
+            var tablasR = p.resultado === '1/2';
+            titulo = tablasR ? 'Tablas' : (gano ? '¡Has ganado!' : 'Has perdido');
+            texto = esc(MOTIVOS[p.motivo] || '').replace(/^./, function (c) { return c.toUpperCase(); });
+            if (p.puntos > 0) ptsTxt = '+' + (p.puntos * 2) + ' ' + JG.PT;
+            else if (p.puntos < 0) ptsTxt = '−' + (-p.puntos) + ' ' + JG.PT;
+            else if (p.apuesta > 0 && tablasR) ptsTxt = 'Recuperas tu apuesta';
+            if (p.torneo && tablasR) texto += '<br>Se juega otra con los colores cambiados.';
+            ic = tablasR ? pieza(miRey) + pieza(suRey)
+                : gano ? pieza(miRey) + pieza(suRey).replace('class="az-pz', 'class="az-pz caido')
+                       : pieza(miRey).replace('class="az-pz', 'class="az-pz caido') + pieza(suRey);
         }
-        fin.innerHTML = h + '<div class="az-btns" style="margin-top:6px"></div>';
-        var bs2 = fin.querySelector('.az-btns');
-        if (p.torneo) bs2.appendChild(boton('Ver el torneo', function () { abrirTorneo(p.torneo.id); }));
-        else bs2.appendChild(boton('Volver', volver));
+        var salir = p.torneo ? 'Ver el torneo' : 'Volver';
+        var irse = function () { if (p.torneo) abrirTorneo(p.torneo.id); else volver(); };
+        fin.innerHTML = '<b>' + titulo + '</b>' + (ptsTxt ? ' · ' + ptsTxt : '') + '<div class="az-btns" style="margin-top:6px"></div>';
+        fin.querySelector('.az-btns').appendChild(boton(salir, irse));
         fin.classList.add('on');
+        if (finMostrado === p.id) return;
+        finMostrado = p.id;
+        var wrap = $('azp-wrap');
+        var capa = document.createElement('div');
+        capa.className = 'az-capa final';
+        capa.innerHTML = '<div class="window"><div class="title-bar"><div class="title-bar-text">Fin de la partida</div></div><div class="window-body">' +
+            '<div class="az-fin-ic">' + ic + '</div><div class="az-fin-tit">' + titulo + '</div><div>' + texto + '</div>' +
+            (ptsTxt ? '<div class="az-fin-pts az-hundido">' + ptsTxt + '</div>' : '') + '<div class="az-fin-btns"></div></div></div>';
+        var bs3 = capa.querySelector('.az-fin-btns');
+        bs3.appendChild(boton('Ver el tablero', function () { capa.remove(); }));
+        bs3.appendChild(boton(salir, irse));
+        wrap.appendChild(capa);
     }
 
     function volver() {
@@ -745,6 +883,7 @@
             return;
         }
         var s = cancelar ? -1 : casillaEn(e.clientX, e.clientY);
+        sinAnim = true;
         if (s >= 0 && s !== a.de && intentar(a.de, s)) return;
         pintaTablero();
     }

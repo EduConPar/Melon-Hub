@@ -368,46 +368,118 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .bm-card-ic { --cs: 18px; }
         .bm-card-ic .bm-c { width: 18px; height: 18px; font-size: 12px; }
 
-        /* ── Ajedrez (assets/juegos/ajedrez.js) ───────────────────────── */
+        /* ── Ajedrez (assets/juegos/ajedrez.js) ─────────────────────────
+           Todo con las variables del tema (también con tema oscuro y en
+           Kawaii, que cambia relieves por bordes). Piezas blancas y negras
+           fijas: son "contenido", como los números del Buscaminas. */
         #jg-ajz, #jg-ajz-crear, #jg-ajz-torneo, #jg-ajz-partida { padding: 8px 12px 12px; align-items: center; }
-        .az-menu { width: 100%; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
-        .az-fila2 { display: grid; grid-template-columns: 300px 1fr; gap: 8px; }
+        .az-menu { width: 100%; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+        .az-fila2 { display: grid; grid-template-columns: 290px 1fr; gap: 8px; }
+        .az-fila2 > .bm-win { min-height: 0; }
+        /* Torneos: ocupa lo que queda y hace scroll por dentro. */
+        .az-crece { flex: 1; min-height: 120px; }
+        .az-crece .bm-win-body, .az-fila2 .az-scroll { flex: 1; min-height: 0; overflow: auto; }
+        .az-fila2 .az-scroll { max-height: 180px; }
+        .az-hundido {
+            background: var(--input-bg, #fff); color: var(--input-text, #000);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
+                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a);
+        }
+        body.jg-kawaii .az-hundido { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-relieve {
+            background: var(--win-bg, silver);
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf);
+        }
+        body.jg-kawaii .az-relieve { box-shadow: none; border: 2px solid var(--border, #49388B); }
+
+        /* Formularios */
         .az-form { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
         .az-form label { white-space: nowrap; }
         .az-form select, .az-form input[type=text], .az-form input[type=datetime-local] { width: 100%; box-sizing: border-box; height: auto; min-height: 21px; }
-        .az-form input[type=number] { width: 64px; }
+        .az-form input[type=number] { width: 60px; }
         .az-ritmo { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
         .az-form .az-span { grid-column: 1 / -1; }
         .az-acc { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
         .az-err { color: #c00000; font-weight: bold; }
         body.jg-oscuro .az-err { color: #ff6b6b; }
-        /* Campos de texto con los colores del tema (98.css los pinta blancos). */
-        #jg-ajz input, #jg-ajz-crear input, .az-modal input {
-            background-color: var(--input-bg, #fff); color: var(--input-text, #000);
-        }
-        /* Listas: retos, partidas y torneos. */
-        .az-list { display: flex; flex-direction: column; gap: 2px; }
-        .az-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 6px; }
-        .az-item + .az-item { border-top: 1px solid var(--bezel-dark-2, grey); }
-        .az-item-t { min-width: 0; line-height: 1.4; }
+        #jg-ajz input, #jg-ajz-crear input, .az-modal input { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        .az-retar-btn { min-width: 96px; font-weight: bold; }
+
+        /* Listas: partidas, retos y torneos */
+        .az-list { display: flex; flex-direction: column; }
+        .az-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px; }
+        .az-item + .az-item { border-top: 1px solid color-mix(in srgb, var(--text, #000) 18%, transparent); }
+        .az-item .bm-av { --av: 28px; }
+        .az-item-t { min-width: 0; line-height: 1.45; }
         .az-item-t b { font-size: 12px; }
-        .az-item-sub { color: var(--text-muted, #444); }
+        .az-item-sub { color: var(--text-muted, #444); display: flex; flex-wrap: wrap; gap: 3px 6px; align-items: center; }
         .az-item-btns { display: flex; gap: 4px; }
-        .az-item-btns button { min-width: 0; padding: 0 8px; }
+        .az-item-btns button { min-width: 0; padding: 0 10px; }
         .az-vacio { color: var(--text-muted, #444); padding: 4px 6px; }
-        .az-tor { cursor: pointer; grid-template-columns: 1fr auto; }
-        .az-tor:hover { background: color-mix(in srgb, var(--accent, navy) 14%, transparent); }
-        .az-badge { padding: 1px 6px; white-space: nowrap; font-weight: bold;
-                    background: var(--accent, navy); color: var(--accent-text, #fff); }
-        .az-badge.gris { background: var(--bezel-dark-2, grey); color: var(--win-bg, #fff); }
-        .az-pod { display: flex; gap: 12px; flex-wrap: wrap; }
-        .az-pod span { display: inline-flex; align-items: center; gap: 4px; }
+        .az-vacio-g { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; color: var(--text-muted, #444); text-align: center; }
+        .az-vacio-g .az-pz { width: 34px; height: 34px; opacity: .55; }
+        /* Etiquetas pequeñas: ritmo, apuesta, turno… */
+        .az-chip {
+            display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; line-height: 15px; white-space: nowrap;
+            border: 1px solid color-mix(in srgb, var(--text, #000) 30%, transparent); color: var(--text, #000);
+        }
+        .az-chip .pt-ic { width: 11px; height: 11px; }
+        .az-chip.acento, .az-badge { background: var(--accent, navy); color: var(--accent-text, #fff); border-color: var(--accent, navy); }
+        .az-chip.suave { background: color-mix(in srgb, var(--accent, navy) 15%, transparent); }
+        .az-badge { padding: 1px 6px; white-space: nowrap; font-weight: bold; border: 1px solid transparent; }
+        .az-badge.gris { background: color-mix(in srgb, var(--text, #000) 22%, var(--win-bg, silver)); color: var(--text, #000); }
+        .az-pulso { animation: az-pulso 1.2s ease-in-out infinite; }
+        @keyframes az-pulso { 50% { opacity: .55; } }
         .az-saldo { display: inline-flex; align-items: center; gap: 3px; }
 
-        /* Tablero: casillas con los colores del tema. */
+        /* Fila de torneo: hoja de calendario, datos, plazas y premios. */
+        .az-tor { cursor: pointer; grid-template-columns: auto 1fr auto; gap: 10px; }
+        .az-tor:hover { background: color-mix(in srgb, var(--accent, navy) 12%, transparent); }
+        .az-dia { width: 44px; text-align: center; flex-shrink: 0; padding: 0 0 2px; }
+        .az-dia i { display: block; font-style: normal; font-weight: bold; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; padding: 1px 0;
+                    background: linear-gradient(90deg, var(--titlebar-start, navy), var(--titlebar-end, #1084d0)); color: var(--titlebar-text, #fff); }
+        .az-dia b { display: block; font-size: 18px; line-height: 20px; }
+        .az-dia small { display: block; color: var(--text-muted, #444); font-size: 9px; }
+        .az-plazas { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+        .az-barra { width: 110px; height: 10px; padding: 2px; box-sizing: border-box; }
+        .az-barra span { display: block; height: 100%;
+                         background: repeating-linear-gradient(90deg, var(--accent, navy) 0 6px, transparent 6px 8px); }
+        body.jg-kawaii .az-barra span { background: var(--accent, #FF66B2); }
+        .az-tor-der { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+        .az-meds { display: flex; gap: 6px; font-weight: bold; }
+        .az-meds span { display: inline-flex; align-items: center; gap: 3px; }
+        .az-meds .bm-med { width: 14px; height: 14px; font-size: 9px; }
+
+        /* Crear torneo: formulario y resumen al lado. */
+        .az-crear-cols { display: grid; grid-template-columns: 1fr 250px; gap: 8px; align-items: stretch; }
+        .az-resumen .bm-win-body { display: flex; flex-direction: column; gap: 8px; }
+        .az-res-fila { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+        .az-res-fila + .az-res-fila { border-top: 1px dotted color-mix(in srgb, var(--text, #000) 25%, transparent); }
+        .az-res-fila span { color: var(--text-muted, #444); }
+        .az-res-fila b { display: inline-flex; align-items: center; gap: 3px; text-align: right; }
+        .az-res-total { padding: 6px; text-align: center; line-height: 1.5; }
+        .az-res-total b { font-size: 16px; }
+        .az-reglas { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; line-height: 1.4; }
+        .az-reglas li { position: relative; padding-left: 14px; }
+        .az-reglas li::before { content: ''; position: absolute; left: 2px; top: 4px; width: 6px; height: 6px; background: var(--accent, navy); }
+
+        /* Podio de premios (crear torneo y torneo). */
+        .az-podio { display: flex; align-items: flex-end; justify-content: center; gap: 4px; padding-top: 4px; }
+        .az-podio-col { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 66px; }
+        .az-podio-col .bm-av { --av: 26px; }
+        .az-podio-nom { max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+        .az-podio-pt { display: inline-flex; align-items: center; gap: 2px; font-weight: bold; }
+        .az-podio-caja { width: 100%; display: flex; align-items: flex-start; justify-content: center; padding-top: 4px; box-sizing: border-box; }
+        .az-podio-col.p1 .az-podio-caja { height: 44px; }
+        .az-podio-col.p2 .az-podio-caja { height: 32px; }
+        .az-podio-col.p3 .az-podio-caja { height: 22px; }
+
+        /* Tablero: casillas con los colores del tema. El tamaño de casilla
+           (--az-sq) lo pone ajedrez.js según el sitio que haya. */
         .az-cols { display: flex; gap: 10px; width: 100%; flex: 1; min-height: 0; margin-top: 6px; }
-        .az-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: center; }
-        .az-board-wrap { position: relative; padding: 3px;
+        .az-main { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: flex-start; justify-content: center; }
+        .az-board-wrap { position: relative; padding: 4px;
             background: var(--bezel-dark-2, grey);
             box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
                         inset -3px -3px var(--bezel-light-2, #dfdfdf), inset 3px 3px var(--bezel-dark-1, #0a0a0a); }
@@ -424,87 +496,128 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
                              background: color-mix(in srgb, var(--text, #000) 38%, transparent); pointer-events: none; z-index: 2; }
         .az-sq.dest.come::after { width: 86%; height: 86%; background: none; box-sizing: border-box;
                                   border: 5px solid color-mix(in srgb, var(--text, #000) 38%, transparent); }
+        .az-sq.dest:hover::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--titlebar-end, #1084d0) 30%, transparent); }
         .az-sq.dest, .az-sq.mia { cursor: pointer; }
         .az-coord { position: absolute; font-size: 10px; font-weight: bold; line-height: 1; pointer-events: none; z-index: 1; }
         .az-coord.f { right: 2px; bottom: 2px; }
         .az-coord.r { left: 2px; top: 2px; }
         .az-sq.cl .az-coord { color: color-mix(in srgb, var(--accent, navy) 70%, var(--win-bg, silver)); }
         .az-sq.os .az-coord { color: color-mix(in srgb, var(--input-bg, #fff) 85%, var(--win-bg, silver)); }
-        .az-pz { position: relative; z-index: 1; width: 88%; height: 88%; display: block; pointer-events: none; }
+        .az-pz { position: relative; z-index: 1; width: 88%; height: 88%; display: block; pointer-events: none;
+                 filter: drop-shadow(0 1px 1px rgba(0,0,0,.28)); }
+        .az-pz.mueve { transition: transform .18s ease-out; z-index: 3; }
         .az-sq.arrastre .az-pz { opacity: .35; }
         .az-fantasma { position: fixed; z-index: 60; pointer-events: none; width: var(--az-sq, 54px); height: var(--az-sq, 54px); transform: translate(-50%, -50%); }
-        .az-fantasma .az-pz { width: 100%; height: 100%; }
+        .az-fantasma .az-pz { width: 100%; height: 100%; filter: drop-shadow(0 4px 4px rgba(0,0,0,.35)); }
         /* Piezas negras sobre casillas oscuras con un tema oscuro: un halo claro. */
         body.jg-oscuro .az-pz.n { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px rgba(255,255,255,.7)); }
-        /* Encima del tablero: esperando al rival, coronación. */
-        .az-capa { position: absolute; inset: 3px; z-index: 5; display: flex; align-items: center; justify-content: center;
+        /* Encima del tablero: esperando al rival, coronación y final. */
+        .az-capa { position: absolute; inset: 4px; z-index: 5; display: flex; align-items: center; justify-content: center;
                    background: color-mix(in srgb, var(--win-bg, silver) 55%, transparent); }
-        .az-capa .window { min-width: 220px; }
+        .az-capa .window { min-width: 230px; max-width: 86%; }
         .az-capa .window-body { text-align: center; line-height: 1.6; }
         .az-coronar { display: flex; gap: 4px; justify-content: center; }
         .az-coronar button { width: 54px; height: 54px; padding: 2px; min-width: 0; }
         .az-coronar button .az-pz { width: 100%; height: 100%; }
+        .az-fin-ic { display: flex; justify-content: center; gap: 2px; margin: 2px 0 4px; }
+        .az-fin-ic .az-pz { width: 52px; height: 52px; }
+        .az-fin-ic .az-pz.caido { transform: rotate(90deg) translate(12px, 0); opacity: .85; }
+        .az-fin-tit { font-size: 18px; font-weight: bold; }
+        .az-fin-pts { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 8px; font-weight: bold; font-size: 13px; }
+        .az-fin-btns { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
+
         /* Columna de la derecha: jugadores, relojes y jugadas. */
-        .az-side { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-        .az-jug { display: flex; align-items: center; gap: 8px; padding: 6px; background: var(--win-bg, silver);
-            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
-                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf); }
-        body.jg-kawaii .az-jug { box-shadow: none; border: 2px solid var(--border, #49388B); }
+        .az-side { width: 232px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+        .az-jug { padding: 6px; display: flex; flex-direction: column; gap: 4px; position: relative; }
+        .az-jug.turno::before { content: ''; position: absolute; left: 3px; top: 3px; bottom: 3px; width: 4px;
+                                background: linear-gradient(180deg, var(--titlebar-start, navy), var(--titlebar-end, #1084d0)); }
+        body.jg-kawaii .az-jug.turno::before { left: 0; top: 0; bottom: 0; background: var(--accent, #FF66B2); }
+        .az-jug.turno { padding-left: 12px; }
+        .az-jug-top { display: flex; align-items: center; gap: 8px; }
         .az-jug .bm-av { --av: 32px; }
-        .az-jug-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
-        .az-jug-nom small { display: block; font-weight: normal; color: var(--text-muted, #444); }
-        .az-reloj { min-width: 64px; padding: 3px 6px; text-align: center; font-weight: bold; font-size: 16px; font-variant-numeric: tabular-nums;
-            background: var(--input-bg, #fff); color: var(--input-text, #000);
-            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
-                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
-        body.jg-kawaii .az-reloj { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-jug-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; font-size: 12px; }
+        .az-jug-nom small { display: flex; align-items: center; gap: 4px; font-weight: normal; font-size: 11px; color: var(--text-muted, #444); }
+        .az-color { width: 9px; height: 9px; border: 1px solid #161616; flex-shrink: 0; }
+        .az-color.w { background: #f6f6f6; } .az-color.b { background: #2a2a2a; }
+        .az-comidas { display: flex; align-items: center; min-height: 16px; padding-left: 2px; }
+        .az-comidas .az-pz { width: 16px; height: 16px; margin-right: -5px; filter: none; }
+        .az-comidas .az-pz.sep { margin-left: 6px; }
+        .az-comidas b { margin-left: 9px; color: var(--text-muted, #444); }
+        .az-reloj { min-width: 70px; padding: 3px 6px; text-align: center; font-weight: bold; font-size: 17px; font-variant-numeric: tabular-nums; box-sizing: border-box; }
         .az-reloj.corre { background: var(--accent, navy); color: var(--accent-text, #fff); }
         .az-reloj.urge { color: #c00000; }
         .az-reloj.corre.urge { background: #c00000; color: #fff; }
-        .az-jugadas { flex: 1; min-height: 60px; overflow: auto; padding: 4px 6px; font-variant-numeric: tabular-nums;
-            background: var(--input-bg, #fff); color: var(--input-text, #000);
-            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
-                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
-        body.jg-kawaii .az-jugadas { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
-        .az-jg { display: grid; grid-template-columns: 28px 1fr 1fr; gap: 4px; padding: 1px 0; }
+        .az-jugadas-win { flex: 1; min-height: 70px; display: flex; flex-direction: column; padding: 3px; }
+        .az-jugadas-tit { padding: 2px 6px; font-weight: bold;
+                          background: linear-gradient(90deg, var(--titlebar-start, navy), var(--titlebar-end, #1084d0)); color: var(--titlebar-text, #fff); }
+        body.jg-kawaii .az-jugadas-tit { background: var(--win-body-bg, #F0E8F3); color: var(--text, #000); border-bottom: 2px solid var(--border, #49388B); }
+        .az-jugadas { flex: 1; min-height: 0; overflow: auto; margin-top: 3px; font-variant-numeric: tabular-nums; }
+        .az-jg { display: grid; grid-template-columns: 30px 1fr 1fr; gap: 4px; padding: 2px 6px 2px 0; align-items: center; }
+        .az-jg:nth-child(even) { background: color-mix(in srgb, var(--text, #000) 6%, transparent); }
         .az-jg i { font-style: normal; color: var(--text-muted, #444); text-align: right; }
-        .az-jg .ult { font-weight: bold; }
-        .az-estado { text-align: center; font-weight: bold; min-height: 14px; }
+        .az-jg span { padding: 0 3px; justify-self: start; }
+        .az-jg .ult { font-weight: bold; background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .az-estado { text-align: center; font-weight: bold; min-height: 15px; padding: 3px; }
+        .az-estado.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .az-estado.jaque { background: #c00000; color: #fff; }
         .az-aviso { padding: 6px; text-align: center; line-height: 1.5;
                     background: color-mix(in srgb, var(--accent, navy) 16%, var(--win-bg, silver)); }
         .az-btns { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-        .az-fin { display: none; padding: 8px; text-align: center; line-height: 1.6;
-            background: var(--input-bg, #fff); color: var(--input-text, #000);
-            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
-                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); }
-        body.jg-kawaii .az-fin { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
+        .az-btns button { flex: 1; min-width: 0; }
+        .az-fin { display: none; padding: 6px; text-align: center; line-height: 1.5; }
         .az-fin.on { display: block; }
-        .az-fin b { font-size: 13px; }
-        /* Torneo: apuntados y cuadro. */
+
+        /* Torneo */
         .az-tor-body { width: 100%; overflow: auto; flex: 1; min-height: 0; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-        .az-tor-campos { display: flex; gap: 4px; flex-wrap: wrap; }
-        .az-tor-campos .bm-campo { flex: 1 1 90px; }
-        .az-tor-campos .bm-campo.ancho { flex: 2 1 190px; }
-        .az-apuntados { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-        .az-apuntados span { display: inline-flex; align-items: center; gap: 6px; }
-        .az-cuadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 4px; align-items: stretch; }
-        .az-ronda { display: flex; flex-direction: column; min-width: 150px; }
-        .az-ronda-tit { font-weight: bold; text-align: center; margin-bottom: 4px; }
-        .az-ronda-cr { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 8px; }
-        .az-cruce { background: var(--input-bg, #fff); color: var(--input-text, #000);
-            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-2, grey),
-                        inset -2px -2px var(--bezel-light-2, #dfdfdf), inset 2px 2px var(--bezel-dark-1, #0a0a0a); padding: 3px; }
-        body.jg-kawaii .az-cruce { box-shadow: inset 0 0 0 2px var(--border, #49388B); }
-        .az-cruce-tit { color: var(--text-muted, #444); padding: 0 3px 2px; }
+        .az-tor-cab { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+        .az-tor-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+        .az-tor-datos .bm-campo b { font-size: 12px; }
+        .az-tor-estado { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .az-tor-estado .az-cuenta { font-weight: bold; }
+        .az-apuntados { display: flex; flex-wrap: wrap; gap: 5px; }
+        .az-pj { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 2px; }
+        .az-pj .bm-av { --av: 20px; }
+        .az-pj.libre { padding: 2px 10px; color: var(--text-muted, #444); border: 1px dashed color-mix(in srgb, var(--text, #000) 35%, transparent); box-shadow: none; background: none; }
+        .az-pj.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        /* Cuadro: cada ronda es una columna con sus cruces repartidos a lo
+           alto (mismo alto para todas) y líneas que los unen. */
+        .az-cuadro-scroll { overflow-x: auto; padding-bottom: 4px; }
+        .az-cuadro { display: flex; gap: 24px; align-items: stretch; min-width: min-content; }
+        .az-ronda { display: flex; flex-direction: column; width: 150px; flex-shrink: 0; }
+        .az-ronda-tit { font-weight: bold; text-align: center; margin-bottom: 6px; padding: 1px 0;
+                        border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 25%, transparent); }
+        .az-ronda-cr { flex: 1; display: flex; flex-direction: column; }
+        .az-celda { flex: 1; display: flex; align-items: center; position: relative; min-height: 58px; padding: 3px 0; }
+        .az-celda > .az-cruce { width: 100%; }
+        .az-linea .az-celda::after { content: ''; position: absolute; right: -12px; width: 12px; height: 50%;
+                                     border-right: 2px solid var(--bezel-dark-2, grey); }
+        .az-linea .az-celda:nth-child(odd)::after { top: 50%; border-top: 2px solid var(--bezel-dark-2, grey); }
+        .az-linea .az-celda:nth-child(even)::after { bottom: 50%; border-bottom: 2px solid var(--bezel-dark-2, grey); }
+        .az-entra .az-celda::before { content: ''; position: absolute; left: -12px; top: 50%; width: 12px; border-top: 2px solid var(--bezel-dark-2, grey); }
+        body.jg-kawaii .az-celda::after, body.jg-kawaii .az-celda::before { border-color: var(--border, #49388B) !important; }
+        .az-cruce { padding: 3px; }
+        .az-cruce.mio { outline: 2px solid var(--accent, navy); outline-offset: 1px; }
         .az-cr-j { display: flex; align-items: center; gap: 5px; padding: 2px 3px; }
+        .az-cr-j + .az-cr-j { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
         .az-cr-j .az-cr-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .az-cr-j .az-cr-v { font-weight: bold; }
         .az-cr-j.gana { font-weight: bold; }
         .az-cr-j.pierde { color: var(--text-muted, #444); }
-        .az-cr-j.yo { background: var(--accent, navy); color: var(--accent-text, #fff); }
-        .az-cr-est { color: var(--text-muted, #444); padding: 1px 3px 0; }
+        .az-cr-j.pierde .bm-av { opacity: .5; }
+        .az-cr-j.yo .az-cr-nom { text-decoration: underline; text-underline-offset: 2px; }
+        .az-cr-est { color: var(--text-muted, #444); padding: 1px 3px 0; display: flex; align-items: center; gap: 4px; }
+        .az-cr-est .az-punto { width: 6px; height: 6px; border-radius: 50%; background: #2ea043; }
+        .az-campeon { width: 120px; flex-shrink: 0; display: flex; flex-direction: column; }
+        .az-campeon-caja { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; position: relative; }
+        .az-campeon-caja::before { content: ''; position: absolute; left: -24px; top: 50%; width: 24px; border-top: 2px solid var(--bezel-dark-2, grey); }
+        body.jg-kawaii .az-campeon-caja::before { border-color: var(--border, #49388B); }
+        .az-copa { width: 34px; height: 34px; image-rendering: pixelated; }
+        .bm-win-bar .az-copa { width: 13px; height: 13px; }
+        .az-campeon .bm-av { --av: 34px; }
+        .az-tercero { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .az-tercero .az-cruce { width: 150px; }
         .az-card-ic { display: flex; align-items: center; justify-content: center; }
         .az-card-ic .az-pz { width: 38px; height: 38px; }
-
         /* Ventanita Win98 de "Cómo se juega". */
         .wd-modal-bg {
             display: none; position: fixed; inset: 0; z-index: 50;
@@ -583,16 +696,16 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
                         <label for="az-apuesta">Apuesta</label>
                         <div class="az-ritmo"><input type="number" id="az-apuesta" min="0" value="0"><span id="az-apuesta-pt"></span></div>
                         <div class="az-span bm-nota">Los dos ponéis lo mismo y quien gana se lo lleva todo. En tablas, cada uno recupera lo suyo. El reto caduca a los 5 minutos.</div>
-                        <div class="az-span az-acc"><span class="az-err" id="az-retar-msg"></span><button type="button" id="az-retar">Retar</button></div>
+                        <div class="az-span az-acc"><span class="az-err" id="az-retar-msg"></span><button type="button" class="az-retar-btn" id="az-retar">Retar</button></div>
                     </div>
                 </div>
             </section>
             <section class="bm-win">
-                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 2h9v1H2zM2 10h9v1H2zM1 3h1v7H1zM11 3h1v7h-1zM6 4h1v3h2v1H6z"/></svg><span>Partidas y retos</span></div>
-                <div class="bm-win-body"><div class="az-list" id="az-mios"></div></div>
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 2h9v1H2zM2 10h9v1H2zM1 3h1v7H1zM11 3h1v7h-1zM6 4h1v3h2v1H6z"/></svg><span>Partidas y retos</span><span class="bm-win-bar-r" id="az-mios-n"></span></div>
+                <div class="bm-win-body az-scroll"><div class="az-list" id="az-mios"></div></div>
             </section>
         </div>
-        <section class="bm-win">
+        <section class="bm-win az-crece">
             <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 1h7v1h2v3h-1v1h-1v1H9v1H8v1H7v1h2v2H4v-2h2V9H5V8H4V7H3V6H2V5H1V2h2zM2 2v2h1V2zM10 2v2h1V2z"/></svg><span>Torneos</span>
                 <span class="bm-win-bar-r"><button type="button" id="az-crear-btn">Crear torneo</button></span></div>
             <div class="bm-win-body"><div class="az-list" id="az-torneos"></div></div>
@@ -608,32 +721,50 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         <div class="wd-top-right"></div>
     </div>
     <div class="az-menu">
-        <section class="bm-win">
-            <div class="bm-win-bar"><span>Torneo de eliminatoria directa</span></div>
-            <div class="bm-win-body">
-                <div class="az-form">
-                    <label for="azc-nombre">Nombre</label>
-                    <input type="text" id="azc-nombre" maxlength="60">
-                    <label for="azc-plazas">Jugadores</label>
-                    <select id="azc-plazas"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option><option value="32">32</option></select>
-                    <label for="azc-min">Ritmo</label>
-                    <div class="az-ritmo"><input type="number" id="azc-min" min="1" max="180" value="5"> min +
-                        <input type="number" id="azc-inc" min="0" max="180" value="3"> s</div>
-                    <label for="azc-empieza">Empieza</label>
-                    <input type="datetime-local" id="azc-empieza">
-                    <label for="azc-entrada">Entrada</label>
-                    <div class="az-ritmo"><input type="number" id="azc-entrada" min="0" value="0"><span class="azc-pt"></span> por jugador, para ti</div>
-                    <label>Premios</label>
-                    <div class="az-ritmo">
-                        <i class="bm-med m1">1</i><input type="number" id="azc-p1" min="0" value="0">
-                        <i class="bm-med m2">2</i><input type="number" id="azc-p2" min="0" value="0">
-                        <i class="bm-med m3">3</i><input type="number" id="azc-p3" min="0" value="0"><span class="azc-pt"></span>
+        <div class="az-crear-cols">
+            <section class="bm-win">
+                <div class="bm-win-bar"><svg class="bm-ic" viewBox="0 0 13 13" width="13" height="13" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 1h7v1h2v3h-1v1h-1v1H9v1H8v1H7v1h2v2H4v-2h2V9H5V8H4V7H3V6H2V5H1V2h2zM2 2v2h1V2zM10 2v2h1V2z"/></svg><span>Eliminatoria directa</span></div>
+                <div class="bm-win-body">
+                    <div class="az-form">
+                        <label for="azc-nombre">Nombre</label>
+                        <input type="text" id="azc-nombre" maxlength="60" placeholder="Copa de los melones">
+                        <label for="azc-plazas">Jugadores</label>
+                        <select id="azc-plazas"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option><option value="32">32</option></select>
+                        <label for="azc-min">Ritmo</label>
+                        <div class="az-ritmo"><input type="number" id="azc-min" min="1" max="180" value="5"> min +
+                            <input type="number" id="azc-inc" min="0" max="180" value="3"> s</div>
+                        <label for="azc-empieza">Empieza</label>
+                        <input type="datetime-local" id="azc-empieza">
+                        <label for="azc-entrada">Entrada</label>
+                        <div class="az-ritmo"><input type="number" id="azc-entrada" min="0" value="0"><span class="azc-pt"></span> por jugador, para ti</div>
+                        <label>Premios</label>
+                        <div class="az-ritmo">
+                            <i class="bm-med m1">1</i><input type="number" id="azc-p1" min="0" value="0">
+                            <i class="bm-med m2">2</i><input type="number" id="azc-p2" min="0" value="0">
+                            <i class="bm-med m3">3</i><input type="number" id="azc-p3" min="0" value="0">
+                        </div>
                     </div>
-                    <div class="az-span bm-nota">Los premios salen de tus puntos al crear el torneo. Las entradas te llegan cuando empieza. Si a la hora de inicio no está lleno, se cancela y se devuelve todo. Puedes apuntarte tú también, sin pagar entrada.</div>
-                    <div class="az-span bm-nota">Cada ronda empieza cuando acaba la anterior. Si alguien no se presenta a su partida en 2 minutos, la pierde. Las tablas se repiten con los colores cambiados. Al final se juegan a la vez la final y la partida por el 3.er puesto.</div>
-                    <div class="az-span az-acc"><span id="azc-coste"></span></div>
-                    <div class="az-span az-acc"><span class="az-err" id="azc-msg"></span><button type="button" id="azc-crear">Crear torneo</button></div>
                 </div>
+            </section>
+            <section class="bm-win az-resumen">
+                <div class="bm-win-bar"><span>Resumen</span></div>
+                <div class="bm-win-body">
+                    <div id="azc-resumen"></div>
+                    <div class="az-acc"><span class="az-err" id="azc-msg"></span><button type="button" class="az-retar-btn" id="azc-crear">Crear torneo</button></div>
+                </div>
+            </section>
+        </div>
+        <section class="bm-win">
+            <div class="bm-win-bar"><span>Cómo funciona</span></div>
+            <div class="bm-win-body">
+                <ul class="az-reglas">
+                    <li>Los premios salen de tus puntos al crear el torneo y las entradas te llegan cuando empieza.</li>
+                    <li>Si a la hora de inicio no está lleno, se cancela y se devuelve todo.</li>
+                    <li>Puedes apuntarte tú también, sin pagar entrada.</li>
+                    <li>Cada ronda empieza cuando acaba la anterior. Quien no se presenta a su partida en 2 minutos, la pierde.</li>
+                    <li>Las tablas se repiten con los colores cambiados.</li>
+                    <li>Al final se juegan a la vez la final y la partida por el 3.er puesto.</li>
+                </ul>
             </div>
         </section>
     </div>
@@ -657,24 +788,23 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         <div class="wd-top-right"></div>
     </div>
     <div class="az-cols">
-        <div class="az-main">
+        <div class="az-main" id="azp-main">
             <div class="az-board-wrap" id="azp-wrap"><div class="az-board" id="azp-board"></div></div>
         </div>
         <div class="az-side">
-            <div class="az-jug" id="azp-rival"></div>
-            <div class="az-jugadas" id="azp-jugadas"></div>
-            <div class="az-jug" id="azp-yo"></div>
+            <div class="az-jug az-relieve" id="azp-rival"></div>
+            <section class="az-jugadas-win az-hundido"><div class="az-jugadas-tit">Jugadas</div><div class="az-jugadas" id="azp-jugadas"></div></section>
+            <div class="az-jug az-relieve" id="azp-yo"></div>
             <div class="az-estado" id="azp-estado"></div>
             <div id="azp-aviso"></div>
             <div class="az-btns" id="azp-btns">
                 <button type="button" id="azp-tablas">Ofrecer tablas</button>
                 <button type="button" id="azp-rendirse">Rendirse</button>
             </div>
-            <div class="az-fin" id="azp-fin"></div>
+            <div class="az-fin az-hundido" id="azp-fin"></div>
         </div>
     </div>
 </div>
-
 <div class="wd-modal-bg" id="az-modal">
     <div class="window wd-modal">
         <div class="title-bar">
