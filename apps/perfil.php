@@ -325,15 +325,9 @@ if ($_perfilStandalone) {
                     </div>
                 </div>
             </div>
-            <div id="profile-social-section">
-                <div class="profile-sidebar-heading">Social</div>
-                <div id="profile-followed-nav"></div>
-                <div class="profile-nav-item" id="profile-nav-social" data-cat="social">
-                    <span class="profile-nav-icon">+</span>
-                    <span class="profile-nav-label">Amigos</span>
-                    <span class="am-badge" id="am-nav-badge" hidden></span>
-                </div>
-            </div>
+            <?php /* El apartado Social de esta barra se quitó (decidido así): a la
+                     página de amigos se llega desde el título "Amigos" del
+                     bloque de amigos del perfil (perfil-v2.js → openAmigos). */ ?>
             <div id="profile-sidebar-footer">
                 <div id="profile-sidebar-back">
                     <button class="button" id="profile-catview-back">← Volver</button>
@@ -475,7 +469,7 @@ if ($_perfilStandalone) {
                 <menu role="tablist" class="am-tabs">
                     <li role="tab" aria-selected="true" data-tab="amigos"><a href="#">Tus amigos <span id="am-n-amigos"></span></a></li>
                     <li role="tab" data-tab="agregar"><a href="#">Agregar amigo</a></li>
-                    <li role="tab" data-tab="solicitudes"><a href="#">Solicitudes <span class="am-badge" id="am-n-sol" hidden></span></a></li>
+                    <li role="tab" data-tab="solicitudes"><a href="#">Solicitudes <span id="am-n-sol"></span></a></li>
                 </menu>
                 <div class="window am-panelwin" role="tabpanel">
                     <div class="window-body" id="profile-social-body">
@@ -4872,11 +4866,11 @@ var PROFILE_USERS = <?php
         amigosData = { amigos: d.amigos || [], recibidas: d.recibidas || [], enviadas: d.enviadas || [] };
         if (Array.isArray(d.list)) ownFollowing = d.list;
         myFollowers = amigosData.amigos.slice();   /* amigos = mutuos */
+        /* Sin "ping" rojo (decidido así): las solicitudes avisan en la
+           campana; aquí solo el número, como en "Tus amigos (N)". */
         var n = amigosData.recibidas.length;
-        ['am-nav-badge', 'am-n-sol'].forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el) { el.textContent = n; el.hidden = !n; }
-        });
+        var sol = document.getElementById('am-n-sol');
+        if (sol) sol.textContent = n ? '(' + n + ')' : '';
         renderSocialList();
         if (typeof renderFollowedNav === 'function') renderFollowedNav();
     }
@@ -5387,8 +5381,44 @@ var PROFILE_USERS = <?php
         relTime:       function (ts) { return relTime(ts); },
         presence:      function (key) {
             return lastDndSet[key] ? 'dnd' : lastAwaySet[key] ? 'away' : lastOnlineSet[key] ? 'online' : 'offline';
+        },
+        /* Lo que suena ahora ({title, artist}) o null. */
+        nowPlaying:    function (key) { return lastOnlineSet[key] && lastNowPlaying[key] && lastNowPlaying[key].title ? lastNowPlaying[key] : null; },
+        lastSeen:      function (key) { return (lastSeenMap || {})[key] || 0; },
+        /* Clic en "Amigos" del bloque: MI sección de amigos. En un perfil
+           ajeno (iframe standalone) se le pide a la ventana principal. */
+        openAmigos:    function () {
+            if (window.__PERFIL_STANDALONE && viewingUser) {
+                try { window.top.postMessage({ type: 'perfil-open-amigos' }, '*'); } catch (_) {}
+                return;
+            }
+            if (viewingUser) exitViewingUser();
+            showSocialView();
         }
     };
+
+    /* Abrir mi sección de Amigos desde fuera (perfiles ajenos). */
+    window.profileOpenAmigos = function () {
+        if (window.__PERFIL_STANDALONE) return;
+        if (taskbarManager.isRegistered('profile-window')) {
+            taskbarManager.restore('profile-window');
+        } else {
+            profileWin.style.height = Math.max(380, window.innerHeight - 80) + 'px';
+            taskbarManager.register('profile-window', 'Perfil', '<img src="assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
+            startItemNotifStream();
+        }
+        if (viewingUser) exitViewingUser();
+        if (!loaded) {
+            loaded = true;
+            loadLists(function() { updateCounts(); showSocialView(); });
+            loadProfile();
+        } else {
+            showSocialView();
+        }
+    };
+    window.addEventListener('message', function (e) {
+        if (e.data && e.data.type === 'perfil-open-amigos' && !window.__PERFIL_STANDALONE) window.profileOpenAmigos();
+    });
 
     /* Clip de la columna de datos (renderProfileInfo): copia el enlace del
        perfil que se está viendo (el mío si no). */

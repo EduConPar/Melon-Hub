@@ -13,7 +13,7 @@
     { "id": "haros",      "nombre": "Haros",      "icono": "assets/img/appIcons/haroIcon.png" },
     { "id": "interfaces", "nombre": "Interfaces", "icono": "assets/img/appIcons/interfaceIcon.png" },
     { "id": "discord",    "nombre": "Discord",    "icono": "assets/img/appIcons/discordIcon.png" },
-    { "id": "mascotas",   "nombre": "Mascotas",   "icono": "assets/img/appIcons/mascotaIcon.png", "proximamente": true }
+    { "id": "mascotas",   "nombre": "Mascotas",   "icono": "assets/img/appIcons/mascotaIcon.png", "proximamente": true } 
     
     
   ],

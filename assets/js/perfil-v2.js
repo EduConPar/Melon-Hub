@@ -587,25 +587,66 @@
                     m.value.toLocaleString('es') + ' ' + esc(m.unit) + '<br>' + esc(nextTxt) +
                     '<div class="pf2-bar"><i style="width:' + m.progress + '%"></i></div></div></div>';
             }).join('') + '</div></div>';
-        var fr = S.v2.friends || [];
-        html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">' + ic('profileIcon') + 'Amigos<span class="pf2-sub">' + fr.length + '</span></div>' +
-            '<div class="pf2-panel-body">' + (fr.length ? '<div class="pf2-friends">' + fr.slice(0, 8).map(function (f) {
-                return '<span class="pf2-friend" data-marco-user="' + esc(f.key) + '">' +
-                    (f.image ? '<img src="' + esc(f.image) + '" alt="" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">'
-                             : '<div class="pf2-friend-ph" title="' + esc(f.label) + '" data-key="' + esc(f.key) + '">' + esc(f.label.slice(0, 2)) + '</div>') +
-                    '</span>';
-            }).join('') + '</div>' : '<div class="pf2-empty">Sin amigos todavía.</div>') + '</div></div>';
+        /* Amigos como en Steam: los 6 de más nivel (el servidor ya los manda
+           ordenados), con su estado y su nivel. El título lleva a MI
+           sección de amigos (bridge().openAmigos). Las solicitudes avisan
+           en la campana, no aquí. */
+        html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">' + ic('profileIcon') +
+            '<a href="#" class="pf2-fr-head" title="Ir a tus amigos">Amigos</a><span class="pf2-sub">' + (S.v2.friends || []).length + '</span></div>' +
+            '<div class="pf2-panel-body" id="pf2-friends-box"></div></div>';
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Actividad</div><div class="pf2-panel-body pf2-counts">' +
             '<div>Reseñas <b>' + (c.reviews || 0) + '</b></div><div>Capturas <b>' + (c.shots || 0) + '</b></div>' +
             '<div>Horas escuchadas <b>' + (c.hours || 0).toLocaleString('es') + '</b></div><div>En Melon Hub <b>' + (c.days || 0) + ' días</b></div></div></div>';
         box.innerHTML = html;
-        box.querySelectorAll('[data-key]').forEach(function (el) {
-            el.addEventListener('click', function () { if (bridge().openProfile) bridge().openProfile(el.dataset.key); });
+        pintaAmigos();
+        box.querySelector('.pf2-fr-head').addEventListener('click', function (e) {
+            e.preventDefault();
+            if (bridge().openAmigos) bridge().openAmigos();
         });
+        /* La caja se repinta, pero es la misma: el aviso, una sola vez. */
+        if (!box.dataset.frClick) {
+            box.dataset.frClick = '1';
+            box.addEventListener('click', function (e) {
+                var el = e.target.closest('[data-key]');
+                if (el && bridge().openProfile) bridge().openProfile(el.dataset.key);
+            });
+        }
+    }
+
+    /* "hace 3 h", "hace 2 días"… */
+    function hace(ts) {
+        var s = Math.max(0, Date.now() / 1000 - ts);
+        if (s < 3600) return 'hace ' + Math.max(1, Math.round(s / 60)) + ' min';
+        if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+        var d = Math.round(s / 86400);
+        return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+    }
+    /* Filas del bloque de amigos (también al llegar la presencia nueva). */
+    function pintaAmigos() {
+        var box = $('pf2-friends-box');
+        if (!box || !S.v2) return;
+        var fr = (S.v2.friends || []).slice(0, 6), b = bridge();
+        box.innerHTML = fr.length ? '<div class="pf2-frs">' + fr.map(function (f) {
+            var st = b.presence ? b.presence(f.key) : 'offline';
+            var np = b.nowPlaying ? b.nowPlaying(f.key) : null;
+            var ls = (b.lastSeen && b.lastSeen(f.key)) || f.lastSeen || 0;
+            var est, cls;
+            if (np) { cls = 'np'; est = 'Escuchando<br>' + esc(np.title + (np.artist ? ' — ' + np.artist : '')); }
+            else if (st === 'online') { cls = 'on'; est = 'En línea'; }
+            else if (st === 'away') { cls = 'on'; est = 'Ausente'; }
+            else if (st === 'dnd') { cls = 'on'; est = 'No molestar'; }
+            else { cls = 'off'; est = ls ? 'Última conexión: ' + hace(ls) : 'Desconectado'; }
+            return '<div class="pf2-fr pf2-fr-' + cls + '" data-key="' + esc(f.key) + '">' +
+                '<span class="pf2-fr-av" data-marco-user="' + esc(f.key) + '">' +
+                (f.image ? '<img src="' + esc(f.image) + '" alt="">' : '<span class="pf2-friend-ph">' + esc(f.label.slice(0, 2)) + '</span>') + '</span>' +
+                '<div class="pf2-fr-txt"><div class="pf2-fr-nom">' + esc(f.label) + '</div><div class="pf2-fr-est">' + est + '</div></div>' +
+                '<span class="pf2-level pf2-fr-lvl" title="Nivel ' + (f.level || 1) + '">' + (f.level || 1) + '</span></div>';
+        }).join('') + '</div>' : '<div class="pf2-empty">Sin amigos todavía.</div>';
     }
 
     /* "● En línea / Ausente / No molestar / Desconectado". */
     function refreshStatus() {
+        pintaAmigos();
         var el = $('pf2-status');
         if (!el || !S.ctx) return;
         var st = S.ctx.own ? 'online' : (bridge().presence ? bridge().presence(S.ctx.userKey) : 'offline');

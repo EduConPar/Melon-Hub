@@ -295,10 +295,22 @@ function pf2_friends(PDO $pdo, int $uid): array {
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $st = $pdo->prepare("SELECT id, user_key, username, label FROM usuarios WHERE id IN ($ph) ORDER BY label");
     $st->execute($ids);
+    /* Última conexión (para "Última conexión: hace X"); el en línea y lo
+       que escucha lo pone el navegador con la presencia de cada 20 s. */
+    $vistos = [];
+    try {
+        $sp = $pdo->prepare("SELECT user_id, UNIX_TIMESTAMP(last_at) FROM user_presence WHERE user_id IN ($ph)");
+        $sp->execute($ids);
+        $vistos = $sp->fetchAll(PDO::FETCH_KEY_PAIR);
+    } catch (Throwable $e) { /* sin tabla de presencia */ }
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $out[] = ['key' => $r['user_key'], 'label' => pf2_label($r), 'image' => pf2_avatar($r)];
+        $out[] = ['key' => $r['user_key'], 'label' => pf2_label($r), 'image' => pf2_avatar($r),
+                  'level' => (int)pf2_stats($pdo, (int)$r['id'])['level'],
+                  'lastSeen' => (int)($vistos[$r['id']] ?? 0)];
     }
+    /* Como en Steam: de mayor a menor nivel (a igualdad, por nombre). */
+    usort($out, fn($a, $b) => [$b['level'], mb_strtolower($a['label'])] <=> [$a['level'], mb_strtolower($b['label'])]);
     return $out;
 }
 

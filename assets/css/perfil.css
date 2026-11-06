@@ -57,10 +57,6 @@
     align-items: center;
 }
 
-#profile-social-section {
-    margin-top: 6px;
-}
-
 #profile-melon-section {
     margin-top: 6px;
 }
@@ -2935,10 +2931,32 @@
    Todo con las variables del tema.
    ══════════════════════════════════════════════════════════════════ */
 #profile-view-social { flex-direction: column; min-height: 0; }
+/* Pestañas y panel: 98.css los pinta con colores fijos (plateado, blanco,
+   gris) y con selectores más fuertes (menu[role=tablist] > li[…]); aquí,
+   con más especificidad, todo con las variables del tema. */
 .am-tabs { margin: 8px 0 -2px; padding-left: 3px; }
-.am-tabs [role=tab] { background: var(--win-bg); }
-.am-tabs [role=tab] a { color: var(--text); }
-.am-panelwin { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--win-bg); }
+#profile-view-social menu[role=tablist] > li {
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px 0 var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px 0 var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+#profile-view-social menu[role=tablist] > li[aria-selected=true] { background-color: var(--win-bg); }
+#profile-view-social menu[role=tablist] > li > a { color: var(--text); }
+#profile-view-social menu[role=tablist] > li > a:focus { outline: 1px dotted var(--text); }
+#profile-view-social .window.am-panelwin {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+/* Confirmación de "Eliminar amigo", también con el tema. */
+#am-confirm.window {
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+#am-confirm .title-bar { background: linear-gradient(90deg, var(--titlebar-start), var(--titlebar-end)); }
+#am-confirm .title-bar-text { color: var(--titlebar-text); }
 .am-panelwin > .window-body { flex: 1; overflow: auto; margin: 8px; }
 .am-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
 .am-sec { font-weight: bold; margin: 10px 0 6px; color: var(--text); }
@@ -2981,13 +2999,8 @@
 .am-off { opacity: .75; }
 .am-btns { display: flex; gap: 4px; flex-shrink: 0; }
 .am-btns .button { min-width: 0; padding: 0 10px; }
-.am-badge {
-    display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 4px; box-sizing: border-box;
-    background: var(--badge-bg, #d72638); color: var(--badge-text, #fff); font-size: 10px; font-weight: bold;
-    text-align: center; line-height: 16px; border-radius: 8px;
-}
-.am-badge[hidden] { display: none; }
-#profile-nav-social .am-badge { margin-left: auto; }
+/* Desactivado: 98.css le pone sombra blanca fija; aquí, texto apagado del tema. */
+.am-btns .button:disabled, .am-notif-btns .button:disabled { text-shadow: none; color: var(--text-muted); }
 .am-notif-btns { display: flex; gap: 4px; margin-top: 4px; }
 .am-notif-btns .button { min-width: 0; padding: 0 10px; }
 /* Menú del clic derecho, como los de Win98. */
@@ -3000,3 +3013,22 @@
 .am-menu > div[data-m] { padding: 4px 18px; cursor: default; }
 .am-menu > div[data-m]:hover { background: var(--accent); color: var(--accent-text); }
 .am-menu-sep { height: 1px; margin: 3px 2px; background: var(--bezel-dark-2); border-bottom: 1px solid var(--bezel-light-1); }
+
+/* ── Bloque Amigos del perfil, como en Steam (perfil-v2.js pintaAmigos):
+   los 6 de más nivel con foto y marco, nombre, estado y su nivel en el
+   mismo círculo que el nivel del perfil (.pf2-level). Colores del tema. */
+.pf2-fr-head { color: inherit; text-decoration: none; }
+.pf2-fr-head:hover { text-decoration: underline; }
+.pf2-frs { display: flex; flex-direction: column; gap: 6px; }
+.pf2-fr { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 3px 2px; }
+.pf2-fr:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.pf2-fr-av { position: relative; width: 32px; height: 32px; flex-shrink: 0; display: block; }
+.pf2-fr-av img, .pf2-fr-av .pf2-friend-ph { width: 32px; height: 32px; object-fit: cover; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+/* Sitio para el marco (lo que sobresale, --mk-* de marcos.css). */
+.pf2-fr-av[data-marco] { margin: calc(var(--mk-t) * 32px) calc(var(--mk-r) * 32px) calc(var(--mk-b) * 32px) calc(var(--mk-l) * 32px); }
+.pf2-fr-txt { flex: 1; min-width: 0; }
+.pf2-fr-nom { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.pf2-fr-est { font-size: 9px; color: var(--text-muted); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pf2-fr-on .pf2-fr-nom, .pf2-fr-np .pf2-fr-nom, .pf2-fr-on .pf2-fr-est, .pf2-fr-np .pf2-fr-est { color: var(--accent); }
+.pf2-fr-lvl { width: 26px; height: 26px; font-size: 11px; }
