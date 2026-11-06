@@ -2233,8 +2233,12 @@ window.ltLeave     = ltLeave;
 (async function ltBootstrap(){
     const r = await ltFetch('current');
     if (!r || !r.ok || !r.role) {
-        /* Iniciar poll de invites. */
-        LT_INVITES_POLL_T = setInterval(ltPollInvites, 5000);
+        /* Invitaciones: ahora y cuando el timbre del escritorio dice que
+           ha llegado una ('lt', window.melonTimbre en desktop-base.php);
+           si no responde, cada 5 s como antes. */
+        ltPollInvites();
+        if (window.melonTimbre) window.melonTimbre.on('lt', ltPollInvites, 5000);
+        else LT_INVITES_POLL_T = setInterval(ltPollInvites, 5000);
         return;
     }
     LT_ROLE       = r.role;
@@ -2306,9 +2310,12 @@ window.melonJoinListen = function(host) {
     });
 })();
 /* Peticiones de unirse por el enlace: la app de escritorio siempre; la web
-   en el navegador si estás de anfitrión o has copiado el enlace. */
+   en el navegador si estás de anfitrión o has copiado el enlace. Se miran
+   cuando el timbre del escritorio dice que ha llegado una ('lt',
+   window.melonTimbre en desktop-base.php; antes, cada 5 s); si no
+   responde, cada 5 s como antes. */
 {
-    setInterval(async function() {
+    const ltAtenderPeticiones = async function() {
         if (!window.melonDesktop && LT_ROLE !== 'host' && !window.__ltLinkShared) return;
         if (LT_ROLE === 'guest') return;   /* escuchando a otro: no se puede hostear */
         const r = await ltFetch('join-requests');
@@ -2321,7 +2328,11 @@ window.melonJoinListen = function(host) {
                     message: req.from_label + ' va a escuchar contigo con tu enlace.' });
             }
         }
-    }, 5000);
+    };
+    /* La primera, a los 5 s como antes (ya se sabe si estoy en una sesión). */
+    setTimeout(ltAtenderPeticiones, 5000);
+    if (window.melonTimbre) window.melonTimbre.on('lt', ltAtenderPeticiones, 5000);
+    else setInterval(ltAtenderPeticiones, 5000);
 }
 
 /* win98Confirm vive ahora en assets/js/win98-dialogs.js (compartido).
@@ -6483,14 +6494,19 @@ function relTime(sentAt) {
     }
 
     function pushInvite(inv) {
-        if (!window.notifSystem || window.notifSystem.isShown(inv.id) || window.notifSystem.isDismissed(inv.id)) return;
+        /* Id del aviso con prefijo: playlist_invites e item_invites
+           (perfil.php, 'item-') numeran cada una por su cuenta y, con el
+           número a secas, al cerrar una se daba por cerrada la otra con el
+           mismo número y no llegaba a salir. */
+        var avisoId = 'pl-' + inv.id;
+        if (!window.notifSystem || window.notifSystem.isShown(avisoId) || window.notifSystem.isDismissed(avisoId)) return;
         var INFO_TYPES = { 'removed': true, 'collab-accepted': true, 'collab-rejected': true, 'collab-left': true };
         var isAction = !INFO_TYPES[inv.type];
         var senderImg = (typeof usersInfo !== 'undefined' && inv.fromUser && usersInfo[inv.fromUser]) ? usersInfo[inv.fromUser].img : null;
 
         if (isAction) {
             window.notifSystem.show({
-                id:       inv.id,
+                id:       avisoId,
                 type:     'action',
                 title:    TITLES[inv.type] || 'Invitación de playlist',
                 message:  messageFor(inv),
@@ -6510,7 +6526,7 @@ function relTime(sentAt) {
             });
         } else {
             window.notifSystem.show({
-                id:      inv.id,
+                id:      avisoId,
                 type:    'info',
                 title:   TITLES[inv.type] || 'Notificación',
                 message: messageFor(inv),
@@ -6523,20 +6539,35 @@ function relTime(sentAt) {
         }
     }
 
-    function connectSSE() {
-        var es = new EventSource('assets/music/notifications-stream.php');
-        es.onmessage = function(e) {
-            try {
-                var data = JSON.parse(e.data);
-                if (!Array.isArray(data)) return;
+    /* Invitaciones y avisos de playlists. Antes llegaban por un SSE
+       (notifications-stream.php) que ocupaba un proceso PHP y una conexión
+       a la BD todo el rato por escritorio. Ahora se piden
+       (playlist-invites) al empezar y cuando el timbre del escritorio dice
+       que han cambiado ('musica', window.melonTimbre en desktop-base.php);
+       si no responde, cada 30 s. pushInvite no repite las ya vistas. Nunca
+       dos peticiones a la vez: si se pide mientras va una, se repite al
+       acabar. */
+    var invPidiendo = false, invOtra = false;
+    function cargarInvites() {
+        if (invPidiendo) { invOtra = true; return; }
+        invPidiendo = true;
+        fetch('assets/music/api.php?action=playlist-invites', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var data = d && d.ok && Array.isArray(d.invites) ? d.invites : [];
                 data.sort(function(a, b) { return (a.sentAt || 0) - (b.sentAt || 0); });
                 data.forEach(pushInvite);
-            } catch(err) {}
-        };
-        es.onerror = function() { es.close(); setTimeout(connectSSE, 3000); };
+            })
+            .catch(function() {})
+            .then(function() {
+                invPidiendo = false;
+                if (invOtra) { invOtra = false; cargarInvites(); }
+            });
     }
 
-    connectSSE();
+    cargarInvites();
+    if (window.melonTimbre) window.melonTimbre.on('musica', cargarInvites, 30000);
+    else setInterval(cargarInvites, 30000);
 })();
 
 /* ════════════════════════════════════════════════════════════════

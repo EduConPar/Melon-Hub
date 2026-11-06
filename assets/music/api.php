@@ -40,6 +40,7 @@
    ────────────────────────────────────────────────────────── */
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_usuario: avisos al escritorio */
 
 /* Para el polling de tv.php — fuerza socket nuevo en cada petición.
    Las TVs viejas (Tizen <2018, webOS 3) reusan sockets keep-alive
@@ -306,6 +307,7 @@ function pushCollabNotif(PDO $pdo, int $toUid, int $fromUid, int $playlistId, st
         $pdo->prepare("INSERT INTO playlist_invites (to_user_id, from_user_id, playlist_id, type)
                        VALUES (?, ?, ?, ?)")
             ->execute([$toUid, $fromUid, $playlistId, $type]);
+        rt_usuario($toUid, 'musica');
     } catch (PDOException $e) { /* FK perdida → playlist borrada; sin notif */ }
 }
 
@@ -546,6 +548,9 @@ case 'invite-collaborator': {
     $pdo->prepare("INSERT INTO playlist_invites (to_user_id, from_user_id, playlist_id, type)
                    VALUES (?, ?, ?, 'invite')")
         ->execute([$toUid, $uid, $playlistId]);
+    /* Timbre 'musica' (assets/php/timbre.php): su escritorio pide
+       playlist-invites al verlo. */
+    rt_usuario((int)$toUid, 'musica');
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     global $loginUsers;
@@ -609,6 +614,35 @@ case 'respond-invite': {
     /* dismiss = solo cerrar la notif. No se notifica al otro. */
 
     jsonResponse(['ok' => true]);
+}
+
+/* Invitaciones y avisos de playlists del usuario: lo mismo que empujaba
+   notifications-stream.php, que ocupaba un proceso PHP y una conexión
+   todo el rato por escritorio. Ahora el escritorio lo pide cuando cambia
+   'musica' en su archivo del timbre (assets/php/timbre.php). */
+case 'playlist-invites': {
+    $uid = uidByKey($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $st = $pdo->prepare(
+        "SELECT pi.id, pi.type, pi.playlist_id AS playlistId,
+                COALESCE(p.name, '') AS playlistName,
+                fu.user_key AS fromUser,
+                fu.label    AS fromLabel,
+                UNIX_TIMESTAMP(pi.created_at) AS sentAt
+         FROM playlist_invites pi
+         JOIN usuarios fu ON pi.from_user_id = fu.id
+         LEFT JOIN playlists p ON pi.playlist_id = p.id
+         WHERE pi.to_user_id = ?
+         ORDER BY pi.created_at ASC");
+    $st->execute([$uid]);
+    $invites = $st->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($invites as &$row) {
+        $row['id']         = (int)$row['id'];
+        $row['playlistId'] = (int)$row['playlistId'];
+        $row['sentAt']     = (int)$row['sentAt'];
+    }
+    unset($row);
+    jsonResponse(['ok' => true, 'invites' => $invites]);
 }
 
 /* ─── Usuarios ───────────────────────────────────────────── */

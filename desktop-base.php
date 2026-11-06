@@ -55,17 +55,20 @@ if (!isset($_SESSION['user']) || $_SESSION['user'] !== $desktopUserKey) {
     exit;
 }
 
-/* Timbre (assets/php/timbre.php): archivo estático del usuario que el
-   aviso del haro del ajedrez mira en vez de llamar a la API cada 10 s.
-   Se crea ya si no existe, para que no dé 404 al mirarlo. */
+/* Timbre (assets/php/timbre.php): archivo estático del usuario que mira
+   window.melonTimbre (más abajo) en vez de preguntar a cada API cada
+   pocos segundos. Se crea ya si no existe, para que no dé 404 al mirarlo,
+   y se lee lo que tiene ahora: es el punto de partida de la página. */
 require_once __DIR__ . '/assets/php/timbre.php';
-$rtTimbre = (function () use ($pdo, $desktopUserKey) {
+[$rtTimbre, $rtTimbreDatos] = (function () use ($pdo, $desktopUserKey) {
     $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
     $st->execute([$desktopUserKey]);
     $uid = (int)$st->fetchColumn();
-    if ($uid <= 0) return '';
+    if ($uid <= 0) return ['', []];
     rt_asegurarUsuario($uid);
-    return rt_urlUsuario($uid);
+    $url = rt_urlUsuario($uid);
+    $datos = json_decode((string)@file_get_contents(__DIR__ . '/' . $url), true);
+    return [$url, is_array($datos) ? $datos : []];
 })();
 
 /* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
@@ -1054,6 +1057,59 @@ window.DesktopState.whenReady = function(cb){
     </div>
 </div>
 
+<script>
+/* ── Timbre del escritorio (assets/php/timbre.php) ─────────────────────
+   Un archivo estático por usuario (rt/u/<código>.json) con un contador por
+   tema que el servidor sube cuando cambia algo para él: chat (mensajes),
+   notif (notificaciones del perfil), items (invitaciones de listas),
+   musica (de playlists), lt (Escuchar juntos), regalo y aviso (ajedrez).
+   Se mira cada 3 s (cada segundo con un chat abierto): lo sirve LiteSpeed
+   sin PHP ni BD y casi siempre contesta 304. Cada parte del escritorio
+   se apunta a sus temas con melonTimbre.on(tema, fn, respaldo) y solo
+   llama a su API cuando cambian. Antes cada una preguntaba a su API cada
+   1,5–60 s y había dos SSE abiertos todo el rato, que ocupaban 2 procesos
+   PHP y 2 conexiones por escritorio (.claude/notas/rendimiento.md).
+   Si el archivo no responde, cada parte vuelve a preguntar a su API a su
+   ritmo de antes (respaldo, ms; sin respaldo, nada) hasta que vuelva.
+   Se parte de lo que tenía el archivo al generar esta página: un cambio
+   entre la carga y la primera lectura no se pierde. */
+window.melonTimbre = (function () {
+    var url = <?= json_encode($rtTimbre) ?>;
+    var visto = <?= json_encode((object)$rtTimbreDatos) ?>;
+    var temas = {}, ok = !!url, rapidos = {};
+    function llamar(s) { s.ultima = Date.now(); try { s.fn(); } catch (e) {} }
+    function mirar() {
+        fetch(url, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error('timbre ' + r.status); return r.json(); })
+            .then(function (d) {
+                ok = true;
+                Object.keys(temas).forEach(function (t) {
+                    if ((d[t] || 0) !== (visto[t] || 0)) temas[t].forEach(llamar);
+                });
+                visto = d;
+                setTimeout(mirar, Object.keys(rapidos).length && !document.hidden ? 1000 : 3000);
+            })
+            .catch(function () { ok = false; setTimeout(mirar, 10000); });
+    }
+    /* Sin timbre: cada parte, a su ritmo de antes. */
+    setInterval(function () {
+        if (ok) return;
+        var ahora = Date.now();
+        Object.keys(temas).forEach(function (t) {
+            temas[t].forEach(function (s) { if (s.cada && ahora - s.ultima >= s.cada) llamar(s); });
+        });
+    }, 1000);
+    if (url) setTimeout(mirar, 1000);
+    return {
+        on: function (tema, fn, respaldo) {
+            (temas[tema] = temas[tema] || []).push({ fn: fn, cada: respaldo || 0, ultima: Date.now() });
+        },
+        ok: function () { return ok; },
+        /* Mirar cada segundo mientras haga falta (quien: p. ej. 'chat'). */
+        rapido: function (quien, si) { if (si) rapidos[quien] = 1; else delete rapidos[quien]; }
+    };
+})();
+</script>
 <?php include __DIR__ . '/apps/reproductor.php'; ?>
 <?php include __DIR__ . '/apps/perfil.php'; ?>
 
@@ -2325,7 +2381,9 @@ window.notifSystem = (function() {
                 .catch(function() {});
         };
         pollUnread();
-        setInterval(pollUnread, 20000);
+        /* Cuando el timbre dice que hay algo nuevo en los chats (si no
+           responde, cada 20 s como antes). */
+        window.melonTimbre.on('chat', pollUnread, 20000);
         window.addEventListener('focus', pollUnread);
     }
     if (md.startDrag) {
@@ -2577,12 +2635,11 @@ window.notifSystem = (function() {
        Juegos ya está enseñando el ajedrez, la partida entra sola y no
        hace falta avisar.
        No se llama a la API cada 10 s desde cada escritorio abierto (con
-       mucha gente era carga fija para el servidor): se mira el archivo
-       estático del timbre del usuario (rt/u/…, assets/php/timbre.php; no
-       gasta PHP ni BD) y se pide ajz-avisos solo cuando cambia su
+       mucha gente era carga fija para el servidor): se pide ajz-avisos
+       cuando el timbre (window.melonTimbre) dice que ha cambiado su
        "aviso". También a la hora en que empieza su próximo torneo
        (prox): esa llamada es la que lo arranca (ajz_tick) aunque nadie
-       tenga abierto el ajedrez. Si el archivo no responde, como antes:
+       tenga abierto el ajedrez. Si el timbre no responde, como antes:
        la API cada 10 s. */
     function ajzViendo() {
         var win = document.getElementById('juegos-window');
@@ -2598,26 +2655,13 @@ window.notifSystem = (function() {
     function ajzError(msg) {
         window.notifSystem.show({ id: 'ajz-err-' + Date.now(), type: 'info', title: AJZ_TIT, message: msg });
     }
-    var AJZ_TIMBRE = <?= json_encode($rtTimbre) ?>;
-    var ajzVisto = null, ajzPlazo = null, ajzPidiendo = false, ajzOtra = false;
+    var ajzPlazo = null, ajzPidiendo = false, ajzOtra = false;
     /* A la hora de su próximo torneo, con un poco de margen al azar para
        que no lleguen todos los escritorios a la vez. */
     function ajzProgramar(d) {
         if (ajzPlazo) { clearTimeout(ajzPlazo); ajzPlazo = null; }
         var falta = d.prox && d.ahora ? d.prox - d.ahora : -1;
         if (falta > 0 && falta < 6 * 3600000) ajzPlazo = setTimeout(pollAjedrez, falta + 300 + Math.random() * 1500);
-    }
-    function ajzMirarTimbre() {
-        if (!AJZ_TIMBRE) { pollAjedrez(); setTimeout(ajzMirarTimbre, 10000); return; }
-        fetch(AJZ_TIMBRE, { cache: 'no-cache', credentials: 'same-origin' })
-            .then(function(r) { if (!r.ok) throw new Error('timbre ' + r.status); return r.json(); })
-            .then(function(t) {
-                var v = t.aviso || 0;
-                if (ajzVisto !== null && v !== ajzVisto) pollAjedrez();
-                ajzVisto = v;
-                setTimeout(ajzMirarTimbre, document.hidden ? 10000 : 3000);
-            })
-            .catch(function() { pollAjedrez(); setTimeout(ajzMirarTimbre, 10000); });
     }
     function pollAjedrez() {
         if (!window.notifSystem) return;
@@ -2688,7 +2732,7 @@ window.notifSystem = (function() {
             });
     }
     setTimeout(pollAjedrez, 4000);
-    setTimeout(ajzMirarTimbre, 5000);
+    window.melonTimbre.on('aviso', pollAjedrez, 10000);
 })();
 
 /* =========================
@@ -2831,7 +2875,8 @@ window.notifSystem = (function() {
     document.getElementById('tienda-icon').addEventListener('dblclick', function() { openTienda(); });
 
     /* Regalos de la tienda: aviso del haro por cada regalo pendiente de
-       abrir (al entrar y cada minuto); "Abrir" lleva a la tienda con él. */
+       abrir (al entrar y cuando el timbre dice que ha llegado uno; si no
+       responde, cada minuto como antes); "Abrir" lleva a la tienda con él. */
     function pollGifts() {
         if (!window.notifSystem) return;
         fetch('assets/tienda/api.php?action=gifts', { credentials: 'same-origin' })
@@ -2855,7 +2900,7 @@ window.notifSystem = (function() {
             .catch(function() {});
     }
     setTimeout(pollGifts, 6000);
-    setInterval(pollGifts, 60000);
+    window.melonTimbre.on('regalo', pollGifts, 60000);
 
     document.getElementById('tienda-close').addEventListener('click', function() {
         taskbarManager.unregister('tienda-window');

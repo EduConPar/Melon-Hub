@@ -177,6 +177,9 @@ function racha_pulsar(PDO $pdo, int $uid): array {
         try {
             $pdo->prepare("INSERT INTO notifications (user_id, type, from_user_id, payload, is_read) VALUES (?, 'invite-reward', ?, ?, 0)")
                 ->execute([$avisarA, $uid, json_encode(['points' => INVITA_PUNTOS])]);
+            /* Timbre 'notif' (assets/php/timbre.php): su escritorio lo ve. */
+            require_once dirname(__DIR__) . '/php/timbre.php';
+            rt_usuario((int)$avisarA, 'notif');
         } catch (Throwable $e) { /* sin tabla de avisos: los puntos ya están dados */ }
     }
     $st = $pdo->prepare("SELECT autismo FROM usuarios WHERE id = ?");

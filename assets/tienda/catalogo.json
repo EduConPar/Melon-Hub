@@ -56,7 +56,7 @@
     { "categoria": "haros", "slug": "green",  "nombre": "Verde",    "descripcion": "Haro verde clásico. Lo tienes por defecto.", "precio": 0 },
     { "categoria": "haros", "slug": "yellow", "nombre": "Amarillo", "descripcion": "Haro amarillo", "precio": 200 },
     { "categoria": "haros", "slug": "purple", "nombre": "Morado",   "descripcion": "Haro Morado",   "precio": 200 },
-    { "categoria": "haros", "slug": "lightBlue", "nombre": "Azul Claro",   "descripcion": "Haro Azul Claro",   "precio": 200 },
+    { "categoria": "haros", "slug": "lightblue", "nombre": "Azul Claro",   "descripcion": "Haro Azul Claro",   "precio": 200 },
     { "categoria": "haros", "slug": "blue", "nombre": "Azul",   "descripcion": "Haro Azul",   "precio": 200 },
     { "categoria": "haros", "slug": "red", "nombre": "Rojo",   "descripcion": "Haro Rojo",   "precio": 200 },
     { "categoria": "haros", "slug": "pink", "nombre": "Rosa",   "descripcion": "Haro Rosa",   "precio": 200 },

@@ -43,6 +43,7 @@
 if (in_array($_GET['action'] ?? '', ['invites', 'poll'], true)) define('MELON_DB_RAPIDO', true);
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__, 2) . '/assets/themes/theme-helpers.php';
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_usuario: avisos al escritorio */
 
 session_start();
 $userKey = $_SESSION['user'] ?? '';
@@ -371,6 +372,9 @@ if ($action === 'invite') {
         VALUES (?, ?, ?)
     ")->execute([(int)$host['id'], $userId, $toId]);
     $newInviteId = (int)$pdo->lastInsertId();
+    /* Timbre 'lt' (assets/php/timbre.php): su escritorio pide las
+       invitaciones al verlo (antes, cada 5 s). */
+    rt_usuario((int)$toId, 'lt');
 
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
@@ -498,6 +502,9 @@ if ($action === 'request-join') {
         ->execute([$hostId, $userId]);
     $pdo->prepare("INSERT INTO listening_join_requests (host_user_id, from_user_id) VALUES (?, ?)")
         ->execute([$hostId, $userId]);
+    /* Timbre 'lt': la app del anfitrión atiende la petición al verlo
+       (antes preguntaba cada 5 s). */
+    rt_usuario((int)$hostId, 'lt');
     echo json_encode(['ok' => true, 'host_label' => getHostLabel($pdo, (int)$hostId)]);
     exit;
 }

@@ -1,6 +1,6 @@
 <?php
-/* SSE de invites + status notifs de items (perfil).
-   Lee de item_invites cada segundo y emite cuando cambia. */
+/* SSE de invites + status notifs de items (perfil) de antes del timbre:
+   solo para páginas viejas; contesta una vez y cierra (ver abajo). */
 session_start();
 require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__, 2) . '/db.php';
@@ -30,43 +30,22 @@ $query = $pdo->prepare(
      ORDER BY i.created_at ASC"
 );
 
-$lastHash = '';
-$start    = time();
-while (true) {
-    if (time() - $start > 25) break;
-    if (connection_aborted()) break;
-
-    $query->execute([$uid]);
-    $invites = $query->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($invites as &$row) {
-        $row['id']     = (int)$row['id'];
-        $row['itemId'] = $row['itemId'] !== null ? (int)$row['itemId'] : null;
-        $row['sentAt'] = (int)$row['sentAt'];
-    }
-    unset($row);
-
-    $hash = md5(json_encode($invites));
-    if ($hash !== $lastHash) {
-        $lastHash = $hash;
-        echo 'data: ' . json_encode($invites) . "\n\n";
-    } else {
-        /* Heartbeat: comentario SSE (línea que empieza por ':'), que
-           EventSource ignora. Es imprescindible para detectar el cierre
-           del cliente: PHP solo se entera de que el socket murió cuando
-           INTENTA escribir. Sin esto, un stream cuyo contenido no cambia
-           no escribía nunca, connection_aborted() no saltaba jamás y el
-           proceso seguía vivo —reteniendo su conexión MySQL— los 25s
-           completos aunque la pestaña ya estuviera cerrada.
-           Al cambiar de interfaz se recarga todo de golpe, así que esos
-           zombis se solapaban con las conexiones de la página nueva y
-           agotaban el tope de la cuenta. */
-        echo ": ping\n\n";
-    }
-    if (ob_get_level()) ob_flush();
-    flush();
-    sleep(1);
+/* Ya no lo abre el escritorio: pide item-invites (assets/profile/api.php)
+   cuando suena su timbre (assets/php/timbre.php). Queda solo para las
+   páginas abiertas antes de ese cambio: contesta una vez y cierra, en vez
+   de quedarse 25 s en bucle ocupando un proceso PHP y una conexión a la
+   BD por escritorio (lo que llenaba el hosting, ver
+   .claude/notas/rendimiento.md). Al recargar, la página ya usa el timbre;
+   cuando no quede ninguna vieja se puede borrar este archivo. */
+$query->execute([$uid]);
+$invites = $query->fetchAll(PDO::FETCH_ASSOC);
+foreach ($invites as &$row) {
+    $row['id']     = (int)$row['id'];
+    $row['itemId'] = $row['itemId'] !== null ? (int)$row['itemId'] : null;
+    $row['sentAt'] = (int)$row['sentAt'];
 }
-
-echo "data: []\n\n";
+unset($row);
+echo "retry: 60000\n";
+echo 'data: ' . json_encode($invites) . "\n\n";
 if (ob_get_level()) ob_flush();
 flush();

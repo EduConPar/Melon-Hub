@@ -148,6 +148,9 @@ function wiki_notify(PDO $pdo, int $toUid, ?int $fromUid, string $type, array $p
         $pdo->prepare("INSERT INTO notifications (user_id, type, from_user_id, payload, is_read)
                        VALUES (?, ?, ?, ?, 0)")
             ->execute([$toUid, $type, $fromUid, json_encode($payload, JSON_UNESCAPED_UNICODE)]);
+        /* Timbre 'notif' (assets/php/timbre.php): su escritorio lo ve. */
+        require_once dirname(__DIR__) . '/php/timbre.php';
+        rt_usuario($toUid, 'notif');
     } catch (Throwable $e) { /* tabla ausente → no bloquea */ }
     if (function_exists('sendPushToUser')) {
         try { sendPushToUser($pdo, $toUid, $payload); } catch (Throwable $e) {}

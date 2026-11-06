@@ -1538,7 +1538,7 @@ var PROFILE_USERS = <?php
     }
 
     /* ──── Invite system (usa notifSystem unificado) ──── */
-    var itemNotifEs        = null;
+    var itemNotifActivo    = false;
     var currentSessionUser = <?php echo json_encode($desktopUserKey); ?>;
 
     function postItemAction(id, action) {
@@ -1565,7 +1565,12 @@ var PROFILE_USERS = <?php
             if (typeof loadLists === 'function') loadLists(function() { if (typeof updateCounts === 'function') updateCounts(); if (typeof reloadCurrentView === 'function') reloadCurrentView(); });
             return;
         }
-        if (!window.notifSystem || window.notifSystem.isShown(notif.id) || window.notifSystem.isDismissed(notif.id)) return;
+        /* Id del aviso con prefijo: item_invites y playlist_invites
+           (reproductor.php, 'pl-') numeran cada una por su cuenta y, con
+           el número a secas, al cerrar una se daba por cerrada la otra
+           con el mismo número y no llegaba a salir. */
+        var avisoId = 'item-' + notif.id;
+        if (!window.notifSystem || window.notifSystem.isShown(avisoId) || window.notifSystem.isDismissed(avisoId)) return;
         /* SSE recibió una notif nueva → sonido inmediato (respetando
            el filtro por tipo). El throttle interno colapsa con el play
            del polling si llegan a la vez. */
@@ -1583,7 +1588,7 @@ var PROFILE_USERS = <?php
         if (isAction) {
             var senderImg = (notif.fromUser && PROFILE_USERS[notif.fromUser]) ? PROFILE_USERS[notif.fromUser].image : null;
             window.notifSystem.show({
-                id:          notif.id,
+                id:          avisoId,
                 type:        'action',
                 title:       ITEM_TITLES[notif.type] || 'Notificación',
                 message:     msg,
@@ -1605,7 +1610,7 @@ var PROFILE_USERS = <?php
                 loadLists(function() { updateCounts(); reloadCurrentView(); });
             }
             window.notifSystem.show({
-                id:      notif.id,
+                id:      avisoId,
                 type:    'info',
                 title:   ITEM_TITLES[notif.type] || 'Notificación',
                 message: msg,
@@ -1614,17 +1619,33 @@ var PROFILE_USERS = <?php
         }
     }
 
+    /* Invitaciones y avisos de listas (item_invites). Antes llegaban por un
+       SSE (item-notifications-stream.php) que ocupaba un proceso PHP y una
+       conexión a la BD todo el rato por escritorio. Ahora se piden
+       (item-invites) al empezar y cuando el timbre del escritorio dice
+       que han cambiado ('items', window.melonTimbre en desktop-base.php);
+       si no responde, cada 30 s. pushItemNotif no repite las ya vistas.
+       Nunca dos peticiones a la vez: si se pide mientras va una, se
+       repite al acabar. */
+    var itemNotifPidiendo = false, itemNotifOtra = false;
+    function cargarItemNotifs() {
+        if (itemNotifPidiendo) { itemNotifOtra = true; return; }
+        itemNotifPidiendo = true;
+        fetch('assets/profile/api.php?action=item-invites', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d && d.ok && Array.isArray(d.invites)) d.invites.forEach(pushItemNotif); })
+            .catch(function() {})
+            .then(function() {
+                itemNotifPidiendo = false;
+                if (itemNotifOtra) { itemNotifOtra = false; cargarItemNotifs(); }
+            });
+    }
     function startItemNotifStream() {
-        if (itemNotifEs) return;
-        var es = new EventSource('assets/profile/item-notifications-stream.php');
-        itemNotifEs = es;
-        es.onmessage = function(e) {
-            var items = [];
-            try { items = JSON.parse(e.data); } catch(err) { return; }
-            if (!Array.isArray(items)) return;
-            items.forEach(pushItemNotif);
-        };
-        es.onerror = function() { es.close(); itemNotifEs = null; setTimeout(startItemNotifStream, 5000); };
+        if (itemNotifActivo) return;
+        itemNotifActivo = true;
+        cargarItemNotifs();
+        if (window.melonTimbre) window.melonTimbre.on('items', cargarItemNotifs, 30000);
+        else setInterval(cargarItemNotifs, 30000);
     }
 
     function makeAvRow(uKey, uInfo, btnLabel, btnSetup) {
@@ -5776,8 +5797,7 @@ var PROFILE_USERS = <?php
         win.style.left = Math.round((window.innerWidth  - win.offsetWidth)  / 2) + 'px';
         win.style.top  = Math.round((window.innerHeight - win.offsetHeight) / 2) + 'px';
         loadChatMessages(true);   /* initial=true: pin imágenes durante grace */
-        if (chatPollTimer) clearInterval(chatPollTimer);
-        chatPollTimer = setInterval(loadChatMessages, 1500);
+        programarChat();
         /* Quita el contador local al abrir el chat */
         if (unreadChats[userKey]) { delete unreadChats[userKey]; renderFollowedNav(); }
         setTimeout(function() {
@@ -5840,7 +5860,24 @@ var PROFILE_USERS = <?php
         chatLastSig  = '';
         var stEl = document.getElementById('profile-chat-status');
         if (stEl) { stEl.textContent = ''; stEl.classList.remove('is-online'); }
-        if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+        if (chatPollTimer) { clearTimeout(chatPollTimer); chatPollTimer = null; }
+        if (window.melonTimbre) window.melonTimbre.rapido('chat', false);
+    }
+
+    /* Chat abierto: lo nuevo llega por el timbre (mensajes, editados,
+       borrados, leídos), que con un chat abierto se mira cada segundo;
+       aquí solo se repasa cada 10 s para el "entregado" (depende de
+       cuándo se conectó el otro). Antes se pedía cada 1,5 s. Sin timbre
+       (o si deja de responder), cada 1,5 s como antes. */
+    function programarChat() {
+        if (chatPollTimer) clearTimeout(chatPollTimer);
+        var conTimbre = window.melonTimbre && window.melonTimbre.ok();
+        if (window.melonTimbre) window.melonTimbre.rapido('chat', true);
+        chatPollTimer = setTimeout(function() {
+            if (!chatWithUser) return;
+            loadChatMessages();
+            programarChat();
+        }, conTimbre ? 10000 : 1500);
     }
 
     function loadChatMessages(initial) {
@@ -8149,13 +8186,22 @@ var PROFILE_USERS = <?php
         }
     });
 
-    /* Cargar notificaciones de perfil + polling cada 30s */
+    /* Notificaciones de perfil y contador de mensajes sin leer: al
+       empezar y cuando el timbre del escritorio dice que han cambiado
+       ('notif' / 'chat', window.melonTimbre en desktop-base.php); si no
+       responde, cada 30 s y cada 4 s como antes. En standalone no hay
+       timbre: como antes. */
     loadProfileNotifs();
-    setInterval(loadProfileNotifs, 30000);
-
-    /* Cargar contador de mensajes sin leer + polling cada 4s */
     loadUnreadChats();
-    unreadPollTimer = setInterval(loadUnreadChats, 4000);
+    if (window.melonTimbre) {
+        window.melonTimbre.on('notif', loadProfileNotifs, 30000);
+        window.melonTimbre.on('chat', loadUnreadChats, 4000);
+        /* El chat abierto, en cuanto llega algo (ver programarChat). */
+        window.melonTimbre.on('chat', function() { if (chatWithUser) loadChatMessages(); });
+    } else {
+        setInterval(loadProfileNotifs, 30000);
+        unreadPollTimer = setInterval(loadUnreadChats, 4000);
+    }
 
     document.getElementById('profile-close').addEventListener('click', function() {
         document.dispatchEvent(new Event('profile-edit-cancel'));

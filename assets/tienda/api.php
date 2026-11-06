@@ -356,6 +356,10 @@ case 'gift-answer': {
             $pdo->prepare("INSERT INTO tienda_regalos (from_user_id, to_user_id, item_id, precio, mensaje) VALUES (?, ?, ?, ?, ?)")
                 ->execute([$userId, $toId, $itemId, $precio, $mensaje]);
             $pdo->commit();
+            /* Timbre 'regalo' (assets/php/timbre.php): su escritorio pide
+               los regalos al verlo (antes, cada minuto). */
+            require_once dirname(__DIR__) . '/php/timbre.php';
+            rt_usuario((int)$toId, 'regalo');
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             jsonError('Error al regalar: ' . $e->getMessage(), 500);

@@ -69,6 +69,7 @@ if (in_array($_GET['action'] ?? $_POST['action'] ?? '', ['get-unread-chats', 'pr
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
+require_once dirname(__DIR__) . '/php/timbre.php';    /* rt_usuario: avisos al escritorio */
 melon_esquemaVigilar();
 
 $u       = requireAuth();
@@ -448,12 +449,15 @@ function pf_loadAllLists(PDO $pdo, int $uid): array {
     return $lists;
 }
 
-/* Inserta una notificación en `notifications`. fromUser puede ser null. */
+/* Inserta una notificación en `notifications`. fromUser puede ser null.
+   Timbre 'notif': su escritorio pide get-profile-notifs al verlo
+   (assets/php/timbre.php; antes lo pedía cada 30 s). */
 function pf_addNotif(PDO $pdo, int $toUid, string $type, ?int $fromUid, array $extra = []): void {
     if ($fromUid !== null && $fromUid === $toUid) return; /* no auto-notifs */
     $pdo->prepare("INSERT INTO notifications (user_id, type, from_user_id, payload, is_read)
                    VALUES (?, ?, ?, ?, 0)")
         ->execute([$toUid, $type, $fromUid, json_encode($extra ?: new stdClass(), JSON_UNESCAPED_UNICODE)]);
+    rt_usuario($toUid, 'notif');
 }
 
 /* Borra notifs que matcheen un tipo + payload parcial. Útil para deshacer
@@ -477,13 +481,16 @@ function pf_deleteNotifsMatching(PDO $pdo, int $toUid, string $type, ?int $fromU
     if (!empty($toDelete)) {
         $place = implode(',', array_fill(0, count($toDelete), '?'));
         $pdo->prepare("DELETE FROM notifications WHERE id IN ($place)")->execute($toDelete);
+        rt_usuario($toUid, 'notif');
     }
 }
 
 /* Inserta un item_invites de tipo "status" (item-accepted, collab-left,
-   collab-removed, item-rejected) para que el SSE lo entregue al cliente. */
+   collab-removed, item-rejected) para que le llegue al cliente (timbre
+   'items': su escritorio pide item-invites al verlo). */
 function pf_pushItemStatus(PDO $pdo, int $toUid, int $fromUid, ?int $itemId, string $type, array $itemMeta): void {
     if ($toUid === $fromUid) return;
+    rt_usuario($toUid, 'items');
     $pdo->prepare("INSERT INTO item_invites
         (to_user_id, from_user_id, type, item_id, category, item_title, item_image, item_music_type, item_artist)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -516,6 +523,7 @@ function pf_pushItemEdited(PDO $pdo, int $itemId, int $ownerUid, int $editorUid,
         (to_user_id, from_user_id, type, item_id, category, item_title, item_image, item_music_type, item_artist)
         VALUES (?, ?, 'item-edited', ?, ?, ?, ?, ?, ?)");
     foreach (array_keys($recips) as $rid) {
+        rt_usuario($rid, 'items');
         $del->execute([$rid, $itemId]);
         $ins->execute([
             $rid, $editorUid, $itemId,
@@ -529,6 +537,15 @@ function pf_pushItemEdited(PDO $pdo, int $itemId, int $ownerUid, int $editorUid,
 }
 
 /* Resuelve/crea el chat entre dos usuarios. Canoniza pair_id por orden. */
+/* Mensaje editado o borrado: timbre 'chat' del otro del chat, para que
+   lo vea cambiar si lo tiene abierto. */
+function pf_avisarChat(PDO $pdo, int $mid, int $yo): void {
+    $st = $pdo->prepare("SELECT c.user_a, c.user_b FROM messages m JOIN chats c ON c.id = m.chat_id WHERE m.id = ?");
+    $st->execute([$mid]);
+    $c = $st->fetch(PDO::FETCH_NUM);
+    if ($c) rt_usuario((int)$c[0] === $yo ? (int)$c[1] : (int)$c[0], 'chat');
+}
+
 function pf_chatId(PDO $pdo, int $a, int $b): int {
     if ($a > $b) { $tmp = $a; $a = $b; $b = $tmp; }
     $stmt = $pdo->prepare("SELECT id FROM chats WHERE user_a = ? AND user_b = ?");
@@ -1474,6 +1491,7 @@ case 'send-item-invite': {
             $category === 'music' ? ($item['music_type'] ?: 'song') : null,
             $category === 'music' ? ($item['artist'] ?? '') : null,
         ]);
+    rt_usuario($toUid, 'items');
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     $fromLabel = $loginUsers[$userKey]['label'] ?? $userKey;
@@ -1872,9 +1890,39 @@ case 'notif-settings': {
 case 'mark-notifs-read': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
-    $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0")
-        ->execute([$uid]);
+    $st = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
+    $st->execute([$uid]);
+    /* Sus otros escritorios / el móvil quitan el contador. */
+    if ($st->rowCount() > 0) rt_usuario($uid, 'notif');
     jsonResponse(['ok' => true]);
+}
+
+/* Invitaciones y avisos de listas (item_invites) del usuario: lo mismo
+   que empujaba item-notifications-stream.php, que ocupaba un proceso PHP
+   y una conexión todo el rato por escritorio. Ahora el escritorio lo pide
+   cuando cambia 'items' en su archivo del timbre (assets/php/timbre.php). */
+case 'item-invites': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $st = $pdo->prepare(
+        "SELECT i.id, i.type, i.category, i.item_id AS itemId,
+                i.item_title AS itemTitle, i.item_image AS itemImage,
+                i.item_music_type AS itemMusicType, i.item_artist AS itemArtist,
+                fu.user_key AS fromUser, fu.label AS fromLabel,
+                UNIX_TIMESTAMP(i.created_at) AS sentAt
+         FROM item_invites i
+         JOIN usuarios fu ON i.from_user_id = fu.id
+         WHERE i.to_user_id = ?
+         ORDER BY i.created_at ASC");
+    $st->execute([$uid]);
+    $invites = $st->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($invites as &$row) {
+        $row['id']     = (int)$row['id'];
+        $row['itemId'] = $row['itemId'] !== null ? (int)$row['itemId'] : null;
+        $row['sentAt'] = (int)$row['sentAt'];
+    }
+    unset($row);
+    jsonResponse(['ok' => true, 'invites' => $invites]);
 }
 
 case 'get-followers': {
@@ -1957,7 +2005,16 @@ case 'get-messages': {
 
     /* Actualizar mi last_seen */
     $col = ($uid < $withUid) ? 'last_seen_a' : 'last_seen_b';
+    /* ¿Había mensajes suyos sin leer? Solo entonces se avisa por el
+       timbre: al otro (ve el "leído") y a mí (mis otros escritorios y el
+       móvil quitan el contador). Avisar siempre sería un bucle: cada
+       aviso hace que el otro pida sus mensajes, que avisaría de vuelta. */
+    $st = $pdo->prepare("SELECT EXISTS(SELECT 1 FROM messages m JOIN chats c ON c.id = m.chat_id
+                          WHERE m.chat_id = ? AND m.from_user_id = ? AND m.sent_at > COALESCE(c.$col, '1970-01-01'))");
+    $st->execute([$chatId, $withUid]);
+    $habiaSinLeer = (bool)$st->fetchColumn();
     $pdo->prepare("UPDATE chats SET $col = NOW() WHERE id = ?")->execute([$chatId]);
+    if ($habiaSinLeer) { rt_usuario($withUid, 'chat'); rt_usuario($uid, 'chat'); }
 
     /* last_seen del OTRO usuario en este chat → necesario para read receipts. */
     $otherCol = ($uid < $withUid) ? 'last_seen_b' : 'last_seen_a';
@@ -2020,6 +2077,7 @@ case 'edit-message': {
     if ($row['deleted_at']) jsonError('No se puede editar un mensaje eliminado', 400);
     $pdo->prepare("UPDATE messages SET text = ?, edited_at = NOW() WHERE id = ?")
         ->execute([$txt, $mid]);
+    pf_avisarChat($pdo, $mid, $uid);
     jsonResponse(['ok' => true, 'id' => $mid, 'text' => $txt, 'editedAt' => time()]);
 }
 
@@ -2040,6 +2098,7 @@ case 'delete-message': {
     if ((int)$row['from_user_id'] !== $uid) jsonError('No autorizado', 403);
     $pdo->prepare("UPDATE messages SET deleted_at = NOW() WHERE id = ?")
         ->execute([$mid]);
+    pf_avisarChat($pdo, $mid, $uid);
     jsonResponse(['ok' => true, 'id' => $mid]);
 }
 
@@ -2254,6 +2313,9 @@ case 'send-message': {
     $pdo->prepare("INSERT INTO messages (chat_id, from_user_id, text) VALUES (?, ?, ?)")
         ->execute([$chatId, $uid, $text]);
     $msgId = (int)$pdo->lastInsertId();
+    /* Timbre 'chat': su escritorio pide el contador (y el chat, si lo
+       tiene abierto) al verlo; antes lo pedía cada 4 s y cada 1,5 s. */
+    rt_usuario($toUid, 'chat');
     /* Mi last_seen también se actualiza al mandar */
     $col = ($uid < $toUid) ? 'last_seen_a' : 'last_seen_b';
     $pdo->prepare("UPDATE chats SET $col = NOW() WHERE id = ?")->execute([$chatId]);
