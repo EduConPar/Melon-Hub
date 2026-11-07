@@ -78,6 +78,7 @@ public class MainActivity extends BridgeActivity {
         { "playlist", "[0-9]{1,10}" },
         { "torneo",   "[0-9]{1,10}" },        /* ajedrez (juegos-mobile.php) */
         { "reto",     "[a-z0-9]{10}" },
+        { "tv",       "[a-f0-9]{24}" },       /* QR de emparejar la TV (tv.php) */
     };
 
     static String parseLink(Uri uri) {

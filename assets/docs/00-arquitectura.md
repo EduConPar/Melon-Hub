@@ -25,7 +25,7 @@ scrapbookOnline/
 ├── manifest.php               # PWA manifest dinámico
 ├── service-worker.js          # SW para push y PWA
 ├── setup-https.sh             # script para SSL local (XAMPP)
-├── tv.php                     # modo TV/pareada
+├── tv.php                     # TV: suena aquí, el móvil de mando (📺)
 │
 ├── desktops/                  # stubs <label>-desktop.php (un PHP de 1 línea por user)
 │   └── <user>-desktop.php

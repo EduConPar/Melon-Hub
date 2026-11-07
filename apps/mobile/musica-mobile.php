@@ -1846,7 +1846,7 @@ var QUEUE     = [];        /* tracks de la playlist en reproducción */
 var CUR_IDX   = -1;        /* índice del track actual en QUEUE */
 var YT_PLAYER = null;      /* instancia YT.Player (no llamarla YT — choca con window.YT) */
 var YT_READY  = false;
-var SHUFFLE_ON = false;    /* modo aleatorio: next/prev eligen track al azar */
+var SHUFFLE_ON = false;    /* modo aleatorio: ⏭ al azar, ⏮ por el historial */
 /* Música del perfil — la cargamos en paralelo a las playlists para
    poder mostrar la estrella de reseña en cualquier track cuyo videoId
    ya tengas reseñado en tu lista de música. Solo items PROPIOS. */
@@ -3004,6 +3004,7 @@ function playCurrent() {
     if (CUR_IDX < 0 || CUR_IDX >= QUEUE.length) return;
     var tr = QUEUE[CUR_IDX];
     if (!tr || !tr.videoId) { nextTrack(); return; }
+    muRememberListened();
 
     /* WRAPPED tracking: antes de cargar el nuevo videoId, logea el
        track ANTERIOR con el tiempo real escuchado (getCurrentTime del
@@ -3052,19 +3053,55 @@ function playCurrent() {
     YT_PLAYER.loadVideoById(tr.videoId);
 }
 
-/* Devuelve un índice aleatorio de QUEUE distinto al actual. Se usa
-   tanto para prev como next cuando SHUFFLE_ON: si solo hay un track
-   se queda donde está. */
+/* Devuelve un índice aleatorio de QUEUE distinto al actual (⏭ en
+   aleatorio): si solo hay un track se queda donde está. */
 function muPickRandomIdx() {
     if (QUEUE.length <= 1) return CUR_IDX;
     var r;
     do { r = Math.floor(Math.random() * QUEUE.length); } while (r === CUR_IDX);
     return r;
 }
+
+/* Historial de lo escuchado para el aleatorio (sin el shell; dentro de
+   mobile.php lo lleva MuShell, igual): ⏮ vuelve a la canción que sonaba
+   antes (no a una al azar) y ⏭, después de volver atrás, rehace el mismo
+   camino. Cada entrada guarda la playlist y el videoId: si la cola ya no
+   es la misma, se descarta. */
+var muShuffleBack = [], muShuffleForward = [], muShuffleNow = null, muShuffleNav = false;
+function muRememberListened() {
+    var entry = { pl: CUR_PL_IDX, idx: CUR_IDX, vid: QUEUE[CUR_IDX].videoId };
+    var same = muShuffleNow && muShuffleNow.vid === entry.vid && muShuffleNow.pl === entry.pl;
+    /* Una canción nueva que no viene de ⏮/⏭ por el historial (tocada en
+       la lista, al azar…) abre camino nuevo: lo de delante se olvida. */
+    if (!same && !muShuffleNav && muShuffleNow) {
+        muShuffleBack.push(muShuffleNow);
+        if (muShuffleBack.length > 200) muShuffleBack.shift();
+        muShuffleForward = [];
+    }
+    muShuffleNow = entry;
+    muShuffleNav = false;
+}
+/* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+function muHistoryStep(stack) {
+    while (stack.length) {
+        var e = stack.pop();
+        if (e.pl === CUR_PL_IDX && QUEUE[e.idx] && QUEUE[e.idx].videoId === e.vid) return e.idx;
+    }
+    return -1;
+}
 function nextTrack() {
     if (CUR_IDX < 0) return;
-    if (SHUFFLE_ON) { CUR_IDX = muPickRandomIdx(); }
-    else {
+    if (SHUFFLE_ON && QUEUE.length > 1) {
+        /* Si se había vuelto atrás, la que venía después; si no, al azar. */
+        var fwd = muHistoryStep(muShuffleForward);
+        if (fwd !== -1) {
+            if (muShuffleNow) muShuffleBack.push(muShuffleNow);
+            muShuffleNav = true;
+            CUR_IDX = fwd;
+        } else {
+            CUR_IDX = muPickRandomIdx();
+        }
+    } else {
         CUR_IDX++;
         if (CUR_IDX >= QUEUE.length) CUR_IDX = 0;     /* loop circular */
     }
@@ -3072,8 +3109,14 @@ function nextTrack() {
 }
 function prevTrack() {
     if (CUR_IDX < 0) return;
-    if (SHUFFLE_ON) { CUR_IDX = muPickRandomIdx(); }
-    else {
+    /* En aleatorio, a la que sonaba antes (si queda en el historial); si
+       no, la anterior de la lista, como sin aleatorio. */
+    var back = SHUFFLE_ON ? muHistoryStep(muShuffleBack) : -1;
+    if (back !== -1) {
+        if (muShuffleNow) muShuffleForward.push(muShuffleNow);
+        muShuffleNav = true;
+        CUR_IDX = back;
+    } else {
         CUR_IDX--;
         if (CUR_IDX < 0) CUR_IDX = QUEUE.length - 1;  /* loop circular */
     }

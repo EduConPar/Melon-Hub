@@ -40,7 +40,7 @@ if (isset($_GET['invitar'])) {
 }
 
 $link = null;
-foreach (['perfil', 'cancion', 'album', 'playlist', 'escuchar', 'torneo', 'reto'] as $tipo) {
+foreach (['perfil', 'cancion', 'album', 'playlist', 'escuchar', 'torneo', 'reto', 'tv'] as $tipo) {
     if (isset($_GET[$tipo])) { $link = melonParseLink($tipo, (string)$_GET[$tipo]); break; }
 }
 if ($link === null) {

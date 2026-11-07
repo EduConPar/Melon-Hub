@@ -88,28 +88,11 @@ if (isset($_GET['abrir'])) $melonPendingLink = melonParseLinkString((string)$_GE
 
 $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
 
-/* TV LAN URL — para Smart TVs que no soportan TLS 1.3/SNI moderno del
-   túnel cloudflared (Tizen <2018, webOS <4, Android TV 5). La TV está
-   en la misma WiFi → HTTP plano por IP local evita el handshake TLS y
-   carga instantáneo. Detección: override de .env > socket UDP > host. */
+/* Dirección de la TV en la red de casa (LAN_URL en .env), para Smart TVs
+   que no terminan el TLS moderno: HTTP plano por IP local. Sin ella, la
+   de esta misma web (antes se adivinaba la IP del servidor, que en el
+   hosting no es la de casa). */
 $tvLanUrl = trim((string) env('LAN_URL', ''));
-if ($tvLanUrl === '') {
-    $lanIp = '';
-    $sock = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    if ($sock) {
-        if (@socket_connect($sock, '8.8.8.8', 53)) {
-            @socket_getsockname($sock, $lanIp);
-        }
-        @socket_close($sock);
-    }
-    if (!$lanIp || $lanIp === '127.0.0.1') {
-        $alt = @gethostbyname(@gethostname());
-        if ($alt && $alt !== '127.0.0.1' && filter_var($alt, FILTER_VALIDATE_IP)) $lanIp = $alt;
-    }
-    if ($lanIp && $lanIp !== '127.0.0.1') {
-        $tvLanUrl = 'http://' . $lanIp . $projectBaseUrl . 'tv.php';
-    }
-}
 
 /* Token de dispositivo PARA EL MANIFEST. Si el usuario instala la PWA
    desde aquí (no desde la landing), también queremos que su start_url
@@ -196,6 +179,17 @@ require_once __DIR__ . '/assets/php/timbre.php';
     $url = rt_urlUsuario($uid);
     $datos = json_decode((string)@file_get_contents(__DIR__ . '/' . $url), true);
     return [$url, is_array($datos) ? $datos : []];
+})();
+
+/* TV (reproductor → 📺, assets/music/tv-lib.php): archivos de rt/tv/ con
+   cómo va la TV y su cola, y la hora del servidor para calcular por dónde
+   va la canción. */
+require_once __DIR__ . '/assets/music/tv-lib.php';
+$tvRt = (function () use ($pdo, $userKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$userKey]);
+    $uid = (int)$st->fetchColumn();
+    return $uid > 0 ? ['estado' => tv_urlEstado($uid), 'cola' => tv_urlCola($uid)] : null;
 })();
 
 /* INTERFAZ POR USUARIO (mismo sync que desktop-base.php):
@@ -1086,13 +1080,32 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 inset  1px  1px var(--bezel-dark-1, #808080),
                 inset -1px -1px var(--bezel-light-1, #fff);
         }
-        .mu-tv-code {
+        /* El código de la TV se escribe aquí (sin el relieve del input de
+           98.css: va dentro del hueco de .mu-tv-code-wrap). */
+        .mu-tv-backdrop input.mu-tv-code {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            height: auto;
+            padding: 0;
+            border: 0;
+            box-shadow: none;
+            background: transparent;
+            text-align: center;
             font-family: 'VT323', Consolas, Monaco, monospace;
             font-size: 36px;
             font-weight: bold;
             letter-spacing: 8px;
             color: var(--accent, #000080);
             line-height: 1;
+            outline: none;
+        }
+        .mu-tv-backdrop input.mu-tv-code::placeholder { color: var(--text-faint, #999); opacity: 0.6; }
+        .mu-tv-pair {
+            display: block;
+            width: 100%;
+            min-height: 28px;
+            margin: 0 0 12px;
         }
         .mu-tv-code-meta {
             margin-top: 6px;
@@ -1776,8 +1789,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <div class="mu-lock-hint" id="mu-lock-hint">↑ Desliza para desbloquear</div>
 </div>
 
-<!-- Modal "Conectar TV" — se abre desde el botón 📺 del fullscreen.
-     Win98 window con QR + URL del companion tv.php. -->
+<!-- Modal "Conectar TV" — el botón 📺 del fullscreen lo abre si no hay
+     ninguna TV encendida. La TV (tv.php) enseña un QR (lo abre la app con
+     la cámara) y un código, que se escribe aquí. -->
 <div class="mu-tv-backdrop" id="mu-tv-backdrop"
      data-lan-url="<?= htmlspecialchars($tvLanUrl, ENT_QUOTES) ?>" hidden>
     <div class="window mu-tv-window">
@@ -1789,18 +1803,19 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         </div>
         <div class="window-body">
             <p class="mu-tv-intro">
-                En el navegador de tu TV abre <strong id="mu-tv-url-inline"></strong>
-                e introduce el código de abajo.
+                En el navegador de tu TV abre <strong id="mu-tv-url-inline"></strong>.
+                Escanea su QR con la cámara del móvil o escribe aquí el código que sale:
             </p>
             <div class="mu-tv-code-wrap">
-                <div class="mu-tv-code" id="mu-tv-code">— — — — — —</div>
-                <div class="mu-tv-code-meta" id="mu-tv-code-meta">Generando…</div>
+                <input class="mu-tv-code" id="mu-tv-code" type="text" inputmode="numeric"
+                       maxlength="7" placeholder="000 000" autocomplete="off" aria-label="Código de la TV">
+                <div class="mu-tv-code-meta" id="mu-tv-code-meta"></div>
             </div>
+            <button class="button default mu-tv-pair" id="mu-tv-pair" type="button">Conectar</button>
             <ol class="mu-tv-steps">
-                <li>Abre el navegador de tu Smart TV.</li>
-                <li>Ve a la URL de arriba.</li>
-                <li>Teclea el código de 6 dígitos con el mando.</li>
-                <li>Listo — la TV queda emparejada 30 días.</li>
+                <li>Abre la dirección de abajo en el navegador de la TV.</li>
+                <li>Escanea el QR o escribe el código.</li>
+                <li>Listo: la TV se queda recordada. Pulsa 📺 para que suene en ella.</li>
             </ol>
             <div class="mu-tv-url-row">
                 <input type="text" id="mu-tv-url" readonly>
@@ -2004,6 +2019,9 @@ if ('serviceWorker' in navigator) {
         } else if (tipo === 'torneo' || tipo === 'reto') {
             /* Torneo de ajedrez o reto por enlace (ajedrez.js, abrirDesde). */
             openApp('apps/mobile/juegos-mobile.php?abrir=' + encodeURIComponent(tipo + ':' + valor), 'Juegos');
+        } else if (tipo === 'tv') {
+            /* QR de la TV (tv.php): queda emparejada con esta cuenta. */
+            if (window.MuShell && MuShell.tvEmparejar) MuShell.tvEmparejar({ token: valor });
         }
     }
     window.mOpenLink = mOpenLink;
@@ -2192,6 +2210,9 @@ window.MuShell = (function(){
     var autoPlayUntil = 0;
     var subscribers = [];
     var progressTimer = null;
+    /* Modo TV (botón 📺, ver tvEntrar): la TV suena y el móvil manda.
+       pendientes = órdenes sin contestar; ultimaN = número de la última. */
+    var TV = { on: false, st: null, ultimaN: 0, pendientes: 0, mostrado: '', timer: null };
     /* Label del usuario actual — usado al añadir tracks a playlists
        para el campo addedBy. */
     var ME_LABEL = <?= json_encode($userLabel ?? '') ?>;
@@ -2261,8 +2282,9 @@ window.MuShell = (function(){
         document.head.appendChild(s);
     })();
 
-    function onYTState(e) {
-        var playing = (e.data === 1);
+    /* ⏯ y los vinilos: sonando o en pausa (de YouTube o, en modo TV, de
+       la TV). */
+    function pintarPlay(playing) {
         var ftog = document.getElementById('mu-full-toggle');
         if (ftog) ftog.classList.toggle('is-playing', playing);
         var v1 = document.getElementById('mu-vinyl');
@@ -2271,6 +2293,19 @@ window.MuShell = (function(){
         if (v1) v1.classList.toggle('paused', !playing);
         if (v2) v2.classList.toggle('paused', !playing);
         if (v3) v3.classList.toggle('paused', !playing);
+    }
+
+    function onYTState(e) {
+        var playing = (e.data === 1);
+        /* Modo TV: el YouTube del móvil está callado. Si algo lo arranca,
+           se para; la pantalla la pinta la TV (tvPintar). Solo se suelta
+           el servicio de música de la app. */
+        if (TV.on) {
+            if (playing) { try { YT_PLAYER.pauseVideo(); } catch (_) {} }
+            else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
+            return;
+        }
+        pintarPlay(playing);
         setMediaPlaybackState(playing ? 'playing' : 'paused');
         /* App Android: solo cuenta play (1) y pausa/parada (2, 5). Entre
            canciones (0, -1, 3) no se avisa: si se soltara, la música se
@@ -2409,6 +2444,7 @@ window.MuShell = (function(){
                 else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
                 else if (cmd.action === 'seek') {
                     /* Barra de la notificación de música (MusicService). */
+                    if (TV.on) { tvSaltar(Math.max(0, Number(cmd.position) || 0)); return; }
                     if (!YT_PLAYER || typeof YT_PLAYER.seekTo !== 'function') return;
                     try { YT_PLAYER.seekTo(Math.max(0, Number(cmd.position) || 0), true); } catch (_) {}
                     restorePos = 0;
@@ -2465,8 +2501,8 @@ window.MuShell = (function(){
     }
     if ('mediaSession' in navigator) {
         try {
-            navigator.mediaSession.setActionHandler('play',           function(){ if (YT_PLAYER) YT_PLAYER.playVideo();  });
-            navigator.mediaSession.setActionHandler('pause',          function(){ autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
+            navigator.mediaSession.setActionHandler('play',           function(){ if (TV.on) { tvSonar(true); return; } if (YT_PLAYER) YT_PLAYER.playVideo();  });
+            navigator.mediaSession.setActionHandler('pause',          function(){ if (TV.on) { tvSonar(false); return; } autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
             navigator.mediaSession.setActionHandler('previoustrack',  prev);
             navigator.mediaSession.setActionHandler('nexttrack',      next);
             navigator.mediaSession.setActionHandler('stop',           function(){ autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.stopVideo();  });
@@ -2951,10 +2987,12 @@ window.MuShell = (function(){
     })();
 
     /* ── Playback control ── */
-    function playCurrent() {
+    /* startAt: segundo por el que empezar (al volver de la TV). */
+    function playCurrent(startAt) {
         if (CUR_IDX < 0 || CUR_IDX >= QUEUE.length) return;
         var tr = QUEUE[CUR_IDX];
         if (!tr || !tr.videoId) { next(); return; }
+        rememberListened();
 
         /* WRAPPED tracking: logea el track ANTERIOR antes de cargar el
            nuevo, con el tiempo escuchado real. Cubre next/prev/end. */
@@ -2983,7 +3021,7 @@ window.MuShell = (function(){
         /* El widget cambia de canción ya, sin esperar a que YouTube cargue. */
         nativeWidgetState(true, true);
         if (!YT_READY || !YT_PLAYER) { pendingLoadId = tr.videoId; return; }
-        YT_PLAYER.loadVideoById(tr.videoId);
+        YT_PLAYER.loadVideoById(startAt > 0 ? { videoId: tr.videoId, startSeconds: startAt } : tr.videoId);
         broadcast({ type: 'mushell:track', idx: CUR_IDX, total: QUEUE.length, track: tr, plName: CUR_PL_NAME });
         publishNowPlaying(true, true);
         /* Listen-Together: si soy host, broadcast estado al backend (debounced). */
@@ -2995,17 +3033,69 @@ window.MuShell = (function(){
         do { r = Math.floor(Math.random() * QUEUE.length); } while (r === CUR_IDX);
         return r;
     }
+
+    /* Historial de lo escuchado para el aleatorio (como el del PC, en
+       reproductor.php): ⏮ vuelve a la canción que sonaba antes (no a una
+       al azar) y ⏭, después de volver atrás, rehace el mismo camino en
+       vez de sortear otra. Cada entrada guarda la playlist y el videoId:
+       si la cola ya no es la misma, se descarta. */
+    var shuffleBack = [], shuffleForward = [], shuffleNow = null, shuffleNav = false;
+    function rememberListened() {
+        var entry = { pl: CUR_PL_NAME, idx: CUR_IDX, vid: QUEUE[CUR_IDX].videoId };
+        var same = shuffleNow && shuffleNow.vid === entry.vid && shuffleNow.pl === entry.pl;
+        /* Una canción nueva que no viene de ⏮/⏭ por el historial (tocada
+           en la lista, al azar…) abre camino nuevo: lo de delante se olvida. */
+        if (!same && !shuffleNav && shuffleNow) {
+            shuffleBack.push(shuffleNow);
+            if (shuffleBack.length > 200) shuffleBack.shift();
+            shuffleForward = [];
+        }
+        shuffleNow = entry;
+        shuffleNav = false;
+    }
+    /* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+    function historyStep(stack) {
+        while (stack.length) {
+            var e = stack.pop();
+            if (e.pl === CUR_PL_NAME && QUEUE[e.idx] && QUEUE[e.idx].videoId === e.vid) return e.idx;
+        }
+        return -1;
+    }
     function next() {
+        if (TV.on) { tvCmd({ c: 'next' }); return; }
         if (CUR_IDX < 0) return;
-        CUR_IDX = SHUFFLE_ON ? pickRandomIdx() : (CUR_IDX + 1) % QUEUE.length;
+        if (SHUFFLE_ON && QUEUE.length > 1) {
+            /* Si se había vuelto atrás, la que venía después; si no, al azar. */
+            var fwd = historyStep(shuffleForward);
+            if (fwd !== -1) {
+                if (shuffleNow) shuffleBack.push(shuffleNow);
+                shuffleNav = true;
+                CUR_IDX = fwd;
+            } else {
+                CUR_IDX = pickRandomIdx();
+            }
+        } else {
+            CUR_IDX = (CUR_IDX + 1) % QUEUE.length;
+        }
         playCurrent();
     }
     function prev() {
+        if (TV.on) { tvCmd({ c: 'prev' }); return; }
         if (CUR_IDX < 0) return;
-        CUR_IDX = SHUFFLE_ON ? pickRandomIdx() : (CUR_IDX - 1 + QUEUE.length) % QUEUE.length;
+        /* En aleatorio, a la que sonaba antes (si queda en el historial);
+           si no, la anterior de la lista, como sin aleatorio. */
+        var back = SHUFFLE_ON ? historyStep(shuffleBack) : -1;
+        if (back !== -1) {
+            if (shuffleNow) shuffleForward.push(shuffleNow);
+            shuffleNav = true;
+            CUR_IDX = back;
+        } else {
+            CUR_IDX = (CUR_IDX - 1 + QUEUE.length) % QUEUE.length;
+        }
         playCurrent();
     }
     function togglePlay() {
+        if (TV.on) { tvSonar(!(TV.st && TV.st.on && TV.st.playing)); return; }
         if (CUR_IDX < 0) return;
         /* Última canción recuperada y YouTube aún cargando: suena en
            cuanto esté (⏯ del widget con la app recién abierta). */
@@ -3043,6 +3133,7 @@ window.MuShell = (function(){
     var __LAST_POS_TICK = 0;
     var _muScrub = false;   /* true mientras el usuario arrastra la barra */
     function tickProgress() {
+        if (TV.on) { tvTick(); return; }
         if (!YT_READY || !YT_PLAYER) return;
         var cur = 0, tot = 0;
         try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
@@ -3104,11 +3195,12 @@ window.MuShell = (function(){
         function preview(r){
             var fill = document.getElementById('mu-full-progress-fill');
             if (fill) fill.style.width = (r * 100) + '%';
-            var tot = (YT_PLAYER && YT_PLAYER.getDuration) ? (YT_PLAYER.getDuration() || 0) : 0;
+            var tot = TV.on ? tvDur() : ((YT_PLAYER && YT_PLAYER.getDuration) ? (YT_PLAYER.getDuration() || 0) : 0);
             var c1 = document.getElementById('mu-full-time-cur');
             if (c1 && tot > 0) c1.textContent = fmt(r * tot);
         }
         function commit(r){
+            if (TV.on) { if (tvDur() > 0) tvSaltar(r * tvDur()); return; }
             if (!YT_PLAYER || !YT_PLAYER.getDuration) return;
             var tot = YT_PLAYER.getDuration() || 0;
             if (tot <= 0) return;
@@ -3265,8 +3357,13 @@ window.MuShell = (function(){
     document.getElementById('mu-full-lock').addEventListener('click', openLock);
 
     /* Shuffle: toggle visual + comportamiento. */
-    function setShuffle(on) {
+    /* desdeTv: lo cuenta la TV (no se le vuelve a mandar). */
+    function setShuffle(on, desdeTv) {
         SHUFFLE_ON = on;
+        if (TV.on && !desdeTv) {
+            if (TV.st) TV.st.shuffle = on;
+            tvCmd({ c: 'shuffle', on: on });
+        }
         var btn = document.getElementById('mu-full-shuffle');
         btn.classList.toggle('is-on', SHUFFLE_ON);
         btn.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
@@ -3289,9 +3386,239 @@ window.MuShell = (function(){
     /* (mu-full-add eliminado — la opción "Añadir a playlist" ahora vive
        solo en el menú long-press del vinilo, evitando duplicidad.) */
 
-    /* "Conectar TV": modal con URL del companion + QR para que el
-       usuario lo abra en el navegador del Smart TV. Una vez la TV está
-       en /tv.php, hereda automáticamente lo que sueña el móvil. */
+    /* ── TV: el móvil de mando (botón 📺) ──
+       La TV (tv.php) suena y lleva la cola; el móvil le manda órdenes
+       (assets/music/tv-api.php cmd) y lee cómo va en su archivo de
+       rt/tv/ (estático: no gasta PHP), cada 1 s (5 s en segundo plano).
+       📺 sin pulsar: si hay una TV encendida (su estado tiene menos de
+       2,5 min), la música pasa a ella donde iba y el YouTube del móvil se
+       calla; si no, la ventana para emparejar una. 📺 pulsado: vuelve al
+       móvil donde iba la TV, y la TV se queda esperando. Si se cierra la
+       app, la TV sigue; al abrirla otra vez vuelve a ser su mando
+       (localStorage melonTv:on). */
+    var TV_RT    = <?= json_encode($tvRt) ?>;
+    var TV_RELOJ = <?= tv_ahora() ?> - Date.now();   /* servidor − móvil (ms) */
+    var TV_KEY   = 'melonTv:on';
+
+    function tvAhora() { return Date.now() + TV_RELOJ; }
+    /* Los archivos de rt/tv/ son HTML con el JSON en <pre id="d"> (los
+       lee también la TV con un iframe). */
+    function tvLeer(url) {
+        return fetch(url, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.text() : ''; })
+            .then(function(html){
+                var m = /<pre id="d">([\s\S]*?)<\/pre>/.exec(html || '');
+                if (!m) return null;
+                var t = document.createElement('textarea');
+                t.innerHTML = m[1];
+                return JSON.parse(t.value);
+            })
+            .catch(function(){ return null; });
+    }
+    function tvViva(st) { return !!(st && st.t && tvAhora() - st.t < 150000); }
+    function tvDur() {
+        var st = TV.st;
+        return (st && (st.dur || (st.track && st.track.duration))) || 0;
+    }
+    function tvPos() {
+        var st = TV.st;
+        if (!st || !st.track) return 0;
+        var p = st.pos || 0;
+        if (st.playing) p += Math.max(0, (tvAhora() - st.t) / 1000);
+        var d = tvDur();
+        return d > 0 ? Math.min(p, d) : p;
+    }
+
+    /* Orden a la TV. Mientras no conteste, lo que diga el archivo de la
+       TV es de antes de la orden: no se pinta (ver tvAplicar). */
+    function tvCmd(o) {
+        TV.pendientes++;
+        return fetch('assets/music/tv-api.php?action=cmd', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(o)
+        }).then(function(r){ return r.json(); })
+          .catch(function(){ return null; })
+          .then(function(d){
+              TV.pendientes--;
+              if (d && d.n) TV.ultimaN = Math.max(TV.ultimaN, d.n);
+              else if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'No se ha podido mandar a la TV.' });
+              return d;
+          });
+    }
+    /* Lo que suena en el móvil, a la TV (donde iba). */
+    function tvCargar(play, pos) {
+        var tr = QUEUE[CUR_IDX];
+        if (!tr) return;
+        TV.st = { on: 1, track: tr, idx: CUR_IDX, pl: CUR_PL_NAME, playing: !!play, pos: pos || 0,
+                  dur: tr.duration || 0, shuffle: SHUFFLE_ON, t: tvAhora(), n: 0 };
+        tvPintar();
+        tvCmd({ c: 'load', queue: QUEUE, idx: CUR_IDX, pos: pos || 0, play: !!play, shuffle: SHUFFLE_ON, pl: CUR_PL_NAME });
+    }
+    function tvSonar(play) {
+        if (!TV.st || !TV.st.on) return;
+        TV.st.pos = tvPos();
+        TV.st.t = tvAhora();
+        TV.st.playing = play;
+        pintarPlay(play);
+        tvCmd({ c: play ? 'play' : 'pause' });
+    }
+    function tvSaltar(pos) {
+        if (!TV.st || !TV.st.on) return;
+        TV.st.pos = pos;
+        TV.st.t = tvAhora();
+        tvTick();
+        tvCmd({ c: 'seek', pos: pos });
+    }
+
+    function tvBoton(on) {
+        var b = document.getElementById('mu-full-tv');
+        if (!b) return;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    function tvEntrar(st) {
+        var sonaba = false, pos = 0;
+        try { sonaba = YT_PLAYER.getPlayerState() === 1; pos = YT_PLAYER.getCurrentTime() || 0; } catch (_) {}
+        if (!pos && restorePos) pos = restorePos;
+        TV.on = true;
+        TV.st = st;
+        TV.ultimaN = 0;
+        TV.mostrado = '';
+        try { localStorage.setItem(TV_KEY, '1'); } catch (_) {}
+        tvBoton(true);
+        autoPlayUntil = 0;
+        playWhenReady = false;
+        try { if (YT_PLAYER) YT_PLAYER.pauseVideo(); } catch (_) {}
+        if (CUR_IDX >= 0 && QUEUE[CUR_IDX]) {
+            tvCargar(sonaba, pos);
+        } else if (st && st.on) {
+            /* Nada en el móvil y la TV ya suena: se coge lo suyo. */
+            tvAdoptar(st);
+        }
+        startProgressTimer();
+        tvPoll();
+    }
+    /* La TV ya suena (app recién abierta, o nada puesto en el móvil): su
+       cola pasa a ser la del móvil, para seguir con ella al volver. */
+    function tvAdoptar(st) {
+        tvLeer(TV_RT.cola).then(function(c){
+            if (c && c.queue && c.queue.length) {
+                QUEUE = c.queue;
+                CUR_PL_NAME = st.pl || '';
+            }
+            TV.st = st;
+            tvPintar();
+        });
+    }
+    /* Volver al móvil. stop: la TV se queda esperando. seguir: el móvil
+       sigue sonando donde iba la TV (si sonaba). */
+    function tvSalir(stop, seguir) {
+        var st = TV.st;
+        var sonaba = !!(st && st.on && st.playing);
+        var pos = tvPos();
+        TV.on = false;
+        TV.st = null;
+        TV.mostrado = '';
+        clearTimeout(TV.timer);
+        try { localStorage.removeItem(TV_KEY); } catch (_) {}
+        tvBoton(false);
+        if (stop) tvCmd({ c: 'stop' });
+        if (!st || !st.on || CUR_IDX < 0 || !QUEUE[CUR_IDX]) { pintarPlay(false); return; }
+        if (sonaba && seguir) {
+            playCurrent(pos);
+        } else {
+            var tr = QUEUE[CUR_IDX];
+            restorePos = pos;
+            renderTrack(tr);
+            pintarPlay(false);
+            if (YT_READY && YT_PLAYER) YT_PLAYER.cueVideoById({ videoId: tr.videoId, startSeconds: pos });
+            else pendingCue = tr.videoId;
+        }
+    }
+
+    function tvPoll() {
+        clearTimeout(TV.timer);
+        if (!TV.on) return;
+        tvLeer(TV_RT.estado).then(function(st){
+            if (!TV.on) return;
+            if (st) tvAplicar(st);
+            TV.timer = setTimeout(tvPoll, document.visibilityState === 'hidden' ? 5000 : 1000);
+        });
+    }
+    function tvAplicar(st) {
+        /* Aún no ha hecho la última orden: lo de antes no se pinta. */
+        if (TV.pendientes > 0 || (st.n || 0) < TV.ultimaN) {
+            if (!tvViva(st)) tvPerdida();
+            return;
+        }
+        if (!tvViva(st)) { tvPerdida(); return; }
+        if (!st.on) {
+            /* Esperando: si estaba sonando, alguien la ha parado (o se ha
+               recargado sin canción). */
+            if (TV.st && TV.st.on) {
+                tvSalir(false, false);
+                if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'La TV ha dejado de sonar.' });
+            }
+            return;
+        }
+        TV.st = st;
+        tvPintar();
+    }
+    function tvPerdida() {
+        tvSalir(false, false);
+        if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'No se encuentra la TV. La música vuelve al móvil.' });
+    }
+    /* Pinta en el móvil lo que suena en la TV. */
+    function tvPintar() {
+        var st = TV.st;
+        if (!st || !st.on || !st.track) return;
+        var vid = st.track.videoId;
+        if (!(QUEUE[st.idx] && QUEUE[st.idx].videoId === vid)) {
+            for (var i = 0; i < QUEUE.length; i++) if (QUEUE[i].videoId === vid) { st.idx = i; break; }
+        }
+        if (QUEUE[st.idx] && QUEUE[st.idx].videoId === vid) CUR_IDX = st.idx;
+        if (TV.mostrado !== vid) {
+            TV.mostrado = vid;
+            renderTrack(QUEUE[CUR_IDX] && QUEUE[CUR_IDX].videoId === vid ? QUEUE[CUR_IDX] : st.track);
+            document.getElementById('mu-widget').classList.add('visible');
+        }
+        pintarPlay(!!st.playing);
+        if (!!st.shuffle !== SHUFFLE_ON) setShuffle(!!st.shuffle, true);
+        tvTick();
+    }
+    function tvTick() {
+        if (document.visibilityState === 'hidden' || _muScrub) return;
+        var cur = tvPos(), tot = tvDur();
+        var fillEl = document.getElementById('mu-full-progress-fill');
+        if (fillEl) fillEl.style.width = (tot > 0 ? Math.min(100, cur / tot * 100) : 0) + '%';
+        var c1 = document.getElementById('mu-full-time-cur'); if (c1) c1.textContent = fmt(cur);
+        var t1 = document.getElementById('mu-full-time-tot'); if (t1) t1.textContent = fmt(tot);
+    }
+
+    /* Emparejar una TV: token (QR, enlace.php?tv=… abierto con la app) o
+       el código que enseña. */
+    function tvEmparejar(datos) {
+        return fetch('assets/music/tv-api.php?action=pair', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datos)
+        }).then(function(r){ return r.json(); })
+          .catch(function(){ return { ok: false, error: 'Sin conexión' }; })
+          .then(function(d){
+              d = d || {};
+              if (d.ok) {
+                  var bd = document.getElementById('mu-tv-backdrop');
+                  if (bd) bd.hidden = true;
+                  if (window.mToast) mToast({ id: 'tv', title: '📺 TV conectada', message: 'Pulsa 📺 en el reproductor para que suene en ella.' });
+              } else if (!datos.code && window.mToast) {
+                  mToast({ id: 'tv', title: '📺 TV', message: d.error || 'No se ha podido conectar la TV.' });
+              }
+              return d;
+          });
+    }
+
+    /* Ventana para emparejar (📺 sin ninguna TV encendida). */
     (function attachTvCast(){
         var bd        = document.getElementById('mu-tv-backdrop');
         var closeBtn  = document.getElementById('mu-tv-close');
@@ -3299,78 +3626,57 @@ window.MuShell = (function(){
         var urlInput  = document.getElementById('mu-tv-url');
         var copyBtn   = document.getElementById('mu-tv-copy');
         var urlInline = document.getElementById('mu-tv-url-inline');
-        var codeBox   = document.getElementById('mu-tv-code');
+        var codeInput = document.getElementById('mu-tv-code');
         var codeMeta  = document.getElementById('mu-tv-code-meta');
+        var pairBtn   = document.getElementById('mu-tv-pair');
 
-        /* Smart TVs viejas suelen NO terminar el handshake TLS 1.3 del
-           túnel cloudflared y quedan en blanco indefinidamente. Si el
-           servidor pudo detectar una IP LAN, la usamos como URL de la
-           TV: HTTP plano en la WiFi de casa evita todo el problema TLS.
-           Fallback: la URL del origin actual (cloudflared u hosting). */
-        var lanUrl    = bd.getAttribute('data-lan-url') || '';
-        var publicUrl = location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'tv.php';
-        var tvUrl     = lanUrl || publicUrl;
-        /* Mostramos el "http://" completo para que el usuario lo teclee
-           tal cual en la TV. Si solo enseñamos el host, muchos browsers
-           de Smart TV añaden automáticamente "https://" y rompen el
-           polling por cert self-signed. */
-        var tvHostUrl = tvUrl;
-
-        var countdown = null;
-        function stopCountdown(){ if (countdown) { clearInterval(countdown); countdown = null; } }
-
-        function fmt(code){
-            if (!code) return '— — — — — —';
-            return code.replace(/(\d{3})(\d{3})/, '$1 $2');
-        }
-
-        function loadCode(){
-            codeBox.textContent = '— — — — — —';
-            codeMeta.textContent = 'Generando…';
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'assets/music/api.php?action=get-tv-code', true);
-            xhr.onreadystatechange = function(){
-                if (xhr.readyState !== 4) return;
-                try {
-                    var r = JSON.parse(xhr.responseText);
-                    if (r && r.code) {
-                        codeBox.textContent = fmt(r.code);
-                        var secs = r.expiresIn || 300;
-                        codeMeta.textContent = 'Expira en ' + Math.floor(secs/60) + ':' + ('0'+(secs%60)).slice(-2);
-                        stopCountdown();
-                        countdown = setInterval(function(){
-                            secs--;
-                            if (secs <= 0) {
-                                stopCountdown();
-                                codeBox.textContent = '— — — — — —';
-                                codeMeta.textContent = 'Caducado — pulsa "Regenerar"';
-                                return;
-                            }
-                            codeMeta.textContent = 'Expira en ' + Math.floor(secs/60) + ':' + ('0'+(secs%60)).slice(-2);
-                        }, 1000);
-                    } else {
-                        codeMeta.textContent = r && r.error ? r.error : 'Error generando código';
-                    }
-                } catch (_) {
-                    codeMeta.textContent = 'Error de red';
-                }
-            };
-            xhr.send();
-        }
+        /* LAN_URL (.env) si la hay: Smart TVs viejas que no terminan el
+           TLS moderno, por HTTP plano en la red de casa. Si no, esta web.
+           Con el "http(s)://" entero: si solo va el host, muchas TVs le
+           ponen https:// por su cuenta. */
+        var lanUrl = bd.getAttribute('data-lan-url') || '';
+        var tvUrl  = lanUrl || (location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'tv.php');
 
         function open(){
             urlInput.value = tvUrl;
-            urlInline.textContent = tvHostUrl;
+            urlInline.textContent = tvUrl;
+            codeInput.value = '';
+            codeMeta.textContent = '';
             bd.hidden = false;
-            loadCode();
         }
-        function close(){ bd.hidden = true; stopCountdown(); }
+        function close(){ bd.hidden = true; }
 
-        openBtn.addEventListener('click', open);
+        openBtn.addEventListener('click', function(){
+            if (TV.on) { tvSalir(true, true); return; }
+            if (!TV_RT) { open(); return; }
+            openBtn.disabled = true;
+            tvLeer(TV_RT.estado).then(function(st){
+                openBtn.disabled = false;
+                if (tvViva(st)) tvEntrar(st);
+                else open();
+            });
+        });
         closeBtn.addEventListener('click', close);
         bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
 
-        codeBox.addEventListener('click', loadCode);
+        /* "123 456" mientras se escribe. */
+        codeInput.addEventListener('input', function(){
+            var d = codeInput.value.replace(/\D/g, '').slice(0, 6);
+            codeInput.value = d.length > 3 ? d.slice(0, 3) + ' ' + d.slice(3) : d;
+            codeMeta.textContent = '';
+        });
+        function emparejar(){
+            var code = codeInput.value.replace(/\D/g, '');
+            if (code.length !== 6) { codeMeta.textContent = 'El código tiene 6 cifras'; return; }
+            pairBtn.disabled = true;
+            codeMeta.textContent = 'Conectando…';
+            tvEmparejar({ code: code }).then(function(d){
+                pairBtn.disabled = false;
+                codeMeta.textContent = d.ok ? '' : (d.error || 'No se ha podido conectar');
+            });
+        }
+        pairBtn.addEventListener('click', emparejar);
+        codeInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') emparejar(); });
 
         copyBtn.addEventListener('click', function(){
             urlInput.select();
@@ -4182,6 +4488,7 @@ window.MuShell = (function(){
         QUEUE = tracks.slice();
         CUR_IDX = Math.max(0, Math.min(startIdx|0, QUEUE.length - 1));
         CUR_PL_NAME = plName || '';
+        if (TV.on) { tvCargar(true, 0); return; }
         playCurrent();
     }
     function getState() {
@@ -4238,6 +4545,9 @@ window.MuShell = (function(){
         var tr = QUEUE[CUR_IDX];
         if (!tr || !tr.videoId) { QUEUE = []; CUR_IDX = -1; return; }
         try { restorePos = parseFloat(localStorage.getItem(LAST_POS_KEY)) || 0; } catch (_) {}
+        /* Punto de partida del historial del aleatorio: ⏮ desde la
+           siguiente vuelve a esta. */
+        rememberListened();
         renderTrack(tr);
         document.getElementById('mu-widget').classList.add('visible');
         ['mu-vinyl', 'mu-widget-disc', 'mu-lock-vinyl'].forEach(function(id){
@@ -4250,6 +4560,25 @@ window.MuShell = (function(){
         /* Para que al darle a ▶ avance la barra y se vaya guardando. */
         startProgressTimer();
         nativeWidgetState(false);
+    })();
+
+    /* La TV seguía sonando con la app cerrada: el móvil vuelve a ser su
+       mando (si sigue encendida y sonando). */
+    (function tvAlAbrir(){
+        var on = false;
+        try { on = localStorage.getItem(TV_KEY) === '1'; } catch (_) {}
+        if (!on || !TV_RT) return;
+        tvLeer(TV_RT.estado).then(function(st){
+            if (!tvViva(st) || !st.on) { try { localStorage.removeItem(TV_KEY); } catch (_) {} return; }
+            TV.on = true;
+            TV.st = st;
+            tvBoton(true);
+            playWhenReady = false;
+            try { if (YT_PLAYER) YT_PLAYER.pauseVideo(); } catch (_) {}
+            tvAdoptar(st);
+            startProgressTimer();
+            tvPoll();
+        });
     })();
 
     /* Colores del widget de la app: los del tema activo (variables CSS). */
@@ -4287,6 +4616,7 @@ window.MuShell = (function(){
     return {
         loadQueue: loadQueue, next: next, prev: prev, toggle: togglePlay,
         openFullscreen: openFullscreen, openLock: openLock, getState: getState,
+        tvEmparejar: tvEmparejar,
         getCurrentTime: getCurrentTime, getDuration: getDuration,
     };
 })();

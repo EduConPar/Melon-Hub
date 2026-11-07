@@ -132,7 +132,7 @@ cacheSet('yt_<hash>', $value, 3600)
 
 ### TV / Pareada
 
-- `tv_link_codes` — códigos efímeros para emparejar dispositivo TV con cuenta.
+- `tv_pairs` — emparejar una TV (tv.php): token del QR y código de 6 cifras, 10 min (la vieja `tv_link_codes` ya no se usa).
 
 ## Convenciones de FKs
 

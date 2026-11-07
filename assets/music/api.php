@@ -25,6 +25,7 @@
    POST  ?action=yt-search-batch      { tracks[] }
    POST  ?action=import-playlist      { url }
    POST  ?action=save-now-playing     { videoId, title, artist, plName, position, duration, isPlaying }
+   (La TV: assets/music/tv-api.php)
    GET   ?action=search-albums&q=...&artist=...  (autocompletado de álbumes)
    POST  ?action=report-album         { videoId, albumName|albumKey, artist? }  (corrige el álbum)
    GET   ?action=get-now-playing
@@ -67,7 +68,7 @@ if (($_GET['action'] ?? '') === 'get-now-playing' && isset($_GET['frame'])) {
         header('Content-Type: text/html; charset=utf-8');
         echo '<!DOCTYPE html><html><body><pre id="d">'
            . htmlspecialchars('{"ok":false,"error":"auth"}', ENT_QUOTES, 'UTF-8')
-           . '</pre></body></html>';
+           . '</pre><script>try{parent.location.reload()}catch(e){}</script></body></html>';
         exit;
     }
 }
@@ -1659,43 +1660,11 @@ case 'import-playlist': {
     jsonResponse(['tracks' => $tracks]);
 }
 
-/* ─── TV LINK (código de emparejamiento) ──────────────────
-   El móvil llama get-tv-code → recibe un código de 6 dígitos.
-   La TV (sin sesión) lo introduce en tv.php → tv.php valida con
-   la tabla `tv_link_codes` y crea sesión persistente. */
-case 'get-tv-code': {
-    $uid = uidByKey($pdo, $userKey);
-    if (!$uid) jsonError('Usuario no encontrado', 500);
-    /* Auto-crea tabla (una vez por versión del archivo). */
-    melon_esquema($pdo, 'musica-tv', __FILE__, function (PDO $pdo) {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS tv_link_codes (
-                code VARCHAR(6) PRIMARY KEY,
-                user_key VARCHAR(50) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_created (created_at)
-            ) DEFAULT CHARSET=utf8mb4
-        ");
-    }, true);
-    /* Limpia códigos caducados (>5 min). */
-    $pdo->exec("DELETE FROM tv_link_codes WHERE created_at < NOW() - INTERVAL 5 MINUTE");
-    /* Genera código único — random_int es seguro criptográficamente. */
-    $code = '';
-    for ($i = 0; $i < 10; $i++) {
-        $code = sprintf('%06d', random_int(0, 999999));
-        $stmt = $pdo->prepare("SELECT 1 FROM tv_link_codes WHERE code = ?");
-        $stmt->execute([$code]);
-        if (!$stmt->fetchColumn()) break;
-    }
-    $pdo->prepare("INSERT INTO tv_link_codes (code, user_key) VALUES (?, ?)")
-        ->execute([$code, $userKey]);
-    jsonResponse(['code' => $code, 'expiresIn' => 300]);
-}
-
-/* ─── NOW PLAYING (TV companion view) ──────────────────────
-   El shell del móvil publica su estado de reproducción aquí y
-   tv.php hace polling cada segundo para mostrarlo en la TV.
-   Tabla auto-creada al primer save. */
+/* ─── NOW PLAYING ──────────────────────────────────────────
+   El móvil y el PC publican aquí lo que suena: lo leen el perfil y la
+   presencia ("escuchando ahora"). La TV ya no lo lee (tv.php, con el
+   móvil de mando: assets/music/tv-api.php). Tabla auto-creada al
+   primer save. */
 case 'save-now-playing': {
     $uid = uidByKey($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
@@ -1809,14 +1778,13 @@ case 'get-now-playing': {
         ]
         : ['ok' => true, 'track' => null, 'isPlaying' => false];
 
-    /* Modo iframe — para Smart TVs en las que ni XHR ni <script src>
-       funcionan tras el primer poll. El padre lee el JSON desde
-       iframe.contentDocument tras iframe.onload. Sin script dentro del
-       iframe (no corren en navegaciones dinámicas en algunos browsers). */
+    /* Modo iframe: solo lo pide la tv.php de antes (preguntaba cada
+       0,75 s). Se le dice que se recargue para coger la nueva, que no
+       pregunta a PHP. */
     if (isset($_GET['frame'])) {
-        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         header('Content-Type: text/html; charset=utf-8');
-        echo '<!DOCTYPE html><html><body><pre id="d">' . htmlspecialchars($json, ENT_QUOTES, 'UTF-8') . '</pre></body></html>';
+        echo '<!DOCTYPE html><html><body><pre id="d">{"ok":false}</pre>'
+           . '<script>try{parent.location.reload()}catch(e){}</script></body></html>';
         exit;
     }
 

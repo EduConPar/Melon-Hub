@@ -14,6 +14,8 @@
                                         Discord y "Copiar enlace" del torneo)
        enlace.php?reto=<código>         reto de ajedrez por enlace (lo acepta
                                         quien lo abra; assets/juegos/ajedrez.php)
+       enlace.php?tv=<token>            emparejar la TV que enseña ese QR
+                                        (tv.php; lo aprueba mobile.php)
 
    enlace.php intenta abrir la app (melonhub://<tipo>/<valor> en PC,
    intent:// en Android) y, si no está, sigue en la web:
@@ -44,6 +46,9 @@ function melonParseLink(string $tipo, string $valor): ?string {
             break;
         case 'reto':     /* reto de ajedrez por enlace (código de ajz_retarEnlace) */
             $ok = preg_match('/^[a-z0-9]{10}$/', $valor);
+            break;
+        case 'tv':       /* QR de emparejar de tv.php (token de tv_pairs) */
+            $ok = preg_match('/^[a-f0-9]{24}$/', $valor);
             break;
         default:
             return null;
