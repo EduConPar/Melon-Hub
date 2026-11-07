@@ -978,6 +978,17 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-steam .button img { width: 12px; height: 12px; object-fit: contain; image-rendering: pixelated; vertical-align: -2px; margin-right: 4px; }
         .pf2m-steam-nota { width: 100%; font-size: 11px; color: var(--text-muted, #444); }
         .pf2m-steam-nota.is-aviso { color: var(--warning-text, #8a6d00); }
+        /* Selector de marco (pf2AbrirMarcos): la foto en cada marco. El
+           hueco deja sitio a lo que más sobresale (Polaroid, Overdose) y la
+           foto se corre para que foto + marco queden centrados (--mk-*). */
+        .pf2m-mk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px; }
+        .pf2m-mk { text-align: center; font-size: 11px; color: var(--text, #000); padding: 4px 2px; cursor: pointer; }
+        .pf2m-mk.on { outline: 2px solid var(--accent, navy); outline-offset: -2px; }
+        .pf2m-mk-hueco { height: 92px; display: flex; align-items: center; justify-content: center; }
+        .pf2m-mk-foto { position: relative; display: block; width: 52px; height: 52px; flex-shrink: 0; background: var(--inset-bg, #808080); }
+        .pf2m-mk-foto[data-marco] { transform: translate(calc(26px * (var(--mk-l) - var(--mk-r))), calc(26px * (var(--mk-t) - var(--mk-b)))); }
+        .pf2m-mk-foto > img, .pf2m-mk-ph { width: 52px; height: 52px; object-fit: cover; display: block; }
+        .pf2m-mk-t { margin-top: 2px; line-height: 1.25; overflow-wrap: anywhere; }
         /* ── Perfil nuevo (estilo Steam en el móvil; renderPerfil2) ──
            Como antes la lista de posts: la cabecera y los botones se
            quedan arriba y esto hace scroll por dentro (`flex: 1` +
@@ -1231,6 +1242,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
            las fotos del perfil nuevo (recuadro Amigos, comentarios). */
         .pfa-av[data-marco] { margin: calc(var(--mk-t) * 36px) calc(var(--mk-r) * 36px) calc(var(--mk-b) * 36px) calc(var(--mk-l) * 36px); }
         .pf2m-fav[data-marco] { margin: calc(var(--mk-t) * 34px) calc(var(--mk-r) * 34px) calc(var(--mk-b) * 34px) calc(var(--mk-l) * 34px); position: relative; }
+        /* La foto de la cabecera (48 px): si no, el Polaroid tapaba los
+           iconos de redes de debajo. */
+        #pf-userbar-avatar[data-marco] { margin: calc(var(--mk-t) * 48px) calc(var(--mk-r) * 48px) calc(var(--mk-b) * 48px) calc(var(--mk-l) * 48px); }
         .pf2m-com-av[data-marco] { margin: calc(var(--mk-t) * 32px) calc(var(--mk-r) * 32px) calc(var(--mk-b) * 32px) calc(var(--mk-l) * 32px); position: relative; }
         .pfa-txt { flex: 1; min-width: 0; }
         .pfa-nom { font-size: 12px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1712,7 +1726,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
                 <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
             </div>
-            <!-- Steam (solo en Personalizar): conectar / desconectar. -->
+            <!-- Solo en Personalizar: Marco y Steam (conectar / desconectar). -->
             <div class="pf2m-steam" id="pf2m-steam" hidden></div>
             <!-- Perfil nuevo estilo Steam (renderPerfil2): nivel y mejor
                  medalla, estado, cuadrícula (Medallas, Amigos, actividad),
@@ -5129,6 +5143,9 @@ function pf2Editar(on) {
     ['pf-edit-profile-btn', 'pf-link-btn'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !!on; });
     ['pf2-guardar', 'pf2-datos', 'pf2-cancelar'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !on; });
     PF2E.steamEsperando = false;
+    PF2E.marco = undefined;   /* marco elegido sin guardar */
+    pf2VistaMarco();
+    if (on) pf2CargarMarcos();
     renderPf2Steam();
     renderPf2Expositores();
     if (on) {
@@ -5139,13 +5156,30 @@ function pf2Editar(on) {
 function pf2Guardar() {
     var b = document.getElementById('pf2-guardar');
     b.disabled = true;
-    pf2Api('save-showcases', { showcases: PF2E.draft.map(function(s) { return { type: s.type, config: s.config }; }) }).then(function(d) {
-        b.disabled = false;
-        if (!d || !d.ok) { pfAlert((d && d.error) || 'No se pudieron guardar los expositores'); return; }
+    var fr = PF2E.marcos;
+    /* El marco, solo si ha cambiado (como save() del PC). */
+    var marco = (PF2E.marco !== undefined && fr && PF2E.marco !== fr.active)
+        ? pf2Api('set-frame', { slug: PF2E.marco }).then(function(d) {
+            if (!d || !d.ok) return d || { error: 'No se pudo guardar el marco' };
+            fr.active = d.active || '';
+            /* Aquí y en la barra de la carcasa (mobile.php). */
+            if (window.MelonMarcos) MelonMarcos.set(USER_KEY, fr.active);
+            try { if (window.parent !== window && window.parent.MelonMarcos) window.parent.MelonMarcos.set(USER_KEY, fr.active); } catch (_) {}
+            return d;
+        }).catch(function() { return { error: 'Error de conexión al guardar el marco' }; })
+        : Promise.resolve({ ok: true });
+    var expos = pf2Api('save-showcases', { showcases: PF2E.draft.map(function(s) { return { type: s.type, config: s.config }; }) }).then(function(d) {
+        if (!d || !d.ok) return d || { error: 'No se pudieron guardar los expositores' };
         var v2 = pf2v();
         v2.showcases = d.showcases; v2.slots = d.slots; if (d.perks) v2.perks = d.perks;
+        return d;
+    }).catch(function() { return { error: 'Error de conexión' }; });
+    Promise.all([expos, marco]).then(function(r) {
+        b.disabled = false;
+        var err = (r[0] && r[0].error) || (r[1] && r[1].error);
+        if (err) { pfAlert(err); return; }
         pf2Editar(false);
-    }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+    });
 }
 
 /* ── Steam (franja de Personalizar; assets/profile/steam.php) ──
@@ -5161,12 +5195,12 @@ function renderPf2Steam() {
     var st = v2.steam || {};
     var ico = '<img src="../../assets/img/appIcons/steamIcon.png" alt="">';
     box.hidden = false;
+    /* Primero "Marco" (como en el PC, junto a lo de Steam). */
+    var marco = '<button type="button" class="button" data-a="marco">Marco</button>';
     if (!st.configured) {
-        box.innerHTML = '<span class="pf2m-steam-t">' + ico + 'Steam no está configurado en la web</span>';
-        return;
-    }
-    if (st.linked) {
-        box.innerHTML = '<span class="pf2m-steam-t">' + ico + '<b>' + esc(st.persona || 'Steam vinculado') + '</b></span>' +
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + 'Steam no está configurado en la web</span>';
+    } else if (st.linked) {
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + '<b>' + esc(st.persona || 'Steam vinculado') + '</b></span>' +
             '<button type="button" class="button" data-a="off">Desconectar</button>' +
             (st['private'] ? '<div class="pf2m-steam-nota is-aviso">Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.</div>' : '');
         box.querySelector('[data-a="off"]').addEventListener('click', function() {
@@ -5177,27 +5211,72 @@ function renderPf2Steam() {
                 }).catch(function() { pfAlert('Error de conexión'); });
             });
         });
-        return;
+    } else {
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + 'Steam</span>' +
+            '<button type="button" class="button" data-a="on">' + ico + 'Conectar Steam</button>' +
+            (PF2E.steamEsperando ? '<div class="pf2m-steam-nota">Inicia sesión en Steam en el navegador y vuelve aquí.</div>' : '');
+        box.querySelector('[data-a="on"]').addEventListener('click', function() {
+            var b = this;
+            b.disabled = true;
+            pf2Api('steam-link-start', {}).then(function(d) {
+                b.disabled = false;
+                if (!d || !d.ok || !d.url) { pfAlert((d && d.error) || 'No se pudo abrir Steam'); return; }
+                /* Un enlace normal: la app lo abre fuera (como el icono de Steam
+                   del perfil); en el navegador, en otra pestaña. */
+                var a = document.createElement('a');
+                a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                document.body.appendChild(a); a.click(); a.remove();
+                PF2E.steamEsperando = true;
+                renderPf2Steam();
+            }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+        });
     }
-    box.innerHTML = '<span class="pf2m-steam-t">' + ico + 'Steam</span>' +
-        '<button type="button" class="button" data-a="on">' + ico + 'Conectar Steam</button>' +
-        (PF2E.steamEsperando ? '<div class="pf2m-steam-nota">Inicia sesión en Steam en el navegador y vuelve aquí.</div>' : '');
-    box.querySelector('[data-a="on"]').addEventListener('click', function() {
-        var b = this;
-        b.disabled = true;
-        pf2Api('steam-link-start', {}).then(function(d) {
-            b.disabled = false;
-            if (!d || !d.ok || !d.url) { pfAlert((d && d.error) || 'No se pudo abrir Steam'); return; }
-            /* Un enlace normal: la app lo abre fuera (como el icono de Steam
-               del perfil); en el navegador, en otra pestaña. */
-            var a = document.createElement('a');
-            a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-            document.body.appendChild(a); a.click(); a.remove();
-            PF2E.steamEsperando = true;
-            renderPf2Steam();
-        }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+    box.querySelector('[data-a="marco"]').addEventListener('click', pf2AbrirMarcos);
+}
+
+/* ── Marco de la foto (assets/profile/marcos.php; en el PC, el botón
+   "Marco" de Personalizar) ──
+   Ventanita con tu foto en cada marco comprado (pestaña Perfil de la
+   tienda) y "Sin marco". Aceptar lo enseña ya en la cabecera
+   (data-marco-preview); se guarda con "Guardar" y "Cancelar" lo quita. */
+function pf2CargarMarcos() {
+    PF2E.marcosP = pf2Api('my-frames').then(function(d) {
+        if (d && d.ok) PF2E.marcos = { owned: d.owned || [], active: d.active || '' };
+    }).catch(function() {});
+    return PF2E.marcosP;
+}
+function pf2VistaMarco() {
+    var el = document.getElementById('pf-userbar-avatar');
+    if (!el) return;
+    if (PF2E.editing && PF2E.marco !== undefined) el.setAttribute('data-marco-preview', PF2E.marco);
+    else el.removeAttribute('data-marco-preview');
+}
+function pf2AbrirMarcos() {
+    (PF2E.marcosP || pf2CargarMarcos()).then(function() {
+        var fr = PF2E.marcos || { owned: [], active: '' };
+        var sel = PF2E.marco !== undefined ? PF2E.marco : fr.active;
+        var img = document.querySelector('#pf-userbar-avatar img');
+        var foto = img ? '<img src="' + esc(img.getAttribute('src')) + '" alt="">' : '<span class="pf2m-mk-ph"></span>';
+        var v = pf2Ventana('Marco de la foto');
+        var grid = document.createElement('div');
+        grid.className = 'pf2m-mk-grid';
+        grid.innerHTML = [{ slug: '', nombre: 'Sin marco' }].concat(fr.owned).map(function(m) {
+            return '<div class="pf2m-mk' + (m.slug === sel ? ' on' : '') + '" data-slug="' + esc(m.slug) + '">' +
+                '<div class="pf2m-mk-hueco"><span class="pf2m-mk-foto" data-marco-preview="' + esc(m.slug) + '">' + foto + '</span></div>' +
+                '<div class="pf2m-mk-t">' + esc(m.nombre) + '</div></div>';
+        }).join('');
+        grid.addEventListener('click', function(e) {
+            var c = e.target.closest('.pf2m-mk');
+            if (!c) return;
+            sel = c.dataset.slug;
+            grid.querySelectorAll('.pf2m-mk').forEach(function(x) { x.classList.toggle('on', x === c); });
+        });
+        v.body.appendChild(grid);
+        var info = pf2Pie(v, function() { PF2E.marco = sel; pf2VistaMarco(); });
+        info.textContent = fr.owned.length ? 'Se guarda al pulsar "Guardar".' : 'Aún no tienes marcos: están en la tienda, pestaña Perfil.';
     });
 }
+
 /* Vuelve a pedir el estado de Steam (y el icono de Steam de la cabecera,
    que el vincular y el desconectar cambian). Los expositores en edición
    se quedan como están: solo se repintan (el texto de los vacíos de
