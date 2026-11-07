@@ -76,6 +76,8 @@ public class MainActivity extends BridgeActivity {
         { "cancion",  "[A-Za-z0-9_-]{11}" },
         { "album",    "[a-z]{2,12}:[A-Za-z0-9_-]{1,80}" },
         { "playlist", "[0-9]{1,10}" },
+        { "torneo",   "[0-9]{1,10}" },        /* ajedrez (juegos-mobile.php) */
+        { "reto",     "[a-z0-9]{10}" },
     };
 
     static String parseLink(Uri uri) {

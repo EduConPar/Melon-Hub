@@ -16,12 +16,21 @@
    del día los 3 mejores tiempos; en el infinito los 3 primeros y 5 a tu
    alrededor (pintaRankInf). Fotos con el marco de perfil (avatar()).
    Usa window.JG (api, show, fecha, PT) de apps/juegos.php.
+   En el móvil (apps/mobile/juegos-mobile.php, JG.movil; decidido así,
+   7/11): no hay clic derecho, así que botón de modo (⛏ destapar / 🚩
+   bandera, .bm-modo) y además mantener pulsada una casilla = bandera; los
+   tableros más anchos que altos (el Experto, 30×16) se pintan girados
+   (16 de ancho y 30 de alto: mismo tablero, cada casilla guarda su índice
+   de verdad en data-i) y las casillas son más grandes (se desliza si no
+   cabe); el ranking va debajo del tablero (CSS del móvil).
    ────────────────────────────────────────────────────────────────────── */
 (function () {
     'use strict';
     var JG = window.JG;
     if (!JG) return;
     var $ = JG.$;
+    var RAIZ = JG.RAIZ || '../';   /* de la página a la raíz de la web */
+    var MOVIL = !!JG.movil;
     var NIVELES = {
         1: { nombre: 'Principiante', w: 9,  h: 9,  m: 10, base: 50 },
         2: { nombre: 'Intermedio',   w: 16, h: 16, m: 40, base: 100 },
@@ -56,7 +65,7 @@
     /* Foto con el marco de perfil (data-marco-user → melon-marcos.js). */
     function avatar(u) {
         var dentro = u && u.foto
-            ? '<img src="../' + esc(u.foto) + '" alt="">'
+            ? '<img src="' + RAIZ + esc(u.foto) + '" alt="">'
             : esc(((u && u.nombre) || '?').charAt(0).toUpperCase());
         return '<span class="mh-marco-av bm-av"' + (u && u.key ? ' data-marco-user="' + esc(u.key) + '"' : '') + '>' + dentro + '</span>';
     }
@@ -118,15 +127,29 @@
 
     function pintaPrevia(w, h, vista) {
         var b = $('bm-dia-prev');
-        /* El hueco de la izquierda: lo que deja la columna de datos (~300). */
-        var ancho = $('jg-bm').clientWidth - 340;
+        var giro = girado(w, h), cols = giro ? h : w;
+        /* El hueco de la izquierda: lo que deja la columna de datos (~300).
+           En el móvil, todo el ancho de la sección. */
+        var ancho = MOVIL ? $('bm-dia-prev').parentNode.clientWidth - 12 : $('jg-bm').clientWidth - 340;
         /* Hasta 16 px: cabe con el Infinito y el Libre debajo. */
-        var cs = Math.max(8, Math.min(16, Math.floor(ancho / w)));
+        var cs = Math.max(8, Math.min(16, Math.floor(ancho / cols)));
         b.style.setProperty('--cs', cs + 'px');
-        b.style.gridTemplateColumns = 'repeat(' + w + ', ' + cs + 'px)';
+        b.style.gridTemplateColumns = 'repeat(' + cols + ', ' + cs + 'px)';
         var html = '';
-        for (var i = 0; i < w * h; i++) html += '<i class="' + claseCelda(vista ? vista[i] : '.') + '">' + (vista && /[1-8]/.test(vista[i]) ? vista[i] : '') + '</i>';
+        orden(w, h).forEach(function (i) {
+            html += '<i class="' + claseCelda(vista ? vista[i] : '.') + '">' + (vista && /[1-8]/.test(vista[i]) ? vista[i] : '') + '</i>';
+        });
         b.innerHTML = html;
+    }
+    /* Móvil: los tableros más anchos que altos, girados 90° a la derecha. */
+    function girado(w, h) { return MOVIL && w > h; }
+    /* Índice de verdad de cada casilla en el orden en que se pinta. */
+    function orden(w, h) {
+        var out = [], n = w * h;
+        if (!girado(w, h)) { for (var i = 0; i < n; i++) out.push(i); return out; }
+        /* Pintada en la fila x y la columna h-1-y (giro a la derecha). */
+        for (var x = 0; x < w; x++) for (var c = 0; c < h; c++) out.push((h - 1 - c) * w + x);
+        return out;
     }
 
     function pintaInf(inf, rank) {
@@ -224,6 +247,9 @@
        dejando sitio para los contadores y el panel del final. */
     function tamCasilla(w, h) {
         var v = $('bmj-main');
+        /* Móvil: todo el ancho y casillas grandes para el dedo; el alto
+           no limita (la vista se desliza). */
+        if (MOVIL) return Math.max(18, Math.min(36, Math.floor((v.clientWidth - 10) / w)));
         var anchoLibre = v.clientWidth - 8;
         var altoLibre = v.clientHeight - 150;
         return Math.max(14, Math.min(26, Math.floor(anchoLibre / w), Math.floor(altoLibre / h)));
@@ -232,16 +258,20 @@
     function montarTablero() {
         var b = $('bmj-board');
         b.innerHTML = '';
-        var cs = tamCasilla(juego.w, juego.h);
+        var cols = girado(juego.w, juego.h) ? juego.h : juego.w;
+        var cs = tamCasilla(cols, girado(juego.w, juego.h) ? juego.w : juego.h);
         b.style.setProperty('--cs', cs + 'px');
-        b.style.gridTemplateColumns = 'repeat(' + juego.w + ', ' + cs + 'px)';
+        b.style.gridTemplateColumns = 'repeat(' + cols + ', ' + cs + 'px)';
         /* Los contadores, del mismo ancho que el tablero (con su borde). */
-        document.querySelector('#bmj-main .bm-bar').style.width = (juego.w * cs + 6) + 'px';
-        for (var i = 0; i < juego.w * juego.h; i++) {
+        document.querySelector('#bmj-main .bm-bar').style.width = (cols * cs + 6) + 'px';
+        /* juego.els[i] = la casilla de verdad i (girada, en otro sitio). */
+        juego.els = [];
+        orden(juego.w, juego.h).forEach(function (i) {
             var c = document.createElement('i');
             c.dataset.i = i;
             b.appendChild(c);
-        }
+            juego.els[i] = c;
+        });
         pintar();
     }
 
@@ -255,7 +285,7 @@
     }
 
     function pintar() {
-        var celdas = $('bmj-board').children;
+        var celdas = juego.els || $('bmj-board').children;
         var v = juego.vista;
         for (var i = 0; i < celdas.length; i++) {
             var ch = v[i], c = celdas[i], cls = claseCelda(ch);
@@ -268,11 +298,14 @@
 
     /* Clics: izquierdo destapa (o, sobre un número, abre las vecinas si
        tiene sus banderas); derecho pone o quita bandera. */
+    var modoBandera = false;   /* móvil: botón 🚩 */
     function enClic(e, derecho) {
         var c = e.target.closest('.bm-c');
         if (!c || !juego || juego.estado !== 'jugando') return;
         e.preventDefault();
         var i = +c.dataset.i, ch = juego.vista[i];
+        /* Con el modo bandera, tocar un número sigue abriendo alrededor. */
+        if (!derecho && modoBandera && (ch === '.' || ch === 'F')) derecho = true;
         if (derecho) {
             if (ch !== '.' && ch !== 'F') return;
             /* Al momento en pantalla; el servidor lo confirma detrás. */
@@ -549,8 +582,50 @@
 
     /* ── Eventos ── */
     var board = $('bmj-board');
-    board.addEventListener('click', function (e) { enClic(e, false); });
-    board.addEventListener('contextmenu', function (e) { enClic(e, true); });
+    var largoHecho = false;    /* el clic que llega al soltar tras mantener */
+    board.addEventListener('click', function (e) {
+        if (largoHecho) { largoHecho = false; e.preventDefault(); return; }
+        enClic(e, false);
+    });
+    board.addEventListener('contextmenu', function (e) {
+        /* En el móvil, el mantener pulsado lo lleva el temporizador de abajo. */
+        if (MOVIL) { e.preventDefault(); return; }
+        enClic(e, true);
+    });
+    if (MOVIL) {
+        /* Mantener pulsada una casilla (450 ms) = bandera; si el dedo se
+           mueve (deslizar el tablero), nada. */
+        var largo = null, desde = null;
+        var cancelar = function () { if (largo) clearTimeout(largo); largo = null; };
+        board.addEventListener('pointerdown', function (e) {
+            var c = e.target.closest('.bm-c');
+            if (!c) return;
+            largoHecho = false;
+            desde = { x: e.clientX, y: e.clientY };
+            cancelar();
+            largo = setTimeout(function () {
+                largo = null;
+                largoHecho = true;
+                enClic({ target: c, preventDefault: function () {} }, true);
+                if (navigator.vibrate) try { navigator.vibrate(20); } catch (_) {}
+            }, 450);
+        });
+        board.addEventListener('pointermove', function (e) {
+            if (largo && desde && Math.abs(e.clientX - desde.x) + Math.abs(e.clientY - desde.y) > 10) cancelar();
+        });
+        board.addEventListener('pointerup', cancelar);
+        board.addEventListener('pointercancel', cancelar);
+        /* Botón de modo: ⛏ destapar / 🚩 bandera. */
+        Array.prototype.forEach.call(document.querySelectorAll('.bm-modo [data-m]'), function (b) {
+            b.addEventListener('click', function () {
+                modoBandera = b.dataset.m === '1';
+                Array.prototype.forEach.call(document.querySelectorAll('.bm-modo [data-m]'), function (x) {
+                    x.classList.toggle('on', x === b);
+                    x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+                });
+            });
+        });
+    }
     $('jg-open-bm').addEventListener('click', abrirMenu);
     $('jg-open-bm').addEventListener('keydown', function (e) { if (e.key === 'Enter') abrirMenu(); });
     $('bm-back').addEventListener('click', function () { JG.show('jg-home'); });

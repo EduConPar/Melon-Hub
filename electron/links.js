@@ -32,6 +32,8 @@ const VALID = {
     cancion:  /^[A-Za-z0-9_-]{11}$/,
     album:    /^[a-z]{2,12}:[A-Za-z0-9_-]{1,80}$/,
     playlist: /^[0-9]{1,10}$/,
+    torneo:   /^[0-9]{1,10}$/,      /* ajedrez (melonOpenLink → Juegos) */
+    reto:     /^[a-z0-9]{10}$/,
 };
 
 function check(tipo, valor) {

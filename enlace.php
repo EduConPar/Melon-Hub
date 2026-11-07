@@ -40,7 +40,7 @@ if (isset($_GET['invitar'])) {
 }
 
 $link = null;
-foreach (['perfil', 'cancion', 'album', 'playlist', 'escuchar'] as $tipo) {
+foreach (['perfil', 'cancion', 'album', 'playlist', 'escuchar', 'torneo', 'reto'] as $tipo) {
     if (isset($_GET[$tipo])) { $link = melonParseLink($tipo, (string)$_GET[$tipo]); break; }
 }
 if ($link === null) {
@@ -123,6 +123,9 @@ $og = function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); 
     if (window.melonDesktop || /Electron\//.test(ua) || /iPhone|iPad|iPod/.test(ua)) return web();
 
     if (/Android/i.test(ua)) {
+        /* torneo y reto: las apps de Android de antes no los conocen (se
+           abrirían sin hacer nada). Mientras, a la web del móvil. */
+        if (<?= json_encode(in_array($tipo, ['torneo', 'reto'], true)) ?>) return web();
         var p = appUrl.slice('melonhub://'.length);
         location.href = 'intent://' + p + '#Intent;scheme=melonhub;package=es.melonhub.MelonHub;' +
             'S.browser_fallback_url=' + encodeURIComponent(webAbs) + ';end';

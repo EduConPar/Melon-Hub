@@ -4877,9 +4877,10 @@ window.notifSystem = (function() {
             if (typeof openSharedPlaylistViewer === 'function') openSharedPlaylistViewer(valor);
         } else if (tipo === 'escuchar') {
             if (typeof window.melonJoinListen === 'function') window.melonJoinListen(valor);
-        } else if (tipo === 'torneo') {
-            /* Anuncio del torneo de ajedrez en Discord (ajedrez-torneos.php). */
-            if (typeof window.melonOpenJuegos === 'function') window.melonOpenJuegos('torneo:' + valor);
+        } else if (tipo === 'torneo' || tipo === 'reto') {
+            /* Torneo de ajedrez (anuncio en Discord, "Copiar enlace") o reto
+               por enlace: Juegos lo abre (ajedrez.js, abrirDesde). */
+            if (typeof window.melonOpenJuegos === 'function') window.melonOpenJuegos(tipo + ':' + valor);
         }
     };
 

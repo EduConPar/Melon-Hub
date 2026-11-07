@@ -10,8 +10,10 @@
        enlace.php?album=<albumKey>      visor del álbum (itunes:… deezer:… spotify:…)
        enlace.php?playlist=<id>         playlist (cualquiera con sesión puede verla)
        enlace.php?escuchar=<user_key>   "Escuchar conmigo" (presencia de Discord)
-       index.php?abrir=torneo:<id>      torneo de ajedrez (solo escritorio; lo
-                                        enlaza el anuncio del bot en Discord)
+       enlace.php?torneo=<id>           torneo de ajedrez (el anuncio del bot en
+                                        Discord y "Copiar enlace" del torneo)
+       enlace.php?reto=<código>         reto de ajedrez por enlace (lo acepta
+                                        quien lo abra; assets/juegos/ajedrez.php)
 
    enlace.php intenta abrir la app (melonhub://<tipo>/<valor> en PC,
    intent:// en Android) y, si no está, sigue en la web:
@@ -39,6 +41,9 @@ function melonParseLink(string $tipo, string $valor): ?string {
         case 'playlist':
         case 'torneo':   /* torneo de ajedrez (anuncio de Discord, ajedrez-torneos.php) */
             $ok = preg_match('/^[0-9]{1,10}$/', $valor);
+            break;
+        case 'reto':     /* reto de ajedrez por enlace (código de ajz_retarEnlace) */
+            $ok = preg_match('/^[a-z0-9]{10}$/', $valor);
             break;
         default:
             return null;

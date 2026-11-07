@@ -50,8 +50,9 @@
 
     /* ── Utilidades ── */
     function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+    var RAIZ = JG.RAIZ || '../';   /* de la página a la raíz (móvil: ../../) */
     function avatar(u, tam) {
-        var dentro = u && u.foto ? '<img src="../' + esc(u.foto) + '" alt="">' : esc(((u && u.nombre) || '?').charAt(0).toUpperCase());
+        var dentro = u && u.foto ? '<img src="' + RAIZ + esc(u.foto) + '" alt="">' : esc(((u && u.nombre) || '?').charAt(0).toUpperCase());
         return '<span class="mh-marco-av bm-av"' + (tam ? ' style="--av:' + tam + 'px"' : '') +
             (u && u.key ? ' data-marco-user="' + esc(u.key) + '"' : '') + '>' + dentro + '</span>';
     }
@@ -164,7 +165,7 @@
         est.listo = new Promise(function (r) { avisar = r; setTimeout(r, 1500); });
         bucle(cada, function () {
             if (opc.seguir && !opc.seguir()) return 'fin';
-            return fetch('../' + url, { cache: 'no-cache', credentials: 'same-origin' }).then(function (r) {
+            return fetch(RAIZ + url, { cache: 'no-cache', credentials: 'same-origin' }).then(function (r) {
                 if (!r.ok) { est.ok = false; return false; }
                 return r.json().then(function (d) {
                     est.ok = true;
@@ -203,6 +204,60 @@
     $('az-conf-si').addEventListener('click', function () { var f = confFn; cerrarConf(); if (f) f(); });
     $('az-conf-no').addEventListener('click', cerrarConf);
     $('az-conf-x').addEventListener('click', cerrarConf);
+
+    /* ── Enlaces para invitar (decidido así, 7/11): reto por enlace
+       (enlace.php?reto=<código>: lo acepta quien lo abra, amigo o no; un
+       solo uso, caduca en 1 hora) y "Copiar enlace" del torneo
+       (enlace.php?torneo=<id>). melon-links.js copia y avisa. ── */
+    function enlaceUrl(tipo, valor) {
+        if (window.melonLinkUrl) return window.melonLinkUrl(tipo, valor);
+        return new URL(RAIZ + 'enlace.php?' + tipo + '=' + encodeURIComponent(valor), location.href).href;
+    }
+    function copiarEnlace(tipo, valor) {
+        if (window.melonCopyLink) { window.melonCopyLink(tipo, valor); return; }
+        if (navigator.clipboard) navigator.clipboard.writeText(enlaceUrl(tipo, valor)).catch(function () {});
+    }
+    /* El enlace de un reto recién creado: a la vista y para copiar. */
+    function verEnlaceReto(codigo) {
+        confirmar('Reto por enlace',
+            'Mándale este enlace a quien quieras: el primero que lo abra y lo acepte juega contigo (no hace falta que seáis amigos). Caduca en 1 hora.' +
+            '<input type="text" class="az-enlace" readonly value="' + esc(enlaceUrl('reto', codigo)) + '">',
+            'Copiar enlace', function () { copiarEnlace('reto', codigo); });
+        var inp = document.querySelector('#az-conf .az-enlace');
+        if (inp) inp.addEventListener('focus', function () { inp.select(); });
+    }
+    /* Al abrir un enlace de reto (abrirDesde 'reto:<código>'). */
+    function abrirReto(codigo) {
+        abrirMenu();
+        JG.api('ajz-reto-ver&codigo=' + encodeURIComponent(codigo)).then(function (r) {
+            if (!r || !r.ok) { confirmar('Reto de ajedrez', esc((r && r.error) || 'No se ha podido abrir el reto'), 'Aceptar', null); return; }
+            var x = r.reto, de = x.de ? esc(x.de.nombre) : 'Alguien';
+            var datos = esc(x.ritmo) + (x.apuesta > 0 ? ', apuesta ' + pts(x.apuesta) : ', sin apuesta');
+            if (x.partida) { autoAbiertas[x.partida] = 1; abrirPartida(x.partida, 'menu'); return; }
+            if (x.mio) {
+                if (x.estado === 'pendiente') verEnlaceReto(x.codigo);
+                else confirmar('Reto por enlace', 'Este reto tuyo ya no está pendiente.', 'Aceptar', null);
+                return;
+            }
+            if (x.estado !== 'pendiente') {
+                confirmar('Reto de ajedrez', x.estado === 'aceptado' ? 'Alguien ha aceptado ya el reto de ' + de + '.'
+                    : x.estado === 'caducado' ? 'El reto de ' + de + ' ha caducado.' : 'El reto de ' + de + ' ya no está disponible.', 'Aceptar', null);
+                return;
+            }
+            var falta = x.apuesta > x.autismo;
+            confirmar('Reto de ajedrez',
+                '<div class="az-reto-de">' + avatar(x.de, 34) + '<span><b>' + de + '</b> te reta a una partida (' + datos + ').</span></div>' +
+                (x.apuesta > 0 ? '<div class="bm-nota">Si aceptas pones también ' + pts(x.apuesta) + '; quien gana se lo lleva todo. Tienes ' + pts(x.autismo) + '.</div>' : '') +
+                (falta ? '<div class="az-err">No tienes puntos suficientes para esa apuesta.</div>' : ''),
+                falta ? 'Cerrar' : 'Aceptar reto', falta ? null : function () {
+                    JG.api('ajz-reto-enlace-aceptar', { codigo: x.codigo }).then(function (a) {
+                        if (!a || !a.ok) { confirmar('Reto de ajedrez', esc((a && a.error) || 'No se ha podido aceptar'), 'Aceptar', null); cargarMenu(); return; }
+                        autoAbiertas[a.partida] = 1;
+                        abrirPartida(a.partida, 'menu');
+                    }).catch(function () { confirmar('Reto de ajedrez', 'Sin conexión', 'Aceptar', null); });
+                });
+        });
+    }
 
     /* ── Chat (sala de espera del torneo y partida; servidor en
        assets/juegos/ajedrez-chat.php) ──
@@ -460,6 +515,18 @@
         });
         r.enviados.forEach(function (x) {
             var nom = x.a ? esc(x.a.nombre) : '?';
+            if (x.codigo) {
+                /* Reto por enlace (sin rival hasta que alguien lo acepta). */
+                if (x.estado === 'pendiente') {
+                    fila(null, 'Reto por enlace', chip('Esperando', 'suave az-pulso') + chip(x.ritmo) + apuestaChip(x.apuesta) +
+                         '<span class="az-caduca" data-hasta="' + (Date.now() + x.quedan) + '">caduca en ' + mmss(x.quedan) + '</span>',
+                         [boton('Copiar enlace', function () { copiarEnlace('reto', x.codigo); }),
+                          boton('Cancelar', function (b) { b.disabled = true; JG.api('ajz-reto-cancelar', { id: x.id }).then(cargarMenu); })]);
+                } else if (x.estado === 'caducado') {
+                    fila(null, 'Tu reto por enlace ha caducado', '<span>' + (x.apuesta > 0 ? 'Se te ha devuelto la apuesta' : x.ritmo) + '</span>', []);
+                }
+                return;
+            }
             if (x.estado === 'pendiente') {
                 fila(x.a, 'Has retado a ' + nom, chip('Esperando', 'suave az-pulso') + chip(x.ritmo) + apuestaChip(x.apuesta),
                      [boton('Cancelar', function (b) { b.disabled = true; JG.api('ajz-reto-cancelar', { id: x.id }).then(cargarMenu); })]);
@@ -523,6 +590,19 @@
                 b.disabled = false;
                 if (!r || !r.ok) { msg.textContent = (r && r.error) || 'No se ha podido retar'; return; }
                 cargarMenu();
+            }).catch(function () { b.disabled = false; msg.textContent = 'Sin conexión'; });
+    });
+
+    $('az-retar-enlace').addEventListener('click', function () {
+        var msg = $('az-retar-msg'), b = $('az-retar-enlace');
+        msg.textContent = '';
+        b.disabled = true;
+        JG.api('ajz-reto-enlace', { min: +$('az-min').value, inc: +$('az-inc').value, apuesta: +$('az-apuesta').value || 0 })
+            .then(function (r) {
+                b.disabled = false;
+                if (!r || !r.ok) { msg.textContent = (r && r.error) || 'No se ha podido crear el reto'; return; }
+                cargarMenu();
+                verEnlaceReto(r.codigo);
             }).catch(function () { b.disabled = false; msg.textContent = 'Sin conexión'; });
     });
 
@@ -728,6 +808,8 @@
                           function () { hacer('ajz-torneo-cancelar', b); });
             }));
         }
+        /* Invitar: el enlace del torneo (el mismo que el del anuncio). */
+        if (t.estado !== 'cancelado') acc.appendChild(boton('Copiar enlace', function () { copiarEnlace('torneo', t.id); }));
         if (!acc.children.length) acc.style.display = 'none';
     }
 
@@ -1217,6 +1299,8 @@
 
     /* ── Abrir desde fuera (aviso del haro, enlace del anuncio) ── */
     function abrirDesde(txt) {
+        var rc = /^reto:([a-z0-9]{10})$/.exec(txt || '');
+        if (rc) { abrirReto(rc[1]); return true; }
         var m = /^(partida|torneo):(\d+)$/.exec(txt || '');
         if (!m) return false;
         if (m[1] === 'partida') { autoAbiertas[+m[2]] = 1; abrirPartida(+m[2], 'menu'); }

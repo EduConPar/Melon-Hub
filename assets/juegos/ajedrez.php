@@ -9,6 +9,11 @@
        las dos partes. Tablas = cada uno recupera lo suyo. El reto caduca a
        los 5 min (AJZ_RETO_MS) y se devuelve lo apostado. Aviso del haro
        (desktop-base.php, ajz-avisos) y en Juegos > Ajedrez.
+     - Retos por enlace (decidido así, 7/11): "Retar con un enlace" crea un
+       reto sin rival (a_id = 0) con un código (enlace.php?reto=<código>).
+       Lo acepta CUALQUIERA con cuenta (amigo o no) que abra el enlace, un
+       solo uso (el primero); caduca en 1 hora (AJZ_RETO_ENLACE_MS) y se
+       devuelve la apuesta. La apuesta funciona igual que en los retos.
      - Torneos (assets/juegos/ajedrez-torneos.php).
    Chat del torneo y de la partida: assets/juegos/ajedrez-chat.php.
    Colores al azar. La partida empieza "esperando" a que los dos la abran;
@@ -41,6 +46,8 @@ require_once __DIR__ . '/ajedrez-torneos.php';
 require_once __DIR__ . '/ajedrez-chat.php';
 
 const AJZ_RETO_MS        = 300000;
+const AJZ_RETO_ENLACE_MS = 3600000;   /* reto por enlace: 1 hora */
+const AJZ_RETO_ENLACE_MAX = 5;        /* pendientes a la vez por persona */
 const AJZ_PRESENTARSE_MS = 120000;
 const AJZ_AUSENTE_MS     = 60000;
 /* La ventana da señales de vida cada 5 s (ajedrez.js, SENAL_MS): el
@@ -101,6 +108,10 @@ function ajz_ensure(PDO $pdo): void {
             INDEX idx_a (a_id, estado),
             INDEX idx_de (de_id, estado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        /* Retos por enlace: su código (NULL en los de siempre). */
+        if (!$pdo->query("SHOW COLUMNS FROM ajz_retos LIKE 'codigo'")->fetch()) {
+            $pdo->exec("ALTER TABLE ajz_retos ADD COLUMN codigo VARCHAR(12) NULL, ADD UNIQUE INDEX idx_codigo (codigo)");
+        }
     });
     ajz_torEnsure($pdo);
     ajz_chatEnsure($pdo);
@@ -483,8 +494,9 @@ function ajz_tablas(PDO $pdo, int $uid, int $id, string $tipo): array {
 /* ── Retos ── */
 
 function ajz_caducarRetos(PDO $pdo, int $ahora): void {
-    $st = $pdo->prepare("SELECT id, de_id, a_id, apuesta FROM ajz_retos WHERE estado = 'pendiente' AND creado < ?");
-    $st->execute([$ahora - AJZ_RETO_MS]);
+    /* Los de enlace duran 1 hora; los otros, 5 minutos. */
+    $st = $pdo->prepare("SELECT id, de_id, a_id, apuesta FROM ajz_retos WHERE estado = 'pendiente' AND creado < IF(codigo IS NULL, ?, ?)");
+    $st->execute([$ahora - AJZ_RETO_MS, $ahora - AJZ_RETO_ENLACE_MS]);
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         ajz_tx($pdo, function () use ($pdo, $r, $ahora) {
             $u = $pdo->prepare("UPDATE ajz_retos SET estado = 'caducado', resuelto = ? WHERE id = ? AND estado = 'pendiente'");
@@ -544,6 +556,87 @@ function ajz_responder(PDO $pdo, int $uid, int $id, bool $aceptar): array {
         if (random_int(0, 1)) $jug = array_reverse($jug);
         $pid = ajz_crearPartida($pdo, $jug[0], $jug[1], (int)$r['base_ms'], (int)$r['inc_ms'], (int)$r['apuesta']);
         $pdo->prepare("UPDATE ajz_retos SET estado = 'aceptado', partida_id = ?, resuelto = ? WHERE id = ?")->execute([$pid, $ahora, $id]);
+        return ['partida' => $pid];
+    });
+}
+
+/* Lo que queda de un reto (ms) según sea de enlace o no. */
+function ajz_retoQueda(array $r, int $ahora): int {
+    return max(0, (int)$r['creado'] + ($r['codigo'] !== null ? AJZ_RETO_ENLACE_MS : AJZ_RETO_MS) - $ahora);
+}
+
+/* Reto por enlace: sin rival; devuelve su código. */
+function ajz_retarEnlace(PDO $pdo, int $uid, $min, $inc, $apuesta): array {
+    [$base, $incMs] = ajz_ritmo($min, $inc);
+    $apuesta = (int)$apuesta;
+    if ($apuesta < 0 || $apuesta > AJZ_APUESTA_MAX) throw new InvalidArgumentException('Apuesta no válida');
+    $ahora = bm_ms();
+    ajz_caducarRetos($pdo, $ahora);
+    return ajz_tx($pdo, function () use ($pdo, $uid, $base, $incMs, $apuesta, $ahora) {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM ajz_retos WHERE de_id = ? AND codigo IS NOT NULL AND estado = 'pendiente'");
+        $st->execute([$uid]);
+        if ((int)$st->fetchColumn() >= AJZ_RETO_ENLACE_MAX) throw new InvalidArgumentException('Ya tienes ' . AJZ_RETO_ENLACE_MAX . ' retos por enlace sin aceptar');
+        if (!ajz_cobrar($pdo, $uid, $apuesta)) throw new InvalidArgumentException('No tienes puntos suficientes para esa apuesta');
+        $codigo = '';
+        for ($i = 0; $i < 5; $i++) {
+            /* 10 de 32 letras y cifras (sin 0/o/1/l, que se confunden). */
+            $abc = 'abcdefghijkmnpqrstuvwxyz23456789';
+            $codigo = '';
+            for ($k = 0; $k < 10; $k++) $codigo .= $abc[random_int(0, 31)];
+            $st = $pdo->prepare("SELECT 1 FROM ajz_retos WHERE codigo = ?");
+            $st->execute([$codigo]);
+            if (!$st->fetchColumn()) break;
+        }
+        $pdo->prepare("INSERT INTO ajz_retos (de_id, a_id, base_ms, inc_ms, apuesta, creado, codigo) VALUES (?,0,?,?,?,?,?)")
+            ->execute([$uid, $base, $incMs, $apuesta, $ahora, $codigo]);
+        rt_usuario($uid, 'ajz');
+        return ['reto' => (int)$pdo->lastInsertId(), 'codigo' => $codigo];
+    });
+}
+
+/* Lo que ve quien abre el enlace: de quién es, ritmo, apuesta y si sigue
+   en pie. Si ya lo aceptó él, la partida (para entrar). */
+function ajz_retoEnlaceVer(PDO $pdo, int $uid, string $codigo): array {
+    if (!preg_match('/^[a-z0-9]{10}$/', $codigo)) throw new InvalidArgumentException('Ese enlace no es válido');
+    $ahora = bm_ms();
+    ajz_caducarRetos($pdo, $ahora);
+    $st = $pdo->prepare("SELECT * FROM ajz_retos WHERE codigo = ?");
+    $st->execute([$codigo]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r) throw new InvalidArgumentException('Ese reto no existe');
+    $us = bm_usuarios($pdo, [(int)$r['de_id']]);
+    $out = ['id' => (int)$r['id'], 'codigo' => $codigo, 'de' => $us[(int)$r['de_id']] ?? null, 'mio' => (int)$r['de_id'] === $uid,
+            'ritmo' => ajz_ritmoTexto((int)$r['base_ms'], (int)$r['inc_ms']), 'apuesta' => (int)$r['apuesta'],
+            'estado' => $r['estado'], 'quedan' => $r['estado'] === 'pendiente' ? ajz_retoQueda($r, $ahora) : 0,
+            'partida' => null, 'autismo' => ajz_saldo($pdo, $uid)];
+    if ($r['estado'] === 'aceptado' && $r['partida_id'] && ((int)$r['a_id'] === $uid || (int)$r['de_id'] === $uid)) $out['partida'] = (int)$r['partida_id'];
+    return $out;
+}
+
+/* Aceptarlo (el primero que llega): pone su parte de la apuesta y se
+   crea la partida, como al aceptar un reto. */
+function ajz_retoEnlaceAceptar(PDO $pdo, int $uid, string $codigo): array {
+    if (!preg_match('/^[a-z0-9]{10}$/', $codigo)) throw new InvalidArgumentException('Ese enlace no es válido');
+    $ahora = bm_ms();
+    ajz_caducarRetos($pdo, $ahora);
+    return ajz_tx($pdo, function () use ($pdo, $uid, $codigo, $ahora) {
+        $st = $pdo->prepare("SELECT * FROM ajz_retos WHERE codigo = ? FOR UPDATE");
+        $st->execute([$codigo]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$r) throw new InvalidArgumentException('Ese reto no existe');
+        if ((int)$r['de_id'] === $uid) throw new InvalidArgumentException('Es tu propio reto: pásale el enlace a otra persona');
+        if ($r['estado'] !== 'pendiente') {
+            throw new InvalidArgumentException($r['estado'] === 'caducado' ? 'El reto ha caducado'
+                : ($r['estado'] === 'aceptado' ? 'Alguien ha aceptado ya este reto' : 'El reto ya no está pendiente'));
+        }
+        if (!ajz_cobrar($pdo, $uid, (int)$r['apuesta'])) throw new InvalidArgumentException('No tienes puntos suficientes para esa apuesta');
+        $jug = [(int)$r['de_id'], $uid];
+        if (random_int(0, 1)) $jug = array_reverse($jug);
+        $pid = ajz_crearPartida($pdo, $jug[0], $jug[1], (int)$r['base_ms'], (int)$r['inc_ms'], (int)$r['apuesta']);
+        $pdo->prepare("UPDATE ajz_retos SET a_id = ?, estado = 'aceptado', partida_id = ?, resuelto = ? WHERE id = ?")
+            ->execute([$uid, $pid, $ahora, (int)$r['id']]);
+        rt_usuario((int)$r['de_id'], 'ajz', 'aviso');
+        rt_usuario($uid, 'ajz');
         return ['partida' => $pid];
     });
 }
@@ -614,7 +707,9 @@ function ajz_estado(PDO $pdo, int $uid): array {
     $rec = []; $env = [];
     foreach ($retos as $r) {
         $x = ['id' => (int)$r['id'], 'ritmo' => ajz_ritmoTexto((int)$r['base_ms'], (int)$r['inc_ms']), 'apuesta' => (int)$r['apuesta'],
-              'estado' => $r['estado'], 'quedan' => max(0, (int)$r['creado'] + AJZ_RETO_MS - $ahora)];
+              'estado' => $r['estado'], 'quedan' => ajz_retoQueda($r, $ahora),
+              /* Reto por enlace: su código (para volver a copiarlo). */
+              'codigo' => $r['codigo']];
         if ((int)$r['a_id'] === $uid) $rec[] = $x + ['de' => $us[(int)$r['de_id']] ?? null];
         else $env[] = $x + ['a' => $us[(int)$r['a_id']] ?? null];
     }

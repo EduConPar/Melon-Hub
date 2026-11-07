@@ -9,7 +9,8 @@
      - álbum: nombre, artista y nº de canciones, portada;
      - perfil: nombre, bio, foto de perfil;
      - playlist: nombre, de quién y nº de canciones, su imagen;
-     - escuchar: "Escucha con <nombre>", foto de perfil.
+     - escuchar: "Escucha con <nombre>", foto de perfil;
+     - torneo / reto de ajedrez: nombre, ritmo, plazas / apuesta.
    Todo con try/catch: si algo falla, sale la tarjeta genérica.
    ────────────────────────────────────────────────────────────────────── */
 require_once __DIR__ . '/music/song-info.php';
@@ -61,6 +62,32 @@ function melonLinkPreview(PDO $pdo, string $tipo, string $valor, string $base): 
                 . ($n ? ' · ' . $n . ($n === 1 ? ' canción' : ' canciones') : ''));
             if (!empty($a['image'])) $p['image'] = $a['image'];
             $p['type'] = 'music.album';
+            break;
+        }
+        case 'torneo': {
+            $st = $pdo->prepare("SELECT t.nombre, t.plazas, t.base_ms, t.inc_ms, t.estado, u.label, u.username
+                                   FROM ajz_torneos t JOIN usuarios u ON u.id = t.host_id WHERE t.id = ?");
+            $st->execute([(int)$valor]);
+            $t = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$t) break;
+            $p['title'] = '♞ ' . $t['nombre'];
+            $p['description'] = 'Torneo de ajedrez de ' . ($t['label'] ?: $t['username']) . ' · ' . (int)$t['plazas'] . ' jugadores · '
+                . round((int)$t['base_ms'] / 60000) . '+' . round((int)$t['inc_ms'] / 1000) . ($t['estado'] === 'inscripcion' ? ' · ¡Apúntate!' : '');
+            break;
+        }
+        case 'reto': {
+            $st = $pdo->prepare("SELECT r.base_ms, r.inc_ms, r.apuesta, r.estado, u.label, u.username
+                                   FROM ajz_retos r JOIN usuarios u ON u.id = r.de_id WHERE r.codigo = ?");
+            $st->execute([$valor]);
+            $r = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$r) break;
+            $nombre = $r['label'] ?: $r['username'];
+            $foto = $abs(getUserImage($nombre));
+            if ($foto !== '') $p['image'] = $foto;
+            $p['title'] = '♞ ' . $nombre . ' te reta al ajedrez';
+            $p['description'] = 'Partida ' . round((int)$r['base_ms'] / 60000) . '+' . round((int)$r['inc_ms'] / 1000)
+                . ((int)$r['apuesta'] > 0 ? ' · apuesta ' . (int)$r['apuesta'] . ' puntos' : ' · sin apuesta')
+                . ($r['estado'] === 'pendiente' ? ' · Ábrelo para aceptar' : ' · Ya no está disponible');
             break;
         }
         case 'perfil':

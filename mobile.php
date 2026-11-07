@@ -140,6 +140,7 @@ $apps = [
     ['name' => 'D&D',          'url' => 'apps/mobile/dnd-mobile.php',                                           'emoji' => '⚔',  'icon' => 'assets/img/appIcons/dndIcon.png',          'external' => false, 'wip' => false],
     ['name' => 'Dibujo',       'url' => 'apps/mobile/dibujo-mobile.php',                                        'emoji' => '✏️', 'icon' => 'assets/img/appIcons/drawingIcon.png',      'external' => false, 'wip' => false],
     ['name' => 'Galería',      'url' => 'apps/mobile/galeria-mobile.php',                                       'emoji' => '🖼', 'icon' => 'assets/img/appIcons/galeriaIcon.png',     'external' => false, 'wip' => false],
+    ['name' => 'Juegos',       'url' => 'apps/mobile/juegos-mobile.php',                                        'emoji' => '🎮', 'icon' => 'assets/img/appIcons/juegosIcon.png',       'external' => false, 'wip' => false],
     ['name' => 'MelonArchive', 'url' => 'apps/mobile/melonarchive-mobile.php',                                  'emoji' => '📼', 'icon' => 'assets/img/appIcons/melonArchiveIcon.png', 'external' => false, 'wip' => false],
     ['name' => 'Música',       'url' => 'apps/mobile/musica-mobile.php',                                        'emoji' => '🎵', 'icon' => 'assets/img/appIcons/musicaIcon.png',       'external' => false, 'wip' => false],
     ['name' => 'Perfil',       'url' => 'apps/mobile/perfil-mobile.php',                                        'emoji' => '👤', 'icon' => 'assets/img/appIcons/profileIcon.png',      'external' => false, 'wip' => false],
@@ -2000,6 +2001,9 @@ if ('serviceWorker' in navigator) {
                 });
         } else if (tipo === 'escuchar') {
             mJoinListen(valor);
+        } else if (tipo === 'torneo' || tipo === 'reto') {
+            /* Torneo de ajedrez o reto por enlace (ajedrez.js, abrirDesde). */
+            openApp('apps/mobile/juegos-mobile.php?abrir=' + encodeURIComponent(tipo + ':' + valor), 'Juegos');
         }
     }
     window.mOpenLink = mOpenLink;
@@ -5349,6 +5353,117 @@ window.MuShell = (function(){
     window.addEventListener('hashchange', function(){
         if (/#notif=/i.test(location.hash)) poll(true);
     });
+})();
+
+/* ── Ajedrez (como pollAjedrez de desktop-base.php; decidido así, 7/11):
+   avisos de la carcasa con los retos que te llegan (Rechazar / Aceptar),
+   las partidas que te esperan (reto aceptado, ronda de torneo: "Jugar")
+   y los torneos cancelados en los que estabas. Si Juegos ya enseña el
+   ajedrez (ajzViendo de ajedrez.js), la partida entra sola. Se pide
+   ajz-avisos cuando el timbre dice que ha cambiado su "aviso" (o cada
+   10 s si no responde) y a la hora de su próximo torneo (esa llamada lo
+   arranca: ajz_tick). ── */
+(function mAjedrez(){
+    var API = 'assets/juegos/api.php';
+    var VISTOS = {};          /* id del aviso → ya enseñado (una vez por sesión) */
+    var pidiendo = false, otra = false, plazo = null;
+    function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    function post(action, body){
+        return fetch(API + '?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function(r){ return r.json(); });
+    }
+    function abrir(que){
+        if (window.mOpenApp) window.mOpenApp('apps/mobile/juegos-mobile.php?abrir=' + encodeURIComponent(que), 'Juegos');
+    }
+    window.mOpenJuegos = abrir;
+    function toast(o){ if (window.mToast) window.mToast(o); }
+    function error(msg){ toast({ id: 'ajz-err', title: 'Ajedrez', message: esc(msg) }); }
+    /* ¿Juegos (abierto y a la vista) está en el ajedrez? */
+    function viendo(){
+        var shell = document.getElementById('shell-app'), f = document.getElementById('app-frame');
+        if (!shell || shell.hidden || !f) return null;
+        try { return f.contentWindow.ajzViendo ? f.contentWindow.ajzViendo() : null; } catch (e) { return null; }
+    }
+    function programar(d){
+        if (plazo) { clearTimeout(plazo); plazo = null; }
+        var falta = d.prox && d.ahora ? d.prox - d.ahora : -1;
+        if (falta > 0 && falta < 6 * 3600000) plazo = setTimeout(pedir, falta + 300 + Math.random() * 1500);
+    }
+    function una(id, o){
+        if (VISTOS[id]) return;
+        VISTOS[id] = true;
+        o.id = id;
+        toast(o);
+    }
+    function pedir(){
+        if (pidiendo) { otra = true; return; }
+        pidiendo = true;
+        fetch(API + '?action=ajz-avisos', { credentials: 'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d || !d.ok) return;
+                programar(d);
+                var siguen = {};
+                (d.retos || []).forEach(function(x){
+                    var u = x.de || {};
+                    siguen['ajz-reto-' + x.id] = true;
+                    una('ajz-reto-' + x.id, {
+                        title: 'Ajedrez',
+                        message: esc(u.nombre || 'Alguien') + ' te reta a una partida (' + esc(x.ritmo) + (x.apuesta > 0 ? ', apuesta ' + (x.apuesta | 0) + ' puntos' : '') + ')',
+                        actions: [
+                            { label: 'Rechazar', fn: function(){ post('ajz-reto-responder', { id: x.id, aceptar: false }).catch(function(){}); } },
+                            { label: 'Aceptar', fn: function(){
+                                post('ajz-reto-responder', { id: x.id, aceptar: true }).then(function(r){
+                                    if (r && r.ok && r.partida) abrir('partida:' + r.partida);
+                                    else error((r && r.error) || 'No se ha podido aceptar el reto');
+                                }).catch(function(){ error('Sin conexión'); });
+                            } },
+                        ],
+                    });
+                });
+                (d.cancelados || []).forEach(function(c){
+                    una('ajz-cancelado-' + c.id, {
+                        title: 'Ajedrez',
+                        message: 'Se ha cancelado el torneo «' + esc(c.torneo) + '» ' +
+                                 (c.motivo === 'vacio' ? 'porque no se llenó a tiempo.' : 'porque lo ha cancelado quien lo organizaba.') +
+                                 (c.devuelto > 0 ? ' Se te han devuelto los ' + (c.devuelto | 0) + ' puntos de la entrada.' : ''),
+                        duration: 9000,
+                    });
+                });
+                var v = viendo();
+                (d.partidas || []).forEach(function(p){
+                    if (v && (v.vista === 'menu' || v.partida === p.id || (v.vista === 'torneo' && p.torneoId && v.torneo === p.torneoId))) return;
+                    var u = p.rival || {};
+                    siguen['ajz-partida-' + p.id] = true;
+                    una('ajz-partida-' + p.id, {
+                        title: 'Ajedrez',
+                        message: p.torneo ? 'Empieza tu partida del torneo ' + esc(p.torneo) + ' contra ' + esc(u.nombre || '?')
+                                          : esc(u.nombre || 'Tu rival') + ' ha aceptado tu reto: ¡a jugar!',
+                        actions: [
+                            { label: 'Cerrar', fn: function(){} },
+                            { label: 'Jugar', fn: function(){ abrir('partida:' + p.id); } },
+                        ],
+                    });
+                });
+                /* Reto o partida que ya no está (aceptado en el PC, caducado…): fuera su aviso. */
+                Object.keys(VISTOS).forEach(function(id){
+                    if (!/^ajz-(reto|partida)-/.test(id) || siguen[id]) return;
+                    var t = document.getElementById('m-toast-' + id);
+                    if (t) t.remove();
+                    delete VISTOS[id];
+                });
+            })
+            .catch(function(){})
+            .then(function(){
+                pidiendo = false;
+                if (otra) { otra = false; pedir(); }
+            });
+    }
+    setTimeout(pedir, 4000);
+    if (window.melonTimbre) window.melonTimbre.on('aviso', pedir, 10000);
+    else setInterval(pedir, 10000);
+    document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') pedir(); });
 })();
 
 /* Tier 2 #5 — Idle broadcast desde los iframes de apps.

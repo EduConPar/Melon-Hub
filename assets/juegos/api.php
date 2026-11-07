@@ -23,6 +23,9 @@
      POST ?action=ajz-retar            {amigo, min, inc, apuesta}
      POST ?action=ajz-reto-responder   {id, aceptar} → partida
      POST ?action=ajz-reto-cancelar    {id}
+     POST ?action=ajz-reto-enlace      {min, inc, apuesta} → codigo (reto por enlace, 1 hora)
+     GET  ?action=ajz-reto-ver&codigo= → de quién es, ritmo, apuesta, estado (al abrir el enlace)
+     POST ?action=ajz-reto-enlace-aceptar {codigo} → partida
      GET  ?action=ajz-partida&id=N     → partida (y señal de vida)
      POST ?action=ajz-mover            {id, uci, n}
      POST ?action=ajz-rendirse         {id}
@@ -183,6 +186,11 @@ try {
             catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
             jsonResponse(['ok' => true] + $c);
 
+        case 'ajz-reto-ver':
+            try { $rv = ajz_retoEnlaceVer($pdo, $uid, (string)($_GET['codigo'] ?? '')); }
+            catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
+            jsonResponse(['ok' => true, 'reto' => $rv]);
+
         /* Se abre a mano (con sesión) si el anuncio no sale en Discord. */
         case 'ajz-torneo-discord':
             jsonResponse(ajz_torDiscord($pdo, (int)($_GET['id'] ?? 0)));
@@ -190,6 +198,8 @@ try {
         case 'ajz-retar':
         case 'ajz-reto-responder':
         case 'ajz-reto-cancelar':
+        case 'ajz-reto-enlace':
+        case 'ajz-reto-enlace-aceptar':
         case 'ajz-mover':
         case 'ajz-rendirse':
         case 'ajz-tablas':
@@ -208,6 +218,8 @@ try {
                     case 'ajz-retar':          $r = ajz_retar($pdo, $uid, (string)($b['amigo'] ?? ''), $b['min'] ?? 0, $b['inc'] ?? 0, $b['apuesta'] ?? 0); break;
                     case 'ajz-reto-responder': $r = ajz_responder($pdo, $uid, $id, !empty($b['aceptar'])); break;
                     case 'ajz-reto-cancelar':  ajz_cancelarReto($pdo, $uid, $id); break;
+                    case 'ajz-reto-enlace':    $r = ajz_retarEnlace($pdo, $uid, $b['min'] ?? 0, $b['inc'] ?? 0, $b['apuesta'] ?? 0); break;
+                    case 'ajz-reto-enlace-aceptar': $r = ajz_retoEnlaceAceptar($pdo, $uid, (string)($b['codigo'] ?? '')); break;
                     case 'ajz-torneo-crear':   $r = ajz_torCrear($pdo, $uid, $b); break;
                     case 'ajz-torneo-editar':  ajz_torEditar($pdo, $uid, $id, $b); break;
                     case 'ajz-chat-enviar':    $r = ajz_chatEnviar($pdo, $uid, (string)($b['tipo'] ?? ''), $id, (string)($b['texto'] ?? ''), (int)($b['desde'] ?? 0)); break;
