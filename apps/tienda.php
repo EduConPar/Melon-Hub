@@ -1384,9 +1384,24 @@ document.querySelectorAll('[data-view]').forEach(function(el){
     /* Polling cada 30 s mientras la pestaña Donaciones está visible. El
        webhook de Ko-fi guarda en BD y la siguiente vuelta del poll lo
        muestra sin necesidad de recargar la app. */
+    /* La lista solo se pide cuando cambia rt/donantes.json (lo reescribe
+       el webhook de Ko-fi; mirarlo no gasta PHP ni BD). Si no responde,
+       la lista cada 30 s como antes. */
+    var donantesVisto = null;
+    function mirarDonantes(){
+        fetch('../rt/donantes.json', { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r){ if (!r.ok) throw new Error('donantes ' + r.status); return r.json(); })
+            .then(function(d){
+                if (donantesVisto !== null && d.v !== donantesVisto) loadDonors();
+                donantesVisto = d.v;
+            })
+            .catch(function(){ loadDonors(); });
+    }
     function startPolling(){
         if (pollHandle) return;
-        pollHandle = setInterval(loadDonors, 30000);
+        donantesVisto = null;
+        mirarDonantes();
+        pollHandle = setInterval(mirarDonantes, 30000);
     }
     function stopPolling(){
         if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
@@ -1532,9 +1547,19 @@ document.querySelectorAll('[data-view]').forEach(function(el){
             renderBalance();
         } catch (e) { console.warn('[tienda] poll error:', e.message); }
     }
-    /* Primera llamada a los 3 s para arrancar rápido, luego cada 15 s. */
+    /* Primera llamada a los 3 s para arrancar rápido; luego, cuando el
+       timbre del escritorio dice que ha cambiado el saldo ('saldo',
+       window.parent.melonTimbre en desktop-base.php; lo avisan los juegos,
+       la tienda, los regalos, la racha…). Sin timbre (o si no responde),
+       cada 15 s como antes. Al recargarse, se da de baja. */
     setTimeout(pollBalance, 3000);
-    setInterval(pollBalance, 15000);
+    (function(){
+        var timbre = null;
+        try { timbre = window.parent !== window ? window.parent.melonTimbre : null; } catch (e) {}
+        if (!timbre) { setInterval(pollBalance, 15000); return; }
+        var baja = timbre.on('saldo', pollBalance, 15000);
+        window.addEventListener('pagehide', function(){ try { baja(); } catch (e) {} });
+    })();
 
     /* El escritorio nos avisa cuando el usuario reabre la ventana de la
        tienda — refrescamos balance + items + compras al instante en lugar

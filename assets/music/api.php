@@ -41,6 +41,10 @@
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_usuario: avisos al escritorio */
+/* Tablas y columnas: una vez por versión de este archivo (melon_esquema),
+   no en cada petición (crear tablas en cada llamada costaba más que la
+   propia llamada; ver .claude/notas/rendimiento.md). */
+require_once dirname(__DIR__) . '/php/esquema.php';
 
 /* Para el polling de tv.php — fuerza socket nuevo en cada petición.
    Las TVs viejas (Tizen <2018, webOS 3) reusan sockets keep-alive
@@ -95,6 +99,7 @@ function _ensureRecentTable(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
+    melon_esquema($pdo, 'musica-recientes', __FILE__, function (PDO $pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS music_recent (
         user_id   INT NOT NULL,
         item_type VARCHAR(12)  NOT NULL,
@@ -106,6 +111,7 @@ function _ensureRecentTable(PDO $pdo): void {
         PRIMARY KEY (user_id, item_type, item_key),
         INDEX idx_user_time (user_id, played_at)
     ) DEFAULT CHARSET=utf8mb4");
+    }, true);
 }
 
 /* Añade la columna image_url a `playlists` si no existe (idempotente). */
@@ -113,10 +119,12 @@ function _ensurePlaylistImageCol(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        $has = $pdo->query("SHOW COLUMNS FROM playlists LIKE 'image_url'")->fetch();
-        if (!$has) $pdo->exec("ALTER TABLE playlists ADD COLUMN image_url VARCHAR(500) NULL");
-    } catch (Throwable $e) { /* sin permiso o ya existe */ }
+    melon_esquema($pdo, 'musica-portada-playlist', __FILE__, function (PDO $pdo) {
+        try {
+            $has = $pdo->query("SHOW COLUMNS FROM playlists LIKE 'image_url'")->fetch();
+            if (!$has) $pdo->exec("ALTER TABLE playlists ADD COLUMN image_url VARCHAR(500) NULL");
+        } catch (Throwable $e) { /* sin permiso o ya existe */ }
+    });
 }
 
 /* Devuelve un mapa videoId(original) => ['newVideoId','title','artist'] con
@@ -1658,15 +1666,17 @@ case 'import-playlist': {
 case 'get-tv-code': {
     $uid = uidByKey($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
-    /* Auto-crea tabla idempotente. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS tv_link_codes (
-            code VARCHAR(6) PRIMARY KEY,
-            user_key VARCHAR(50) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_created (created_at)
-        ) DEFAULT CHARSET=utf8mb4
-    ");
+    /* Auto-crea tabla (una vez por versión del archivo). */
+    melon_esquema($pdo, 'musica-tv', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS tv_link_codes (
+                code VARCHAR(6) PRIMARY KEY,
+                user_key VARCHAR(50) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_created (created_at)
+            ) DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
     /* Limpia códigos caducados (>5 min). */
     $pdo->exec("DELETE FROM tv_link_codes WHERE created_at < NOW() - INTERVAL 5 MINUTE");
     /* Genera código único — random_int es seguro criptográficamente. */
@@ -1692,15 +1702,18 @@ case 'save-now-playing': {
     $b = jsonBody();
     if (!$b) jsonError('Datos inválidos');
 
-    /* Crea la tabla si no existe — idempotente. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS now_playing (
-            user_id    INT PRIMARY KEY,
-            track_json TEXT NOT NULL,
-            is_playing TINYINT(1) DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) DEFAULT CHARSET=utf8mb4
-    ");
+    /* Crea la tabla si no existe (una vez por versión del archivo: esto
+       se llama cada vez que cambia la canción). */
+    melon_esquema($pdo, 'musica-sonando', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS now_playing (
+                user_id    INT PRIMARY KEY,
+                track_json TEXT NOT NULL,
+                is_playing TINYINT(1) DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 
     /* Sanitiza y guarda solo los campos que la TV necesita. */
     $track = [
@@ -1717,6 +1730,10 @@ case 'save-now-playing': {
                    VALUES (?, ?, ?)
                    ON DUPLICATE KEY UPDATE track_json=VALUES(track_json), is_playing=VALUES(is_playing)")
         ->execute([$uid, json_encode($track, JSON_UNESCAPED_UNICODE), $playing]);
+    /* Lo que suena sale en la presencia (assets/profile/presencia.php):
+       el archivo que leen los perfiles, al momento. */
+    require_once dirname(__DIR__) . '/profile/presencia.php';
+    pf_presenciaArchivo($pdo, true);
     jsonResponse(['ok' => true]);
 }
 
@@ -2144,26 +2161,28 @@ case 'report-album': {
     $aArtist = $match['artist'] ?? '';
     $aImage  = $match['image']  ?? '';
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS song_album_overrides (
-        video_id     VARCHAR(11) PRIMARY KEY,
-        source       VARCHAR(10)  NOT NULL,
-        album_id     VARCHAR(40)  NOT NULL,
-        album_key    VARCHAR(60)  NOT NULL,
-        album_name   VARCHAR(255) NOT NULL DEFAULT '',
-        album_artist VARCHAR(255) NOT NULL DEFAULT '',
-        album_image  VARCHAR(500) NOT NULL DEFAULT '',
-        album_url    VARCHAR(500) NOT NULL DEFAULT '',
-        song_title   VARCHAR(255) NOT NULL DEFAULT '',
-        song_artist  VARCHAR(255) NOT NULL DEFAULT '',
-        new_video_id VARCHAR(11)  NOT NULL DEFAULT '',
-        created_by   INT NULL,
-        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) DEFAULT CHARSET=utf8mb4");
-    /* Columnas para tablas ya existentes (idempotente). */
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_title'")->fetch())   $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_title VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_artist'")->fetch())  $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_artist VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'new_video_id'")->fetch()) $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN new_video_id VARCHAR(11) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+    melon_esquema($pdo, 'musica-correcciones', __FILE__, function (PDO $pdo) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS song_album_overrides (
+            video_id     VARCHAR(11) PRIMARY KEY,
+            source       VARCHAR(10)  NOT NULL,
+            album_id     VARCHAR(40)  NOT NULL,
+            album_key    VARCHAR(60)  NOT NULL,
+            album_name   VARCHAR(255) NOT NULL DEFAULT '',
+            album_artist VARCHAR(255) NOT NULL DEFAULT '',
+            album_image  VARCHAR(500) NOT NULL DEFAULT '',
+            album_url    VARCHAR(500) NOT NULL DEFAULT '',
+            song_title   VARCHAR(255) NOT NULL DEFAULT '',
+            song_artist  VARCHAR(255) NOT NULL DEFAULT '',
+            new_video_id VARCHAR(11)  NOT NULL DEFAULT '',
+            created_by   INT NULL,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) DEFAULT CHARSET=utf8mb4");
+        /* Columnas para tablas ya existentes (idempotente). */
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_title'")->fetch())   $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_title VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_artist'")->fetch())  $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_artist VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'new_video_id'")->fetch()) $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN new_video_id VARCHAR(11) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+    }, true);
     $pdo->prepare("INSERT INTO song_album_overrides
         (video_id, source, album_id, album_key, album_name, album_artist, album_image, album_url, song_title, song_artist, new_video_id, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -41,23 +41,28 @@ function racha_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS user_streaks (
-            user_id   INT PRIMARY KEY,
-            current   INT NOT NULL DEFAULT 0,
-            best      INT NOT NULL DEFAULT 0,
-            last_day  DATE NULL,
-            hitos     TINYINT NOT NULL DEFAULT 0
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS user_invites (
-            invitee_id  INT PRIMARY KEY,
-            inviter_id  INT NOT NULL,
-            estado      VARCHAR(12) NOT NULL DEFAULT 'pendiente',
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            resuelto_en TIMESTAMP NULL,
-            INDEX idx_inviter (inviter_id, created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
+    /* Una vez por versión de este archivo (melon_esquema), no en
+       cada petición: ver .claude/notas/rendimiento.md. */
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'racha', __FILE__, function (PDO $pdo) {
+        try {
+            $pdo->exec("CREATE TABLE IF NOT EXISTS user_streaks (
+                user_id   INT PRIMARY KEY,
+                current   INT NOT NULL DEFAULT 0,
+                best      INT NOT NULL DEFAULT 0,
+                last_day  DATE NULL,
+                hitos     TINYINT NOT NULL DEFAULT 0
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS user_invites (
+                invitee_id  INT PRIMARY KEY,
+                inviter_id  INT NOT NULL,
+                estado      VARCHAR(12) NOT NULL DEFAULT 'pendiente',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resuelto_en TIMESTAMP NULL,
+                INDEX idx_inviter (inviter_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
+    });
     require_once dirname(__DIR__) . '/tienda/catalogo.php';
     tiendaEnsureConsumibles($pdo);
 }
@@ -162,6 +167,8 @@ function racha_pulsar(PDO $pdo, int $uid): array {
             } elseif ($cur >= INVITA_RACHA) {
                 $pdo->prepare("UPDATE user_invites SET estado = 'cobrada', resuelto_en = NOW() WHERE invitee_id = ?")->execute([$uid]);
                 $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([INVITA_PUNTOS, (int)$inv['inviter_id']]);
+                require_once dirname(__DIR__) . '/php/timbre.php';
+                rt_saldo((int)$inv['inviter_id']);
                 $puntos += INVITA_PUNTOS;
                 $ganado['invitacion'] = INVITA_PUNTOS;
                 $avisarA = (int)$inv['inviter_id'];
@@ -169,6 +176,8 @@ function racha_pulsar(PDO $pdo, int $uid): array {
         }
         $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$puntos, $uid]);
         $pdo->commit();
+        require_once dirname(__DIR__) . '/php/timbre.php';
+        rt_saldo($uid);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         return ['ok' => false, 'error' => 'No se pudo encender la racha.'];

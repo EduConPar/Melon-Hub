@@ -25,11 +25,16 @@ function steam_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        if (!$pdo->query("SHOW COLUMNS FROM usuarios LIKE 'steam_id'")->fetch()) {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN steam_id VARCHAR(20) NULL");
-        }
-    } catch (Throwable $e) { /* sin permisos: no hay Steam */ }
+    /* Una vez por versión de este archivo (melon_esquema), no en
+       cada petición: ver .claude/notas/rendimiento.md. */
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'steam', __FILE__, function (PDO $pdo) {
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM usuarios LIKE 'steam_id'")->fetch()) {
+                $pdo->exec("ALTER TABLE usuarios ADD COLUMN steam_id VARCHAR(20) NULL");
+            }
+        } catch (Throwable $e) { /* sin permisos: no hay Steam */ }
+    });
 }
 
 function steam_idOf(PDO $pdo, int $uid): string {

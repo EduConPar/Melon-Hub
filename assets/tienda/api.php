@@ -27,6 +27,7 @@ $userId = (int)$user['id'];
 /* Compras que se gastan (Protector de racha): consumido_en. */
 require_once __DIR__ . '/catalogo.php';
 tiendaEnsureConsumibles($pdo);
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_saldo, rt_usuario: avisos al escritorio */
 
 $action = $_GET['action'] ?? '';
 
@@ -127,6 +128,7 @@ case 'dev-grant': {
     $amount = (int)(getBody()['amount'] ?? 0);
     if ($amount < 1 || $amount > 100000) jsonError('Cantidad entre 1 y 100000');
     $pdo->prepare('UPDATE usuarios SET autismo = autismo + ? WHERE id = ?')->execute([$amount, $userId]);
+    rt_saldo($userId);
     $st = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ?');
     $st->execute([$userId]);
     echo json_encode(['ok' => true, 'autismo' => (int)$st->fetchColumn()]);
@@ -210,6 +212,7 @@ case 'buy': {
 
         $pdo->prepare('UPDATE usuarios SET autismo = ? WHERE id = ?')
             ->execute([$newBalance, $userId]);
+        rt_saldo($userId);
         /* UNIQUE (user_id, item_id): un consumible gastado (Protector de
            racha) se vuelve a comprar sobre su misma fila. */
         $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, ?)
@@ -353,6 +356,7 @@ case 'gift-answer': {
             $precio = (int)$item['precio'];
             if ($balance < $precio) { $pdo->rollBack(); jsonError('Autismo insuficiente (te faltan ' . ($precio - $balance) . ')', 402); }
             $pdo->prepare('UPDATE usuarios SET autismo = autismo - ? WHERE id = ?')->execute([$precio, $userId]);
+            rt_saldo($userId);
             $pdo->prepare("INSERT INTO tienda_regalos (from_user_id, to_user_id, item_id, precio, mensaje) VALUES (?, ?, ?, ?, ?)")
                 ->execute([$userId, $toId, $itemId, $precio, $mensaje]);
             $pdo->commit();
@@ -404,6 +408,7 @@ case 'gift-answer': {
         if (!$g) { $pdo->rollBack(); jsonError('Este regalo ya no está pendiente.', 404); }
         $refund = function (string $estado) use ($pdo, $g) {
             $pdo->prepare('UPDATE usuarios SET autismo = autismo + ? WHERE id = ?')->execute([(int)$g['precio'], (int)$g['from_user_id']]);
+            rt_saldo((int)$g['from_user_id']);
             $pdo->prepare('UPDATE tienda_regalos SET estado = ?, resuelto_en = NOW() WHERE id = ?')->execute([$estado, (int)$g['id']]);
         };
         if (!$accept) {
@@ -446,6 +451,8 @@ case 'gift-answer': {
    Sin importe ni timestamp en la respuesta para no exponer datos
    sensibles si en el futuro hay donantes reales. */
 case 'donors': {
+    /* El archivo que miran las tiendas abiertas, por si aún no existe. */
+    if (!rt_existe('rt/donantes.json')) rt_escribir('rt/donantes.json', ['v' => rt_version()]);
     $rows = $pdo->query('
         SELECT nombre, avatar_url, mensaje, tipo
         FROM donaciones

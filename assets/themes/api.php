@@ -150,6 +150,8 @@ case 'save': {
                     if ($ins->rowCount() > 0) {
                         $pdo->prepare("UPDATE usuarios SET autismo = autismo + 50 WHERE id = ?")
                             ->execute([$ownerId]);
+                        require_once dirname(__DIR__) . '/php/timbre.php';
+                        rt_saldo((int)$ownerId);
                         $awarded = true;
                     }
                     $pdo->commit();

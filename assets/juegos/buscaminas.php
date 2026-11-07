@@ -119,7 +119,10 @@ function bm_ensure(PDO $pdo): void {
 }
 
 function bm_sumarPuntos(PDO $pdo, int $uid, int $p): void {
-    if ($p > 0) $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$p, $uid]);
+    if ($p <= 0) return;
+    $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$p, $uid]);
+    require_once dirname(__DIR__) . '/php/timbre.php';
+    rt_saldo($uid);
 }
 
 function bm_nuevoTablero(PDO $pdo, int $w, int $h, int $m): int {

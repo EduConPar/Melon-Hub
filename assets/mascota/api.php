@@ -40,65 +40,69 @@ if (!$userId) {
 }
 
 /* ── Auto-migración del esquema ─────────────────────────────────
-   Crea las tablas y columnas si no existen. Idempotente — seguro de
-   correr en cada request. Útil para clones nuevos del repo o
+   Crea las tablas y columnas si no existen. Una vez por versión de este
+   archivo (melon_esquema, assets/php/esquema.php), no en cada petición:
+   eran 11 sentencias por llamada. Útil para clones nuevos del repo o
    instalaciones que aún no han ejecutado el SQL inicial. */
+require_once __DIR__ . '/../php/esquema.php';
 try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `mascotas` (
-            `user_id`      INT NOT NULL,
-            `nombre`       VARCHAR(60)  NOT NULL DEFAULT 'Gabriel',
-            `skin`         VARCHAR(40)  NOT NULL DEFAULT 'gabriel',
-            `hambre`       TINYINT UNSIGNED NOT NULL DEFAULT 80,
-            `felicidad`    TINYINT UNSIGNED NOT NULL DEFAULT 80,
-            `temperatura`  TINYINT UNSIGNED NOT NULL DEFAULT 80,
-            `edad`         INT          NOT NULL DEFAULT 0,
-            `viva`         TINYINT(1)   NOT NULL DEFAULT 1,
-            `eclosionado`  TINYINT(1)   NOT NULL DEFAULT 0,
-            `ultima_vez`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `eclosion_at`  DATETIME     NULL,
-            PRIMARY KEY (`user_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `mascota_memoria` (
-            `user_id`      INT NOT NULL,
-            `clave`        VARCHAR(40) NOT NULL,
-            `valor`        VARCHAR(255) NOT NULL,
-            `guardado_en`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`user_id`, `clave`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* Tabla de gustos: cada mascota tiene un valor 0-100 por cada
-       alimento del catálogo. Se generan aleatoriamente al crear la
-       mascota y NO cambian durante su vida. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `mascota_gustos` (
-            `user_id`   INT NOT NULL,
-            `alimento`  VARCHAR(40) NOT NULL,
-            `valor`     TINYINT UNSIGNED NOT NULL DEFAULT 50,
-            `revelado`  TINYINT(1) NOT NULL DEFAULT 0,
-            PRIMARY KEY (`user_id`, `alimento`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* Migración: columna `revelado` para BD que no la tenían. */
-    $col = $pdo->query("SHOW COLUMNS FROM `mascota_gustos` LIKE 'revelado'")->fetch();
-    if (!$col) {
-        $pdo->exec("ALTER TABLE `mascota_gustos` ADD COLUMN `revelado` TINYINT(1) NOT NULL DEFAULT 0 AFTER `valor`");
-    }
-    /* Migraciones: añadir columnas nuevas a instalaciones viejas. */
-    $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'eclosionado'")->fetch();
-    if (!$col) {
-        $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `eclosionado` TINYINT(1) NOT NULL DEFAULT 1 AFTER `viva`");
-    }
-    $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'temperatura'")->fetch();
-    if (!$col) {
-        $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `temperatura` TINYINT UNSIGNED NOT NULL DEFAULT 80 AFTER `felicidad`");
-    }
-    $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'eclosion_at'")->fetch();
-    if (!$col) {
-        $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `eclosion_at` DATETIME NULL AFTER `ultima_vez`");
-    }
+    melon_esquema($pdo, 'mascota', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `mascotas` (
+                `user_id`      INT NOT NULL,
+                `nombre`       VARCHAR(60)  NOT NULL DEFAULT 'Gabriel',
+                `skin`         VARCHAR(40)  NOT NULL DEFAULT 'gabriel',
+                `hambre`       TINYINT UNSIGNED NOT NULL DEFAULT 80,
+                `felicidad`    TINYINT UNSIGNED NOT NULL DEFAULT 80,
+                `temperatura`  TINYINT UNSIGNED NOT NULL DEFAULT 80,
+                `edad`         INT          NOT NULL DEFAULT 0,
+                `viva`         TINYINT(1)   NOT NULL DEFAULT 1,
+                `eclosionado`  TINYINT(1)   NOT NULL DEFAULT 0,
+                `ultima_vez`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `eclosion_at`  DATETIME     NULL,
+                PRIMARY KEY (`user_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `mascota_memoria` (
+                `user_id`      INT NOT NULL,
+                `clave`        VARCHAR(40) NOT NULL,
+                `valor`        VARCHAR(255) NOT NULL,
+                `guardado_en`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`user_id`, `clave`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* Tabla de gustos: cada mascota tiene un valor 0-100 por cada
+           alimento del catálogo. Se generan aleatoriamente al crear la
+           mascota y NO cambian durante su vida. */
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `mascota_gustos` (
+                `user_id`   INT NOT NULL,
+                `alimento`  VARCHAR(40) NOT NULL,
+                `valor`     TINYINT UNSIGNED NOT NULL DEFAULT 50,
+                `revelado`  TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (`user_id`, `alimento`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* Migración: columna `revelado` para BD que no la tenían. */
+        $col = $pdo->query("SHOW COLUMNS FROM `mascota_gustos` LIKE 'revelado'")->fetch();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE `mascota_gustos` ADD COLUMN `revelado` TINYINT(1) NOT NULL DEFAULT 0 AFTER `valor`");
+        }
+        /* Migraciones: añadir columnas nuevas a instalaciones viejas. */
+        $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'eclosionado'")->fetch();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `eclosionado` TINYINT(1) NOT NULL DEFAULT 1 AFTER `viva`");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'temperatura'")->fetch();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `temperatura` TINYINT UNSIGNED NOT NULL DEFAULT 80 AFTER `felicidad`");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM `mascotas` LIKE 'eclosion_at'")->fetch();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE `mascotas` ADD COLUMN `eclosion_at` DATETIME NULL AFTER `ultima_vez`");
+        }
+    }, true);
 } catch (Throwable $e) {
     /* Devolver el error con traza compacta para diagnosticar rápido en
        el navegador (DevTools → Network → Response). */

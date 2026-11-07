@@ -70,6 +70,7 @@ require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
 require_once dirname(__DIR__) . '/php/timbre.php';    /* rt_usuario: avisos al escritorio */
+require_once __DIR__ . '/presencia.php';                /* pf_presencia, pf_presenciaArchivo */
 melon_esquemaVigilar();
 
 $u       = requireAuth();
@@ -1753,105 +1754,17 @@ case 'heartbeat': {
             ON DUPLICATE KEY UPDATE last_at = NOW()
         ")->execute([$uid]);
     }
+    /* El archivo de la presencia que leen los perfiles (como mucho cada
+       10 s, entre todos). */
+    pf_presenciaArchivo($pdo);
     jsonResponse(['ok' => true]);
 }
 
 case 'presence': {
-    /* Devuelve los user_keys ONLINE (heartbeat en los últimos 60s),
-       un mapa de "última vez visto" para TODOS los que tienen row en
-       user_presence, y la lista de user_keys en "no molestar" (DND).
-       DND = preferencia `mute_messages` activa → indicador rojo en el
-       UI en lugar del verde habitual. La app de chat también la usa
-       para silenciar el ping de mensajes entrantes en el receptor. */
-    /* Tolerante a BDs sin columna `state` (migración pendiente).
-       Devolvemos el flag `isOnlineRecent` (heartbeat < 60s) y el flag
-       `isAwayWindow` (heartbeat < 3 min) por separado. Los usuarios en
-       state='away' cuentan como visibles si su último ping está dentro
-       de la ventana extendida — porque navegadores móviles throttlean
-       setInterval cuando la pantalla está bloqueada y un ping puede
-       llegar tarde sin que el usuario haya cerrado realmente la app. */
-    try {
-        $st = $pdo->query("
-            SELECT u.user_key,
-                   UNIX_TIMESTAMP(p.last_at) AS lastAt,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 60 SECOND))  AS isOnlineRecent,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 180 SECOND)) AS isAwayWindow,
-                   p.state AS state
-              FROM user_presence p
-              JOIN usuarios u ON u.id = p.user_id
-        ");
-    } catch (Throwable $_) {
-        $st = $pdo->query("
-            SELECT u.user_key,
-                   UNIX_TIMESTAMP(p.last_at) AS lastAt,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 60 SECOND))  AS isOnlineRecent,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 180 SECOND)) AS isAwayWindow,
-                   'online' AS state
-              FROM user_presence p
-              JOIN usuarios u ON u.id = p.user_id
-        ");
-    }
-    $online   = [];
-    $away     = [];
-    $lastSeen = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $state    = $r['state'] ?? '';
-        $isAway   = ($state === 'away' && (int)$r['isAwayWindow']);
-        $isOnline = (int)$r['isOnlineRecent'] || $isAway;
-        if ($isOnline) {
-            $online[] = $r['user_key'];
-            if ($isAway) $away[] = $r['user_key'];
-        }
-        $lastSeen[$r['user_key']] = (int)$r['lastAt'];
-    }
-    /* DND set: user_keys con `mute_messages = true` en user_settings.
-       El endpoint `notif-settings` (POST) guarda con json_encode(bool)
-       → el valor SQL es la string literal `true` SIN comillas (es JSON
-       de un boolean, no de un string). Por eso comparamos con `'true'`,
-       NO con `'\"true\"'` (que sería el JSON de un STRING).
-       try/catch para no romper si la tabla user_settings no existe. */
-    $dnd = [];
-    try {
-        $st2 = $pdo->query("
-            SELECT u.user_key
-              FROM user_settings s
-              JOIN usuarios u ON u.id = s.user_id
-             WHERE s.key_name = 'mute_messages' AND s.value = 'true'
-        ");
-        foreach ($st2->fetchAll(PDO::FETCH_COLUMN) as $k) $dnd[] = $k;
-    } catch (Throwable $_) {}
-    /* Now-playing: mapa user_key → {title, artist} de los que están
-       reproduciendo música en estos momentos. La tabla `now_playing`
-       la mantiene el reproductor (save-now-playing). Solo incluimos
-       updates de los últimos 90s para no mostrar canciones obsoletas
-       si el usuario cerró el reproductor sin pausar. */
-    $nowPlaying = [];
-    try {
-        $stN = $pdo->query("
-            SELECT u.user_key, np.track_json
-              FROM now_playing np
-              JOIN usuarios u ON u.id = np.user_id
-             WHERE np.is_playing = 1
-               AND np.updated_at > DATE_SUB(NOW(), INTERVAL 90 SECOND)
-        ");
-        foreach ($stN->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $tr = json_decode((string)$r['track_json'], true);
-            if (!is_array($tr)) continue;
-            $title  = trim((string)($tr['title']  ?? ''));
-            $artist = trim((string)($tr['artist'] ?? ''));
-            if ($title === '' && $artist === '') continue;
-            $nowPlaying[$r['user_key']] = ['title' => $title, 'artist' => $artist];
-        }
-    } catch (Throwable $_) { /* tabla puede no existir */ }
-
-    jsonResponse([
-        'ok'         => true,
-        'online'     => $online,
-        'away'       => $away,
-        'lastSeen'   => $lastSeen,
-        'dnd'        => $dnd,
-        'nowPlaying' => $nowPlaying,
-    ]);
+    /* La cuenta está en assets/profile/presencia.php (la misma que se deja
+       en el archivo estático que leen los perfiles); esto queda para
+       cuando el archivo no responde y para quien aún no lo lee. */
+    jsonResponse(pf_presencia($pdo));
 }
 
 case 'notif-settings': {
@@ -1872,6 +1785,8 @@ case 'notif-settings': {
                     ->execute([$uid, $k, json_encode($v === 'true', JSON_UNESCAPED_UNICODE)]);
             } catch (Throwable $_) { /* tabla ausente → ignorar */ }
         }
+        /* "No molestar" sale en la presencia: el archivo, al momento. */
+        pf_presenciaArchivo($pdo, true);
         jsonResponse(['ok' => true]);
     }
     $out = ['mute_profile' => false, 'mute_social' => false, 'mute_messages' => false];

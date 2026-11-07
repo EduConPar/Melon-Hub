@@ -22,43 +22,46 @@ $userId = userIdByKey($userKey);
 if (!$userId) { http_response_code(500); echo json_encode(['error'=>'user_id no resuelto']); exit; }
 
 /* ── Auto-migración (idempotente) ───────────────────────────────── */
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema: tablas una vez por versión */
 try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `music_plays` (
-            `id`          BIGINT NOT NULL AUTO_INCREMENT,
-            `user_id`     INT NOT NULL,
-            `video_id`    VARCHAR(11) NOT NULL,
-            `title`       VARCHAR(200) NOT NULL,
-            `artist`      VARCHAR(200) NOT NULL DEFAULT '',
-            `playlist_id` BIGINT NULL,
-            `duration_s`  INT NOT NULL DEFAULT 0,
-            `played_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            INDEX `idx_user_year` (`user_id`, `played_at`),
-            INDEX `idx_user_video` (`user_id`, `video_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* Tabla de "eventos de álbum" — distinta a music_plays porque
-       agrupa por TÍTULO de álbum + artista (no por video_id como las
-       canciones sueltas). action_type='play' al darle a reproducir;
-       'import' al añadir el álbum a una playlist propia. Cada acción
-       cuenta como un "punto" en el ranking de álbumes más escuchados. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `music_album_actions` (
-            `id`               BIGINT NOT NULL AUTO_INCREMENT,
-            `user_id`          INT NOT NULL,
-            `album_title`      VARCHAR(200) NOT NULL,
-            `artist`           VARCHAR(200) NOT NULL DEFAULT '',
-            `action_type`      VARCHAR(20) NOT NULL DEFAULT 'play',
-            `yt_playlist_id`   VARCHAR(40) NULL,
-            `spotify_album_id` VARCHAR(40) NULL,
-            `cover_url`        VARCHAR(500) NULL,
-            `played_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            INDEX `idx_user_year` (`user_id`, `played_at`),
-            INDEX `idx_user_album` (`user_id`, `album_title`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
+    melon_esquema($pdo, 'wrapped', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `music_plays` (
+                `id`          BIGINT NOT NULL AUTO_INCREMENT,
+                `user_id`     INT NOT NULL,
+                `video_id`    VARCHAR(11) NOT NULL,
+                `title`       VARCHAR(200) NOT NULL,
+                `artist`      VARCHAR(200) NOT NULL DEFAULT '',
+                `playlist_id` BIGINT NULL,
+                `duration_s`  INT NOT NULL DEFAULT 0,
+                `played_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                INDEX `idx_user_year` (`user_id`, `played_at`),
+                INDEX `idx_user_video` (`user_id`, `video_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* Tabla de "eventos de álbum" — distinta a music_plays porque
+           agrupa por TÍTULO de álbum + artista (no por video_id como las
+           canciones sueltas). action_type='play' al darle a reproducir;
+           'import' al añadir el álbum a una playlist propia. Cada acción
+           cuenta como un "punto" en el ranking de álbumes más escuchados. */
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `music_album_actions` (
+                `id`               BIGINT NOT NULL AUTO_INCREMENT,
+                `user_id`          INT NOT NULL,
+                `album_title`      VARCHAR(200) NOT NULL,
+                `artist`           VARCHAR(200) NOT NULL DEFAULT '',
+                `action_type`      VARCHAR(20) NOT NULL DEFAULT 'play',
+                `yt_playlist_id`   VARCHAR(40) NULL,
+                `spotify_album_id` VARCHAR(40) NULL,
+                `cover_url`        VARCHAR(500) NULL,
+                `played_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                INDEX `idx_user_year` (`user_id`, `played_at`),
+                INDEX `idx_user_album` (`user_id`, `album_title`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Schema: '.$e->getMessage()]);

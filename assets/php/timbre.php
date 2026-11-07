@@ -47,6 +47,17 @@ function rt_codigo(int $uid): string {
 function rt_urlUsuario(int $uid): string { return 'rt/u/' . rt_codigo($uid) . '.json'; }
 function rt_urlPartida(int $id): string  { return 'rt/p/' . $id . '.json'; }
 function rt_urlTorneo(int $id): string   { return 'rt/t/' . $id . '.json'; }
+/* Sesión de Escuchar juntos (assets/listen/api.php): lo que suena, para
+   los invitados; con código para que no se lean las de otros. */
+function rt_urlSesion(int $id): string {
+    return 'rt/s/' . $id . '-' . substr(hash_hmac('sha256', 's' . $id, 'melon-rt|' . DB_NAME . '|' . DB_PASS), 0, 12) . '.json';
+}
+/* La presencia (assets/profile/presencia.php): una para todos, con el
+   nombre secreto para que no la lea quien no ha entrado (es lo mismo que
+   devuelve la API a cualquiera con sesión). */
+function rt_urlPresencia(): string {
+    return 'rt/presencia-' . substr(hash_hmac('sha256', 'presencia', 'melon-rt|' . DB_NAME . '|' . DB_PASS), 0, 20) . '.json';
+}
 
 /* Lo pendiente de esta petición: se junta (varios cambios del mismo
    usuario o partida = una escritura) y se escribe en rt_vaciar. */
@@ -64,6 +75,8 @@ function rt_torneo(int $id): void {
     $GLOBALS['_rt']['g']['ajz'] = true;   /* cambia también la lista de torneos */
 }
 function rt_listaTorneos(): void { $GLOBALS['_rt']['g']['ajz'] = true; }
+/* Ha cambiado su saldo de puntos: la tienda abierta lo vuelve a pedir. */
+function rt_saldo(int $uid): void { rt_usuario($uid, 'saldo'); }
 
 function rt_existe(string $rel): bool { return is_file(dirname(__DIR__, 2) . '/' . $rel); }
 

@@ -23,7 +23,9 @@
    marcas de esa carpeta la vuelve a crear.
    ────────────────────────────────────────────────────────────────────── */
 
-function melon_esquema(PDO $pdo, string $clave, string $archivo, callable $fn): void {
+/* $lanzar: si fn falla, además de no dejar marca se relanza el error, para
+   que el catch de quien llama haga lo de siempre (p. ej. contestar 500). */
+function melon_esquema(PDO $pdo, string $clave, string $archivo, callable $fn, bool $lanzar = false): void {
     static $hechas = [];
     if (isset($hechas[$clave])) return;
     $hechas[$clave] = true;
@@ -35,6 +37,7 @@ function melon_esquema(PDO $pdo, string $clave, string $archivo, callable $fn): 
         $fn($pdo);
     } catch (Throwable $e) {
         error_log('[esquema] ' . $clave . ': ' . $e->getMessage());
+        if ($lanzar) throw $e;
         return;
     }
     if (!is_dir($dir)) @mkdir($dir, 0775, true);

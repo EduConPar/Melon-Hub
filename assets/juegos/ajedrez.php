@@ -122,10 +122,14 @@ function ajz_cobrar(PDO $pdo, int $uid, int $n): bool {
     if ($n <= 0) return true;
     $st = $pdo->prepare("UPDATE usuarios SET autismo = autismo - ? WHERE id = ? AND autismo >= ?");
     $st->execute([$n, $uid, $n]);
-    return $st->rowCount() === 1;
+    if ($st->rowCount() !== 1) return false;
+    rt_saldo($uid);
+    return true;
 }
 function ajz_pagar(PDO $pdo, int $uid, int $n): void {
-    if ($n > 0) $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$n, $uid]);
+    if ($n <= 0) return;
+    $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$n, $uid]);
+    rt_saldo($uid);
 }
 function ajz_saldo(PDO $pdo, int $uid): int {
     $st = $pdo->prepare("SELECT autismo FROM usuarios WHERE id = ?");

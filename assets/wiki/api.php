@@ -30,6 +30,7 @@
 require_once dirname(__DIR__, 2) . '/db.php';                       /* $pdo */
 require_once dirname(__DIR__, 2) . '/assets/auth.php';              /* requireAuth, json* */
 require_once dirname(__DIR__, 2) . '/assets/themes/theme-helpers.php'; /* userIdByKey */
+require_once dirname(__DIR__) . '/php/esquema.php';                 /* melon_esquema: tablas una vez por versión */
 $pushLib = dirname(__DIR__, 2) . '/assets/push/send-push.php';
 if (file_exists($pushLib)) require_once $pushLib;                   /* sendPushToUser (best-effort) */
 
@@ -44,43 +45,45 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
 /* ── Auto-migración de tablas ──────────────────────────────────────── */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS wiki_pages (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        slug        VARCHAR(160) NOT NULL UNIQUE,
-        title       VARCHAR(200) NOT NULL,
-        body        MEDIUMTEXT   NOT NULL,
-        created_by  INT NULL,
-        updated_by  INT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS wiki_revisions (
-        id             INT AUTO_INCREMENT PRIMARY KEY,
-        page_id        INT NULL,                 /* NULL = página nueva */
-        slug           VARCHAR(160) NULL,        /* slug propuesto (nuevas) */
-        title          VARCHAR(200) NOT NULL,
-        body           MEDIUMTEXT   NOT NULL,
-        summary        VARCHAR(255) NULL,        /* comentario del autor */
-        author_id      INT NOT NULL,
-        status         ENUM('pending','accepted','declined') DEFAULT 'pending',
-        reviewer_id    INT NULL,
-        reason         TEXT NULL,
-        points_awarded INT NOT NULL DEFAULT 0,
-        created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        reviewed_at    TIMESTAMP NULL,
-        INDEX idx_status (status, created_at),
-        INDEX idx_author (author_id, status),
-        INDEX idx_page (page_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS wiki_admins (
-        user_id INT PRIMARY KEY
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+melon_esquema($pdo, 'wiki', __FILE__, function (PDO $pdo) {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS wiki_pages (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            slug        VARCHAR(160) NOT NULL UNIQUE,
+            title       VARCHAR(200) NOT NULL,
+            body        MEDIUMTEXT   NOT NULL,
+            created_by  INT NULL,
+            updated_by  INT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS wiki_revisions (
+            id             INT AUTO_INCREMENT PRIMARY KEY,
+            page_id        INT NULL,                 /* NULL = página nueva */
+            slug           VARCHAR(160) NULL,        /* slug propuesto (nuevas) */
+            title          VARCHAR(200) NOT NULL,
+            body           MEDIUMTEXT   NOT NULL,
+            summary        VARCHAR(255) NULL,        /* comentario del autor */
+            author_id      INT NOT NULL,
+            status         ENUM('pending','accepted','declined') DEFAULT 'pending',
+            reviewer_id    INT NULL,
+            reason         TEXT NULL,
+            points_awarded INT NOT NULL DEFAULT 0,
+            created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at    TIMESTAMP NULL,
+            INDEX idx_status (status, created_at),
+            INDEX idx_author (author_id, status),
+            INDEX idx_page (page_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS wiki_admins (
+            user_id INT PRIMARY KEY
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}, true);
 /* Siembra: si no hay admins, el usuario de menor id (dueño) lo es. */
 try {
     $hasAdmin = (int)$pdo->query("SELECT COUNT(*) FROM wiki_admins")->fetchColumn();
@@ -345,7 +348,11 @@ if ($action === 'review') {
             $points = WIKI_POINTS_EDIT;
         }
         /* Puntos de autismo al autor. */
-        try { $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$points, $authorId]); }
+        try {
+            $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$points, $authorId]);
+            require_once dirname(__DIR__) . '/php/timbre.php';
+            rt_saldo((int)$authorId);
+        }
         catch (Throwable $e) { $points = 0; /* columna ausente → sin puntos, no rompe */ }
 
         $pdo->prepare("UPDATE wiki_revisions SET status='accepted', reviewer_id=?, reason=?, points_awarded=?, reviewed_at=NOW() WHERE id=?")

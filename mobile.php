@@ -181,6 +181,22 @@ require_once __DIR__ . '/assets/php/active-interface.php';
    de ?t= (token PWA) → en cargas normales $pdo era null → fatal. */
 require_once __DIR__ . '/db.php';
 
+/* Timbre (assets/php/timbre.php): archivo estático del usuario que mira
+   window.melonTimbre (assets/js/timbre.js) en vez de preguntar a cada API
+   cada pocos segundos. Se crea ya si no existe y se lee lo que tiene ahora:
+   es el punto de partida de la página. */
+require_once __DIR__ . '/assets/php/timbre.php';
+[$rtTimbre, $rtTimbreDatos] = (function () use ($pdo, $userKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$userKey]);
+    $uid = (int)$st->fetchColumn();
+    if ($uid <= 0) return ['', []];
+    rt_asegurarUsuario($uid);
+    $url = rt_urlUsuario($uid);
+    $datos = json_decode((string)@file_get_contents(__DIR__ . '/' . $url), true);
+    return [$url, is_array($datos) ? $datos : []];
+})();
+
 /* INTERFAZ POR USUARIO (mismo sync que desktop-base.php):
    SIEMPRE sincronizamos cookie ← BD. La slug vive directamente en
    user_settings.active_interface_slug (string JSON por CHECK constraint).
@@ -1782,6 +1798,13 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <!-- Host del YouTube IFrame Player (off-screen). -->
 <div id="yt-host"><div id="yt-iframe"></div></div>
 
+<script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
+<script>
+/* Timbre del móvil (assets/js/timbre.js). Con la app en segundo plano se
+   mira cada 15 s (los avisos antes iban cada 60 s en segundo plano). */
+window.melonTimbre = window.melonCrearTimbre(<?= json_encode($rtTimbre) ?>, <?= json_encode((object)$rtTimbreDatos) ?>, 15000);
+</script>
+
 <script>
 /* ─── Reloj y fecha del header ─────────────────────────────────── */
 (function() {
@@ -2659,9 +2682,40 @@ window.MuShell = (function(){
     }
 
     /* ── GUEST: poll + sync ──────────────────────────────── */
+    /* Invitado: lo que suena sale del archivo estático de la sesión, que el
+       anfitrión reescribe cada 5 s (rt/s/…, update-state en
+       assets/listen/api.php); leerlo no gasta PHP ni BD. A la API (`poll`)
+       solo cada 10 s: es la señal de que sigo en la sesión y da la hora
+       del servidor, con la que se calcula dónde va el anfitrión
+       (LT_DESFASE). Antes, la API cada 2 s. Si el archivo falla, la API
+       como antes. */
+    var LT_RT = null, LT_DESFASE = 0, LT_ULT_POLL = 0;
+    async function ltLeerSesion() {
+        var ahora = Date.now();
+        if (!LT_RT || ahora - LT_ULT_POLL >= 10000) {
+            LT_ULT_POLL = ahora;
+            var r = await ltFetch('poll');
+            if (r && r.ok) {
+                if (r.rt) LT_RT = r.rt;
+                if (r.server_time) LT_DESFASE = parseInt(r.server_time, 10) - Math.round((ahora + Date.now()) / 2000);
+            }
+            return r;
+        }
+        try {
+            var f = await fetch(LT_RT, { cache: 'no-cache', credentials: 'same-origin' });
+            if (!f.ok) throw new Error('sesion ' + f.status);
+            var d = await f.json();
+            if (d.closed) return { ok: true, session: null, closed: true };
+            if (!d.session) throw new Error('sesion vacia');
+            return { ok: true, session: d.session, server_time: Math.round(Date.now() / 1000) + LT_DESFASE };
+        } catch (_) {
+            LT_ULT_POLL = Date.now();
+            return ltFetch('poll');
+        }
+    }
     async function ltGuestPoll() {
         if (LT_ROLE !== 'guest') return;
-        var r = await ltFetch('poll');
+        var r = await ltLeerSesion();
         if (!r || !r.ok) return;
         if (r.closed || !r.session) {
             ltLeaveLocal('El host cerró la sesión.');
@@ -2728,6 +2782,7 @@ window.MuShell = (function(){
     }
 
     async function ltJoinAsGuest(inviteId) {
+        LT_RT = null;   /* el archivo de la sesión lo da el primer poll */
         var r = await ltFetch('accept', { body: { inviteId: inviteId } });
         if (!r || !r.ok) {
             ltToast({ title: 'Error', message: r.error || 'No se pudo unir.', duration: 3500 });
@@ -2755,6 +2810,7 @@ window.MuShell = (function(){
     function ltLeaveLocal(msg) {
         LT_ROLE = null;
         LT_SESSION_ID = null;
+        LT_RT = null;   /* el archivo de esta sesión ya no vale */
         if (LT_GUEST_POLL_T)       { clearInterval(LT_GUEST_POLL_T);       LT_GUEST_POLL_T = null; }
         if (LT_HOST_BCAST_INTERVAL){ clearInterval(LT_HOST_BCAST_INTERVAL); LT_HOST_BCAST_INTERVAL = null; }
         if (LT_HOST_BCAST_T)       { clearTimeout(LT_HOST_BCAST_T); LT_HOST_BCAST_T = null; }
@@ -5183,8 +5239,26 @@ window.MuShell = (function(){
         var iv = (document.visibilityState === 'hidden') ? 60000 : 15000;
         POLL_T = setInterval(function(){ poll(false); }, iv);
     }
-    startNotifPoll();
-    document.addEventListener('visibilitychange', startNotifPoll);
+    if (window.melonTimbre) {
+        /* Con timbre (assets/js/timbre.js): cuando cambia alguno de los
+           temas de estos avisos (Escuchar juntos, playlists, listas,
+           pareja); si llegan varios a la vez, una sola petición. Si el
+           timbre no responde, cada 15 s como antes. Al volver a primer
+           plano, una vez (el sistema pudo dormir la página). */
+        var pendiente = null;
+        var pedir = function(){
+            if (pendiente) return;
+            pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
+        };
+        window.melonTimbre.on('lt', pedir, 15000);
+        ['musica', 'items', 'pareja'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        document.addEventListener('visibilitychange', function(){
+            if (document.visibilityState === 'visible') pedir();
+        });
+    } else {
+        startNotifPoll();
+        document.addEventListener('visibilitychange', startNotifPoll);
+    }
     window.addEventListener('hashchange', function(){
         if (/#notif=/i.test(location.hash)) poll(true);
     });
@@ -5633,7 +5707,11 @@ window.MuShell = (function(){
     }
     var pollT = null;
     var idleOff = false;
+    /* Con timbre (window.melonTimbre, assets/js/timbre.js) se pide cuando
+       cambia 'chat' (si no responde, cada 10 s como antes); sin timbre,
+       cada 10 s. En la pantalla de bloqueo del reproductor, nada. */
     function startPoll(){
+        if (window.melonTimbre) return;
         if (pollT) clearInterval(pollT);
         if (idleOff) return;
         pollT = setInterval(poll, 10000);
@@ -5642,6 +5720,7 @@ window.MuShell = (function(){
         if (pollT) { clearInterval(pollT); pollT = null; }
     }
     poll();
+    if (window.melonTimbre) window.melonTimbre.on('chat', function(){ if (!idleOff) poll(); }, 10000);
     startPoll();
     /* Refresca al volver a la pestaña — bfcache deja el contador stale. */
     document.addEventListener('visibilitychange', function(){

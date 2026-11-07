@@ -1057,58 +1057,11 @@ window.DesktopState.whenReady = function(cb){
     </div>
 </div>
 
+<script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
 <script>
-/* ── Timbre del escritorio (assets/php/timbre.php) ─────────────────────
-   Un archivo estático por usuario (rt/u/<código>.json) con un contador por
-   tema que el servidor sube cuando cambia algo para él: chat (mensajes),
-   notif (notificaciones del perfil), items (invitaciones de listas),
-   musica (de playlists), lt (Escuchar juntos), regalo y aviso (ajedrez).
-   Se mira cada 3 s (cada segundo con un chat abierto): lo sirve LiteSpeed
-   sin PHP ni BD y casi siempre contesta 304. Cada parte del escritorio
-   se apunta a sus temas con melonTimbre.on(tema, fn, respaldo) y solo
-   llama a su API cuando cambian. Antes cada una preguntaba a su API cada
-   1,5–60 s y había dos SSE abiertos todo el rato, que ocupaban 2 procesos
-   PHP y 2 conexiones por escritorio (.claude/notas/rendimiento.md).
-   Si el archivo no responde, cada parte vuelve a preguntar a su API a su
-   ritmo de antes (respaldo, ms; sin respaldo, nada) hasta que vuelva.
-   Se parte de lo que tenía el archivo al generar esta página: un cambio
-   entre la carga y la primera lectura no se pierde. */
-window.melonTimbre = (function () {
-    var url = <?= json_encode($rtTimbre) ?>;
-    var visto = <?= json_encode((object)$rtTimbreDatos) ?>;
-    var temas = {}, ok = !!url, rapidos = {};
-    function llamar(s) { s.ultima = Date.now(); try { s.fn(); } catch (e) {} }
-    function mirar() {
-        fetch(url, { cache: 'no-cache', credentials: 'same-origin' })
-            .then(function (r) { if (!r.ok) throw new Error('timbre ' + r.status); return r.json(); })
-            .then(function (d) {
-                ok = true;
-                Object.keys(temas).forEach(function (t) {
-                    if ((d[t] || 0) !== (visto[t] || 0)) temas[t].forEach(llamar);
-                });
-                visto = d;
-                setTimeout(mirar, Object.keys(rapidos).length && !document.hidden ? 1000 : 3000);
-            })
-            .catch(function () { ok = false; setTimeout(mirar, 10000); });
-    }
-    /* Sin timbre: cada parte, a su ritmo de antes. */
-    setInterval(function () {
-        if (ok) return;
-        var ahora = Date.now();
-        Object.keys(temas).forEach(function (t) {
-            temas[t].forEach(function (s) { if (s.cada && ahora - s.ultima >= s.cada) llamar(s); });
-        });
-    }, 1000);
-    if (url) setTimeout(mirar, 1000);
-    return {
-        on: function (tema, fn, respaldo) {
-            (temas[tema] = temas[tema] || []).push({ fn: fn, cada: respaldo || 0, ultima: Date.now() });
-        },
-        ok: function () { return ok; },
-        /* Mirar cada segundo mientras haga falta (quien: p. ej. 'chat'). */
-        rapido: function (quien, si) { if (si) rapidos[quien] = 1; else delete rapidos[quien]; }
-    };
-})();
+/* Timbre del escritorio (assets/js/timbre.js): el archivo del usuario y lo
+   que tenía al generar esta página. */
+window.melonTimbre = window.melonCrearTimbre(<?= json_encode($rtTimbre) ?>, <?= json_encode((object)$rtTimbreDatos) ?>, 3000);
 </script>
 <?php include __DIR__ . '/apps/reproductor.php'; ?>
 <?php include __DIR__ . '/apps/perfil.php'; ?>

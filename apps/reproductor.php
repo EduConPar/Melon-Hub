@@ -1948,9 +1948,39 @@ function ltHostBroadcastDebounced() {
 }
 
 /* ── GUEST: poll + sync ──────────────────────────────────────────── */
+/* Invitado: lo que suena sale del archivo estático de la sesión, que el
+   anfitrión reescribe cada 5 s (rt/s/…, update-state en
+   assets/listen/api.php); leerlo no gasta PHP ni BD. A la API (`poll`)
+   solo cada 10 s: es la señal de que sigo en la sesión y da la hora del
+   servidor, con la que se calcula dónde va el anfitrión (LT_DESFASE).
+   Antes, la API cada 2 s. Si el archivo falla, la API como antes. */
+let LT_RT = null, LT_DESFASE = 0, LT_ULT_POLL = 0;
+async function ltLeerSesion() {
+    const ahora = Date.now();
+    if (!LT_RT || ahora - LT_ULT_POLL >= 10000) {
+        LT_ULT_POLL = ahora;
+        const r = await ltFetch('poll');
+        if (r && r.ok) {
+            if (r.rt) LT_RT = r.rt;
+            if (r.server_time) LT_DESFASE = parseInt(r.server_time, 10) - Math.round((ahora + Date.now()) / 2000);
+        }
+        return r;
+    }
+    try {
+        const f = await fetch(LT_RT, { cache: 'no-cache', credentials: 'same-origin' });
+        if (!f.ok) throw new Error('sesion ' + f.status);
+        const d = await f.json();
+        if (d.closed) return { ok: true, session: null, closed: true };
+        if (!d.session) throw new Error('sesion vacia');
+        return { ok: true, session: d.session, server_time: Math.round(Date.now() / 1000) + LT_DESFASE };
+    } catch (_) {
+        LT_ULT_POLL = Date.now();
+        return ltFetch('poll');
+    }
+}
 async function ltGuestPoll() {
     if (LT_ROLE !== 'guest') return;
-    const r = await ltFetch('poll');
+    const r = await ltLeerSesion();
     if (!r || !r.ok) return;
     if (r.closed || !r.session) {
         /* Host cerró → salimos. */
@@ -2054,6 +2084,7 @@ async function ltStartAsHost() {
 
 /* ── INICIAR como GUEST (al aceptar invite) ──────────────────────── */
 async function ltJoinAsGuest(inviteId) {
+    LT_RT = null;   /* el archivo de la sesión lo da el primer poll */
     const r = await ltFetch('accept', { body: { inviteId: inviteId } });
     if (!r || !r.ok) {
         if (window.notifSystem) window.notifSystem.show({ type: 'error', title: 'Error', message: r.error || 'No se pudo unir.' });
@@ -2086,6 +2117,7 @@ async function ltLeave() {
 }
 function ltLeaveLocal(msg) {
     LT_ROLE       = null;
+    LT_RT         = null;   /* el archivo de esta sesión ya no vale */
     /* Dejo de seguir la pista de la sesión: el "escuchando ahora" vuelve a
        reportar mi reproducción local. El wrapped de la última canción de la
        sesión lo cerrará el próximo cambio de pista (updateTrackUI). */

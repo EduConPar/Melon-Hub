@@ -3084,9 +3084,18 @@ document.getElementById('countdown-close').addEventListener('click', cerrarCount
         }).catch(function(){});
     }
     /* Llamada inicial tras un pequeño delay (para que notifSystem se
-       haya inicializado en el shell padre) y polling cada 30s. */
+       haya inicializado en el shell padre); luego, cuando el timbre del
+       escritorio dice que ha llegado una ('cal', window.parent.melonTimbre
+       en desktop-base.php). Sin timbre (o si no responde), cada 30 s como
+       antes. Al recargarse, se da de baja. */
     setTimeout(pollInvites, 2500);
-    setInterval(pollInvites, 30000);
+    (function(){
+        var timbre = null;
+        try { timbre = window.parent !== window ? window.parent.melonTimbre : null; } catch (e) {}
+        if (!timbre) { setInterval(pollInvites, 30000); return; }
+        var baja = timbre.on('cal', pollInvites, 30000);
+        window.addEventListener('pagehide', function(){ try { baja(); } catch (e) {} });
+    })();
 
     /* Deep link: si el shell padre nos dejó calOpenEvent en sessionStorage
        (vino de un link de Discord), abrimos la ventana de eventos y

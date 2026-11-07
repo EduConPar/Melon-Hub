@@ -75,50 +75,56 @@ function pf2_ensure(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS profile_comments (
-            id               INT AUTO_INCREMENT PRIMARY KEY,
-            profile_user_id  INT NOT NULL,
-            author_id        INT NOT NULL,
-            text             TEXT NOT NULL,
-            image_url        VARCHAR(2000) NULL,
-            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            deleted_at       TIMESTAMP NULL,
-            from_post_id     INT NULL,
-            from_pcomment_id INT NULL,
-            UNIQUE KEY uq_from_post (from_post_id),
-            UNIQUE KEY uq_from_pcomment (from_pcomment_id),
-            INDEX idx_wall (profile_user_id, deleted_at, created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS profile_showcases (
-            user_id   INT NOT NULL,
-            position  TINYINT NOT NULL,
-            type      VARCHAR(20) NOT NULL,
-            config    TEXT NULL,
-            PRIMARY KEY (user_id, position)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS profile_screenshots (
-            id          INT AUTO_INCREMENT PRIMARY KEY,
-            user_id     INT NOT NULL,
-            file        VARCHAR(80) NULL,
-            mime        VARCHAR(30) NULL,
-            data        MEDIUMBLOB NULL,
-            drive_id    VARCHAR(80) NULL,
-            url         VARCHAR(500) NULL,
-            caption     VARCHAR(200) NOT NULL DEFAULT '',
-            game_title  VARCHAR(200) NOT NULL DEFAULT '',
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_user (user_id, created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
-    /* Tablas de la primera versión (capturas subidas): columnas de Drive. */
-    try {
-        if (!$pdo->query("SHOW COLUMNS FROM profile_screenshots LIKE 'drive_id'")->fetch()) {
-            $pdo->exec("ALTER TABLE profile_screenshots
-                          MODIFY file VARCHAR(80) NULL, MODIFY mime VARCHAR(30) NULL,
-                          ADD COLUMN drive_id VARCHAR(80) NULL, ADD COLUMN url VARCHAR(500) NULL");
-        }
-    } catch (Throwable $e) { /* ya estaba */ }
+    /* Una vez por versión de este archivo (melon_esquema), no en
+       cada petición: ver .claude/notas/rendimiento.md. */
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'perfil-v2', __FILE__, function (PDO $pdo) {
+        try {
+            $pdo->exec("CREATE TABLE IF NOT EXISTS profile_comments (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                profile_user_id  INT NOT NULL,
+                author_id        INT NOT NULL,
+                text             TEXT NOT NULL,
+                image_url        VARCHAR(2000) NULL,
+                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                deleted_at       TIMESTAMP NULL,
+                from_post_id     INT NULL,
+                from_pcomment_id INT NULL,
+                UNIQUE KEY uq_from_post (from_post_id),
+                UNIQUE KEY uq_from_pcomment (from_pcomment_id),
+                INDEX idx_wall (profile_user_id, deleted_at, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS profile_showcases (
+                user_id   INT NOT NULL,
+                position  TINYINT NOT NULL,
+                type      VARCHAR(20) NOT NULL,
+                config    TEXT NULL,
+                PRIMARY KEY (user_id, position)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS profile_screenshots (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                user_id     INT NOT NULL,
+                file        VARCHAR(80) NULL,
+                mime        VARCHAR(30) NULL,
+                data        MEDIUMBLOB NULL,
+                drive_id    VARCHAR(80) NULL,
+                url         VARCHAR(500) NULL,
+                caption     VARCHAR(200) NOT NULL DEFAULT '',
+                game_title  VARCHAR(200) NOT NULL DEFAULT '',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user (user_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
+        /* Tablas de la primera versión (capturas subidas): columnas de Drive. */
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM profile_screenshots LIKE 'drive_id'")->fetch()) {
+                $pdo->exec("ALTER TABLE profile_screenshots
+                              MODIFY file VARCHAR(80) NULL, MODIFY mime VARCHAR(30) NULL,
+                              ADD COLUMN drive_id VARCHAR(80) NULL, ADD COLUMN url VARCHAR(500) NULL");
+            }
+        } catch (Throwable $e) { /* ya estaba */ }
+    });
+    /* El catálogo de la tienda, siempre (tiene su propia huella). */
     pf2_ensureStoreItems($pdo);
 }
 

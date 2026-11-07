@@ -80,17 +80,20 @@ function cumplesDeAmigos(PDO $pdo, int $uid): array {
 /* Auto-migración: tabla que registra qué recordatorios YA se notificaron
    para cada threshold (7/2/1 días) y fecha de ocurrencia, evitando
    reenviar la misma notificación. */
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema: tablas una vez por versión */
 try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS reminder_notifs_sent (
-            recordatorio_id INT NOT NULL,
-            user_id         INT NOT NULL,
-            threshold       INT NOT NULL,
-            occurrence_date DATE NOT NULL,
-            sent_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (recordatorio_id, user_id, threshold, occurrence_date)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
+    melon_esquema($pdo, 'recordatorios-avisados', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS reminder_notifs_sent (
+                recordatorio_id INT NOT NULL,
+                user_id         INT NOT NULL,
+                threshold       INT NOT NULL,
+                occurrence_date DATE NOT NULL,
+                sent_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (recordatorio_id, user_id, threshold, occurrence_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 } catch (Throwable $e) { /* silencio */ }
 
 switch ($action) {
@@ -532,6 +535,10 @@ case 'invite-partner': {
     try {
         $pdo->prepare("INSERT INTO partner_invites (to_user_id, from_user_id) VALUES (?, ?)")
             ->execute([$toId, $fromId]);
+        /* Timbre 'pareja' (assets/php/timbre.php): el móvil pide sus avisos
+           al verlo (antes, cada 15 s). */
+        require_once dirname(__DIR__) . '/php/timbre.php';
+        rt_usuario((int)$toId, 'pareja');
     } catch (PDOException $e) {
         if ($e->getCode() === '23000') jsonError('Ya tienes una invitación pendiente');
         throw $e;

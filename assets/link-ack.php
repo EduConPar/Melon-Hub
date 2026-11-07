@@ -24,11 +24,14 @@ if (!preg_match('/^[a-f0-9]{24}$/', $n)) {
     echo json_encode(['ok' => false]);
     exit;
 }
+require_once __DIR__ . '/php/esquema.php';   /* melon_esquema: tablas una vez por versión */
 try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS link_acks (
-        nonce      CHAR(24) PRIMARY KEY,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) DEFAULT CHARSET=utf8mb4");
+    melon_esquema($pdo, 'enlaces-abiertos', __FILE__, function (PDO $pdo) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS link_acks (
+            nonce      CHAR(24) PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) DEFAULT CHARSET=utf8mb4");
+    }, true);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("INSERT IGNORE INTO link_acks (nonce) VALUES (?)")->execute([$n]);
         /* Limpieza: los códigos solo sirven unos segundos. */

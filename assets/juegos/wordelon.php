@@ -218,6 +218,8 @@ function wordelon_intentar(PDO $pdo, int $uid, string $texto): array {
             ->execute([json_encode($intentos, JSON_UNESCAPED_UNICODE), $acaba ? 1 : 0, $acierto ? 1 : 0, $ganados, $uid, $dia]);
         if ($ganados > 0) {
             $pdo->prepare("UPDATE usuarios SET autismo = autismo + ? WHERE id = ?")->execute([$ganados, $uid]);
+            require_once dirname(__DIR__) . '/php/timbre.php';
+            rt_saldo($uid);
         }
         $pdo->commit();
     } catch (Throwable $e) {

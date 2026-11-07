@@ -258,6 +258,13 @@ if ($action === 'update-state') {
         !empty($j['isPlaying']) ? 1 : 0,
         (int)$host['id'],
     ]);
+    /* Lo que suena, en el archivo estático de la sesión (rt_urlSesion):
+       los invitados lo leen cada 2 s sin PHP ni BD y solo llaman a `poll`
+       cada 10 s (antes, cada 2 s). Con la hora de la BD, la misma que
+       devuelve `poll` (server_time), para que calculen bien la posición. */
+    $stS = $pdo->prepare("SELECT *, UNIX_TIMESTAMP(updated_at) AS updated_at_epoch FROM listening_sessions WHERE id = ?");
+    $stS->execute([(int)$host['id']]);
+    if ($filaS = $stS->fetch(PDO::FETCH_ASSOC)) rt_escribir(rt_urlSesion((int)$host['id']), ['session' => $filaS]);
     /* Refresca last_seen_at del host (igual que hace el poll del guest).
        Necesario para que la query de buddies del wrapped use un cierre
        preciso cuando la sesión se abandona sin "leave" explícito. Si
@@ -323,6 +330,7 @@ if ($action === 'poll') {
         'host_label'   => getHostLabel($pdo, (int)$cur['host_user_id']),
         'participants' => countActiveParticipants($pdo, (int)$cur['id']),
         'server_time'  => (int)$cur['server_now'],
+        'rt'           => rt_urlSesion((int)$cur['id']),
     ]);
     exit;
 }
@@ -475,6 +483,8 @@ if ($action === 'leave') {
     $host = getActiveSessionAsHost($pdo, $userId);
     if ($host) {
         $pdo->prepare("UPDATE listening_sessions SET closed_at = NOW() WHERE id = ?")->execute([(int)$host['id']]);
+        /* Los invitados lo ven en el archivo de la sesión. */
+        rt_escribir(rt_urlSesion((int)$host['id']), ['closed' => true]);
         $pdo->prepare("UPDATE listening_participants SET left_at = NOW() WHERE session_id = ? AND left_at IS NULL")
             ->execute([(int)$host['id']]);
         echo json_encode(['ok' => true, 'role' => 'host', 'closed' => true]);

@@ -1012,6 +1012,8 @@ window.__GOOGLE_CLIENT_ID = <?php echo json_encode(defined('GOOGLE_CLIENT_ID') ?
 /* =========================
    PROFILE
 ========================= */
+/* Archivo estático de la presencia (assets/profile/presencia.php). */
+var PRESENCIA_URL = <?php require_once dirname(__DIR__) . '/assets/php/timbre.php'; echo json_encode(rt_urlPresencia()); ?>;
 var PROFILE_USERS = <?php
     $udata = [];
     foreach ($loginUsers as $k => $u) {
@@ -5621,9 +5623,23 @@ var PROFILE_USERS = <?php
        chat cuando el otro está offline. Lo devuelve el endpoint extendido
        de presence. */
     var lastSeenMap = {};
+    /* La presencia sale del archivo estático que deja escrito el heartbeat
+       (assets/profile/presencia.php): leerlo no gasta PHP ni BD. Si no
+       responde o tiene más de 2 min, de la API como antes. */
+    function pedirPresencia() {
+        return fetch(PRESENCIA_URL, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r) { if (!r.ok) throw new Error('presencia ' + r.status); return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ahora || Math.abs(Date.now() / 1000 - d.ahora) > 120) throw new Error('presencia vieja');
+                return d;
+            })
+            .catch(function() {
+                return fetch('assets/profile/api.php?action=presence', { credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); });
+            });
+    }
     function refreshPresenceDots() {
-        fetch('assets/profile/api.php?action=presence', { credentials: 'same-origin' })
-            .then(function(r) { return r.json(); })
+        pedirPresencia()
             .then(function(d) {
                 if (!d || !d.ok || !Array.isArray(d.online)) return;
                 lastOnlineSet = {};

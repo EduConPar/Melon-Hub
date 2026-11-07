@@ -1644,6 +1644,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <script>
 /* ─── Estado y carga de datos ──────────────────────────────────── */
 var API = '../../assets/profile/api.php';
+/* Archivo estático de la presencia (assets/profile/presencia.php). */
+var PRESENCIA_URL = '../../' + <?php require_once dirname(__DIR__, 2) . '/assets/php/timbre.php'; echo json_encode(rt_urlPresencia()); ?>;
 var COUPLE_API = '../../assets/couple/api.php';
 var STATE = {
     lists: null, profile: null,
@@ -4375,9 +4377,22 @@ function attachPresenceDot(wrap, userKey, small) {
     wrap.appendChild(dot);
 }
 window.__pfAttachPresenceDot = attachPresenceDot;
+/* La presencia sale del archivo estático que deja escrito el heartbeat
+   (assets/profile/presencia.php): leerlo no gasta PHP ni BD. Si no
+   responde o tiene más de 2 min, de la API como antes. */
+function pedirPresencia() {
+    return fetch(PRESENCIA_URL, { cache: 'no-cache', credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('presencia ' + r.status); return r.json(); })
+        .then(function(d) {
+            if (!d || !d.ahora || Math.abs(Date.now() / 1000 - d.ahora) > 120) throw new Error('presencia vieja');
+            return d;
+        })
+        .catch(function() {
+            return fetch(API + '?action=presence', { credentials: 'same-origin' }).then(function(r) { return r.json(); });
+        });
+}
 function refreshPresenceDots() {
-    fetch(API + '?action=presence', { credentials: 'same-origin' })
-        .then(function(r) { return r.json(); })
+    pedirPresencia()
         .then(function(d) {
             if (!d || !d.ok || !Array.isArray(d.online)) return;
             __pfLastOnline = {};
@@ -4996,11 +5011,33 @@ function openChat(uKey) {
     }
 
     loadChatMessages();
-    CHAT.pollTimer = setInterval(loadChatMessages, 1500);
+    programarChat();
+}
+
+/* Timbre de la carcasa del móvil (window.parent.melonTimbre,
+   assets/js/timbre.js), si estamos dentro de ella. */
+function timbreMovil() {
+    try { return window.parent !== window ? window.parent.melonTimbre || null : null; } catch (e) { return null; }
+}
+/* Chat abierto: lo nuevo llega por el timbre ('chat': mensajes, editados,
+   borrados, leídos), que con un chat abierto se mira cada segundo; aquí
+   solo se repasa cada 10 s (el "entregado"). Antes se pedía cada 1,5 s.
+   Sin timbre (o si deja de responder), cada 1,5 s como antes. */
+function programarChat() {
+    if (CHAT.pollTimer) clearTimeout(CHAT.pollTimer);
+    var t = timbreMovil();
+    if (t) t.rapido('chat', true);
+    CHAT.pollTimer = setTimeout(function() {
+        if (!CHAT.withUser) return;
+        loadChatMessages();
+        programarChat();
+    }, t && t.ok() ? 10000 : 1500);
 }
 
 function closeChat() {
-    if (CHAT.pollTimer) { clearInterval(CHAT.pollTimer); CHAT.pollTimer = null; }
+    if (CHAT.pollTimer) { clearTimeout(CHAT.pollTimer); CHAT.pollTimer = null; }
+    var t = timbreMovil();
+    if (t) t.rapido('chat', false);
     CHAT.withUser = null;
     CHAT.lastId   = null;
     var bd = document.getElementById('pf-chat-backdrop');
@@ -5218,9 +5255,23 @@ if (window.__MOBILE_VIEWING_KEY) {
 fetchFollowers();
 fetchLists();
 showView('profile');
-/* Polling de chats sin leer — primera carga + intervalo. */
+/* Chats sin leer: primera carga y, dentro de la carcasa del móvil, cuando
+   su timbre dice que hay algo nuevo ('chat'; también el chat abierto). Si
+   el timbre no responde, o sin carcasa, cada UNREAD_POLL_MS como antes.
+   Al salir de esta página, se da de baja. */
 loadUnreadChats();
-setInterval(loadUnreadChats, UNREAD_POLL_MS);
+(function() {
+    var t = timbreMovil();
+    if (!t) { setInterval(loadUnreadChats, UNREAD_POLL_MS); return; }
+    var bajas = [
+        t.on('chat', loadUnreadChats, UNREAD_POLL_MS),
+        t.on('chat', function() { if (CHAT.withUser) loadChatMessages(); })
+    ];
+    window.addEventListener('pagehide', function() {
+        bajas.forEach(function(b) { try { b(); } catch (e) {} });
+        try { t.rapido('chat', false); } catch (e) {}
+    });
+})();
 
 /* Deep-link desde notificación push: #chat=USERKEY
    La notif del SO abrió la PWA con este hash. Esperamos a que
