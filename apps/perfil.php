@@ -5106,6 +5106,9 @@ var PROFILE_USERS = <?php
         });
         amigosCargar();
     })();
+    /* El haro (desktop-base.php, pollAmigos) acepta / rechaza solicitudes:
+       la página de Amigos se pone al día. */
+    window.profileAmigosRecargar = function () { amigosCargar(); };
 
     function renderFollowedNav() {
         var nav = document.getElementById('profile-followed-nav');

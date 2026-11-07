@@ -1059,6 +1059,62 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             display: flex; justify-content: flex-end; gap: 4px;
         }
 
+        /* ── Amigos (vista "social"; amPintar) ──
+           Filas como en el PC: foto con marco y punto de presencia,
+           nombre y estado. Todo con los colores del tema. */
+        .pfa-tabs { margin: 0 0 8px; }
+        .pfa-panel { padding: 0 0 8px; }
+        .pfa-input {
+            width: 100%; box-sizing: border-box; height: auto; min-height: 30px; margin: 0 0 6px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important;
+        }
+        .pfa-sec {
+            font-size: 11px; font-weight: bold; color: var(--text, #000);
+            margin: 8px 0 4px; padding-bottom: 3px; border-bottom: 1px solid var(--bezel-dark-1, #808080);
+        }
+        .pfa-nota { font-size: 11px; color: var(--text-muted, #444); margin: 0 0 6px; line-height: 1.4; }
+        .pfa-buscar { display: flex; gap: 6px; align-items: flex-start; }
+        .pfa-buscar .pfa-input { flex: 1; min-width: 0; }
+        .pfa-buscar .button { min-height: 30px; }
+        .pfa-grupo {
+            font-size: 10px; font-weight: bold; text-transform: none; color: var(--text-muted, #444);
+            margin: 6px 0 4px;
+        }
+        .pfa-fila {
+            display: flex; align-items: center; gap: 10px; padding: 6px;
+            color: var(--text, #000);
+            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+        }
+        .pfa-fila + .pfa-fila { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pfa-fila.pfa-amigo { cursor: pointer; }
+        .pfa-fila.pfa-amigo:active, .pfa-fila.long-pressing { background: color-mix(in srgb, var(--accent, navy) 18%, transparent); }
+        .pfa-av {
+            position: relative; width: 36px; height: 36px; flex-shrink: 0;
+            background: var(--input-bg, #fff); display: flex; align-items: center; justify-content: center;
+        }
+        .pfa-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pfa-av.has-presence-dot { overflow: visible; }
+        .pfa-txt { flex: 1; min-width: 0; }
+        .pfa-nom { font-size: 12px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pfa-est { font-size: 10px; color: var(--text-muted, #444); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        /* Los mismos colores de estado que el PC (perfil.css, .am-*). */
+        .pfa-on .pfa-est   { color: #3a9d3a; }
+        .pfa-away .pfa-est { color: #c99a0e; }
+        .pfa-dnd .pfa-est  { color: #d04040; }
+        .pfa-np .pfa-est   { color: var(--accent, navy); }
+        .pfa-off { opacity: .75; }
+        .pfa-btns .button:disabled { text-shadow: none; color: var(--text-muted, grey); }
+        .pfa-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; max-width: 55%; }
+        .pfa-btns .button { min-width: 0; padding: 0 8px; min-height: 28px; }
+        .pfa-vacio { font-size: 11px; color: var(--text-muted, #444); padding: 8px 4px; }
+        /* Menú al mantener pulsado un amigo. */
+        .pfa-menu-item {
+            padding: 10px 8px; font-size: 12px; cursor: pointer; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent);
+        }
+        .pfa-menu-item:active { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pfa-menu-item.peligro { color: var(--error-text, #c00); font-weight: bold; }
+
         /* ── Vista Social ── */
         .pf-social-section-title {
             font-size: 11px; font-weight: bold;
@@ -1508,7 +1564,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <div class="pf-view" id="pf-view-profile">
             <div class="pf-profile-actions" id="pf-profile-actions">
                 <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Editar perfil</button>
-                <button class="button" id="pf-follow-btn" type="button" hidden>+ Seguir</button>
+                <button class="button" id="pf-follow-btn" type="button" hidden>+ Agregar amigo</button>
                 <button class="button" id="pf-chat-btn" type="button" hidden><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Chat</button>
                 <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
                 <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
@@ -1561,10 +1617,34 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             </div>
         </div>
 
-        <!-- VISTA: Social (amigos + explorar) -->
+        <!-- VISTA: Amigos estilo Steam (assets/profile/amigos.php; antes
+             "Social"). Tus amigos (en línea arriba) · Agregar amigo ·
+             Solicitudes. La pinta amPintar(). -->
         <div class="pf-view" id="pf-view-social" hidden>
-            <div class="pf-social-section-title"><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Amigos</div>
-            <div class="pf-friends-grid" id="pf-friends-grid"></div>
+            <nav class="pf-tabs pfa-tabs">
+                <button class="pf-tab active" data-amtab="amigos" type="button">Tus amigos <span id="pfa-n-amigos"></span></button>
+                <button class="pf-tab" data-amtab="agregar" type="button">Agregar amigo</button>
+                <button class="pf-tab" data-amtab="solicitudes" type="button">Solicitudes <span id="pfa-n-sol"></span></button>
+            </nav>
+            <div class="pfa-panel" data-ampanel="amigos">
+                <input type="search" id="pfa-filtro" class="pfa-input" placeholder="Buscar entre tus amigos">
+                <div id="pfa-lista"><div class="mh-empty">Cargando…</div></div>
+            </div>
+            <div class="pfa-panel" data-ampanel="agregar" hidden>
+                <div class="pfa-sec">Agregar un amigo</div>
+                <div class="pfa-nota">Busca a alguien por el nombre de su perfil y envíale una solicitud de amistad. Cuando la acepte, seréis amigos.</div>
+                <form class="pfa-buscar" id="pfa-buscar-form">
+                    <input type="search" id="pfa-q" class="pfa-input" placeholder="Nombre del perfil" autocomplete="off">
+                    <button type="submit" class="button">Buscar</button>
+                </form>
+                <div id="pfa-resultados"></div>
+            </div>
+            <div class="pfa-panel" data-ampanel="solicitudes" hidden>
+                <div class="pfa-sec">Recibidas</div>
+                <div id="pfa-recibidas"></div>
+                <div class="pfa-sec">Enviadas</div>
+                <div id="pfa-enviadas"></div>
+            </div>
         </div>
 
         <!-- VISTA: Melon reviews (ranking comunidad) -->
@@ -3885,7 +3965,7 @@ function renderDrawerBody() {
                 { view: 'profile', icon: '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Perfil' },
                 { view: 'lists',   icon: '<img src="../../assets/img/appIcons/calendarioIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Mis listas' },
                 { view: 'melon',   icon: '⭐', label: 'Melon reviews' },
-                { view: 'social',  icon: '+', label: 'Social' }
+                { view: 'social',  icon: '+', label: 'Amigos' }
             ]
         });
     } else {
@@ -4405,6 +4485,10 @@ function refreshPresenceDots() {
             if (Array.isArray(d.dnd)) {
                 d.dnd.forEach(function(k) { __pfLastDnd[k] = true; });
             }
+            /* Para el estado de la página de Amigos (escuchando… / hace X). */
+            __pfLastNp   = (d.nowPlaying && typeof d.nowPlaying === 'object') ? d.nowPlaying : {};
+            __pfLastSeen = (d.lastSeen && typeof d.lastSeen === 'object') ? d.lastSeen : {};
+            if (STATE.view === 'social') amPintarLista();
             applyPresence();
         })
         .catch(function() {});
@@ -4659,30 +4743,28 @@ document.getElementById('pf-link-btn').addEventListener('click', function(){
     if (window.melonCopyLink) window.melonCopyLink('perfil', STATE.viewingUser || USER_KEY);
 });
 
-/* Botón "Seguir" — solo aparece viendo otro perfil. Toggle. */
+/* Botón de amistad de la cabecera (solo viendo otro perfil), como en el
+   PC: + Agregar amigo / Solicitud enviada (cancela) / Aceptar solicitud /
+   ✓ Amigos (eliminar, con confirmación). */
+var amistadVista = 'ninguna';
 document.getElementById('pf-follow-btn').addEventListener('click', function(){
-    if (!STATE.viewingUser) return;
+    var uk = STATE.viewingUser;
+    if (!uk) return;
     var btn = this;
+    if (amistadVista === 'amigos') {
+        pfConfirm('¿Eliminar a ' + (STATE.viewingLabel || amUser(uk).label) + ' de tus amigos?', 'Eliminar', function(){ amigosAccion('friend-remove', uk); });
+        return;
+    }
+    var act = { ninguna: 'friend-request', enviada: 'friend-cancel', recibida: 'friend-accept' }[amistadVista] || 'friend-request';
     btn.disabled = true;
-    fetch(API + '?action=toggle-follow', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUser: STATE.viewingUser })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        btn.disabled = false;
-        if (d && typeof d.following === 'boolean') {
-            updateFollowBtn(d.following);
-            /* El server devuelve la lista canónica → la usamos. */
-            if (Array.isArray(d.list)) STATE.myFollowing = d.list.slice();
-        }
-    })
-    .catch(function(){ btn.disabled = false; });
+    amigosAccion(act, uk).then(function(){ btn.disabled = false; }, function(){ btn.disabled = false; });
 });
-function updateFollowBtn(isFollowing) {
+function updateFollowBtn(estado) {
+    if (estado === true) estado = 'amigos';
+    if (!estado) estado = 'ninguna';
+    amistadVista = estado;
     var btn = document.getElementById('pf-follow-btn');
-    btn.textContent = isFollowing ? '✓ Siguiendo' : '+ Seguir';
+    btn.textContent = { ninguna: '+ Agregar amigo', enviada: 'Solicitud enviada', recibida: 'Aceptar solicitud', amigos: '✓ Amigos' }[estado] || '+ Agregar amigo';
 }
 
 /* Helper alert para JS sin window.alert. */
@@ -4690,81 +4772,187 @@ function pfAlert(msg) {
     pfConfirm(msg, 'OK', function(){});  /* reuso del confirm como info simple */
 }
 
-/* ─── Social view ──────────────────────────────────────────────── */
-function renderSocial() {
-    var gridEl = document.getElementById('pf-friends-grid');
-    if (!gridEl) return;
-    var friends = STATE.myFollowing || [];
-    var html = '';
-    friends.forEach(function(uKey){
-        var uInfo = PROFILE_USERS[uKey];
-        if (!uInfo) return;
-        var avHtml = uInfo.image
-            ? '<img src="' + esc(uInfo.image) + '" alt="">'
-            : '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
-        /* Chat ya no se abre desde aquí — la app dedicada chat-mobile
-           lo gestiona. Solo dejamos el avatar + nombre + presencia. */
-        html +=
-            '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                '<div class="pf-friend-av has-presence-dot" data-marco-user="' + esc(uKey) + '">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
-                '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
-            '</div>';
-    });
-    /* "+ Explorar" tile al final. */
-    html +=
-        '<div class="pf-friend-card is-explore" data-act="explore">' +
-            '<div class="pf-friend-av"><span class="pf-friend-av-plus">+</span></div>' +
-            '<div class="pf-friend-label">Explorar</div>' +
-        '</div>';
-    gridEl.innerHTML = html;
-    gridEl.querySelectorAll('[data-user]').forEach(function(card){
-        card.addEventListener('click', function(){ viewOtherUser(card.dataset.user); });
-    });
-    /* Re-aplica el estado de presencia conocido sin esperar al fetch. */
-    if (window.__pfApplyPresence) window.__pfApplyPresence();
-    /* (Antes había aquí un handler de chat — el chat se ha movido a la
-       app dedicada chat-mobile.php.) */
-    var exploreBtn = gridEl.querySelector('[data-act="explore"]');
-    if (exploreBtn) exploreBtn.addEventListener('click', openExploreDialog);
-    /* Re-aplica los badges al render — el grid se acaba de regenerar y
-       perdió cualquier badge previo del estado actual de unreadChats. */
-    renderUnreadBadges();
+/* ─── Amigos (estilo Steam; assets/profile/amigos.php) ─────────────
+   Decidido así (7/11): "Social" del menú pasa a ser "Amigos", como la
+   página del PC: pestañas Tus amigos (filas con foto, nombre y estado;
+   "En línea" arriba y "Desconectados" por última conexión, con filtro) ·
+   Agregar amigo (buscador) · Solicitudes (recibidas y enviadas, con
+   "(N)" en texto normal: sin contadores rojos). Tocar = su perfil;
+   mantener pulsado un amigo = Enviar mensaje / Ver perfil / Eliminar
+   amigo. Los avisos de solicitudes salen en la carcasa (mobile.php,
+   mNotifSystem); la página se pone al día con el timbre ('amigos'). */
+var AMIGOS = { amigos: [], recibidas: [], enviadas: [], tab: 'amigos', cargado: false, busqueda: '' };
+var __pfLastNp = {}, __pfLastSeen = {};
+
+function amPost(action, user) {
+    return fetch(API + '?action=' + action, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: user })
+    }).then(function(r){ return r.json(); });
+}
+function amigosCargar() {
+    return fetch(API + '?action=friends', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (d && d.ok) amigosAplicar(d); })
+        .catch(function(){});
+}
+function amigosAplicar(d) {
+    AMIGOS.amigos = d.amigos || []; AMIGOS.recibidas = d.recibidas || []; AMIGOS.enviadas = d.enviadas || [];
+    AMIGOS.cargado = true;
+    /* Amigos = mutuos: lo que miran isMutual (botón Chat) y compañía. */
+    STATE.myFollowing = AMIGOS.amigos.slice();
+    STATE.myFollowers = AMIGOS.amigos.slice();
+    if (STATE.view === 'social') renderSocial();
+    if (STATE.viewingUser) toggleProfileActions();
+}
+/* Tras cualquier acción: la página y, si se está viendo a esa persona,
+   el botón de su cabecera. */
+function amigosAccion(action, uk) {
+    return amPost(action, uk).then(function(d){
+        if (!d || !d.ok) { pfAlert((d && d.error) || 'No se ha podido'); return d; }
+        amigosAplicar(d);
+        if (STATE.viewingUser === uk) updateFollowBtn(d.amistad);
+        return d;
+    }).catch(function(){ pfAlert('Error de conexión'); });
 }
 
-/* Modal de explorar — lista de usuarios que NO sigo. */
-function openExploreDialog() {
-    var others = Object.keys(PROFILE_USERS).filter(function(k){
-        return k !== USER_KEY && STATE.myFollowing.indexOf(k) === -1;
-    });
-    var listHtml = '';
-    if (!others.length) {
-        listHtml = '<p class="pf-form-hint" style="text-align:center;padding:10px;">Ya sigues a todo el mundo 🎉</p>';
-    } else {
-        listHtml = '<div class="pf-friends-grid">';
-        others.forEach(function(uKey){
-            var uInfo = PROFILE_USERS[uKey];
-            if (!uInfo) return;
-            var avHtml = uInfo.image
-                ? '<img src="' + esc(uInfo.image) + '" alt="">'
-                : '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
-            listHtml +=
-                '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                    '<div class="pf-friend-av has-presence-dot" data-marco-user="' + esc(uKey) + '">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
-                    '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
-                '</div>';
-        });
-        listHtml += '</div>';
+function amUser(k) { return PROFILE_USERS[k] || { label: k, image: '' }; }
+function amAvatar(k) {
+    var u = amUser(k);
+    var dentro = u.image ? '<img src="' + esc(u.image) + '" alt="">'
+        : '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:18px;height:18px;object-fit:contain;image-rendering:pixelated;">';
+    return '<div class="pfa-av has-presence-dot" data-marco-user="' + esc(k) + '">' + dentro +
+           '<span class="pf-presence-dot" data-userkey="' + esc(k) + '"></span></div>';
+}
+function amHace(ts) {
+    if (!ts) return '';
+    var s = Math.max(0, Date.now() / 1000 - ts);
+    if (s < 3600) return 'hace ' + Math.max(1, Math.round(s / 60)) + ' min';
+    if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+    var d = Math.round(s / 86400);
+    return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+}
+/* Como en el PC: escuchando > no molestar > ausente > en línea; si no,
+   desconectado (hace X). */
+function amEstado(k) {
+    if (__pfLastOnline[k]) {
+        var np = __pfLastNp[k];
+        if (np && np.title) return { cls: 'np', txt: 'Escuchando: ' + np.title + (np.artist ? ' — ' + np.artist : '') };
+        if (__pfLastDnd[k])  return { cls: 'dnd',  txt: 'No molestar' };
+        if (__pfLastAway[k]) return { cls: 'away', txt: 'Ausente' };
+        return { cls: 'on', txt: 'En línea' };
     }
+    var ts = __pfLastSeen[k] || 0;
+    return { cls: 'off', txt: 'Desconectado' + (ts ? ' · ' + amHace(ts) : '') };
+}
+function amNombre(a, b) {
+    var la = (amUser(a).label || '').toLowerCase(), lb = (amUser(b).label || '').toLowerCase();
+    return la < lb ? -1 : la > lb ? 1 : 0;
+}
+function amBoton(txt, act, deshab) {
+    return '<button class="button" type="button" data-act="' + act + '"' + (deshab ? ' disabled' : '') + '>' + txt + '</button>';
+}
+function amBotonesPara(estado) {
+    if (estado === 'amigos')   return amBoton('Ya sois amigos', '', true);
+    if (estado === 'enviada')  return amBoton('Solicitud enviada', '', true) + amBoton('Cancelar', 'friend-cancel');
+    if (estado === 'recibida') return amBoton('Aceptar', 'friend-accept') + amBoton('Rechazar', 'friend-reject');
+    return amBoton('Agregar amigo', 'friend-request');
+}
+function amFila(k, botones, extra) {
+    return '<div class="pfa-fila" data-user="' + esc(k) + '">' + amAvatar(k) +
+        '<div class="pfa-txt"><div class="pfa-nom">' + esc(amUser(k).label) + '</div>' + (extra ? '<div class="pfa-est">' + esc(extra) + '</div>' : '') + '</div>' +
+        '<div class="pfa-btns">' + botones + '</div></div>';
+}
+
+function amPintarLista() {
+    var box = document.getElementById('pfa-lista');
+    if (!box) return;
+    document.getElementById('pfa-n-amigos').textContent = AMIGOS.cargado ? '(' + AMIGOS.amigos.length + ')' : '';
+    if (!AMIGOS.cargado) return;
+    if (!AMIGOS.amigos.length) {
+        box.innerHTML = '<div class="pfa-vacio">Todavía no tienes amigos. Búscalos en "Agregar amigo".</div>';
+        return;
+    }
+    var f = (document.getElementById('pfa-filtro').value || '').trim().toLowerCase();
+    var lista = AMIGOS.amigos.filter(function(k){ return !f || (amUser(k).label || '').toLowerCase().indexOf(f) !== -1; });
+    var on = lista.filter(function(k){ return __pfLastOnline[k]; }).sort(amNombre);
+    var off = lista.filter(function(k){ return !__pfLastOnline[k]; }).sort(function(a, b){
+        return (__pfLastSeen[b] || 0) - (__pfLastSeen[a] || 0) || amNombre(a, b);
+    });
+    var grupo = function(tit, keys) {
+        if (!keys.length) return '';
+        return '<div class="pfa-grupo">' + tit + ' — ' + keys.length + '</div>' + keys.map(function(k){
+            var e = amEstado(k);
+            return '<div class="pfa-fila pfa-amigo pfa-' + e.cls + '" data-user="' + esc(k) + '">' + amAvatar(k) +
+                '<div class="pfa-txt"><div class="pfa-nom">' + esc(amUser(k).label) + '</div>' +
+                '<div class="pfa-est">' + esc(e.txt) + '</div></div></div>';
+        }).join('');
+    };
+    box.innerHTML = grupo('En línea', on) + grupo('Desconectados', off) +
+        (!on.length && !off.length ? '<div class="pfa-vacio">Ningún amigo se llama así.</div>' : '');
+    applyPresence();
+}
+function amPintarSolicitudes() {
+    var r = document.getElementById('pfa-recibidas'), e = document.getElementById('pfa-enviadas');
+    if (!r) return;
+    document.getElementById('pfa-n-sol').textContent = AMIGOS.recibidas.length ? '(' + AMIGOS.recibidas.length + ')' : '';
+    if (!AMIGOS.cargado) return;
+    r.innerHTML = AMIGOS.recibidas.length
+        ? AMIGOS.recibidas.map(function(k){ return amFila(k, amBotonesPara('recibida'), 'Quiere ser tu amigo'); }).join('')
+        : '<div class="pfa-vacio">No tienes solicitudes nuevas.</div>';
+    e.innerHTML = AMIGOS.enviadas.length
+        ? AMIGOS.enviadas.map(function(k){ return amFila(k, amBotonesPara('enviada'), 'Esperando respuesta'); }).join('')
+        : '<div class="pfa-vacio">No has enviado ninguna.</div>';
+    applyPresence();
+}
+function amBuscar() {
+    var q = (document.getElementById('pfa-q').value || '').trim();
+    var box = document.getElementById('pfa-resultados');
+    AMIGOS.busqueda = q;
+    if (!q) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="pfa-vacio">Buscando…</div>';
+    fetch(API + '?action=friend-search&q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (q !== AMIGOS.busqueda) return;
+            var res = (d && d.resultados) || [];
+            box.innerHTML = res.length
+                ? res.map(function(x){
+                    if (!PROFILE_USERS[x.key]) PROFILE_USERS[x.key] = { label: x.nombre, image: '' };
+                    return amFila(x.key, amBotonesPara(x.estado));
+                }).join('')
+                : '<div class="pfa-vacio">No hay ningún perfil con ese nombre.</div>';
+            applyPresence();
+        })
+        .catch(function(){ box.innerHTML = '<div class="pfa-vacio">Sin conexión, prueba otra vez.</div>'; });
+}
+function amTab(t) {
+    AMIGOS.tab = t;
+    document.querySelectorAll('#pf-view-social [data-amtab]').forEach(function(b){ b.classList.toggle('active', b.dataset.amtab === t); });
+    document.querySelectorAll('#pf-view-social [data-ampanel]').forEach(function(p){ p.hidden = p.dataset.ampanel !== t; });
+}
+/* Nombre de antes (lo llaman showView y amigosAplicar). */
+function renderSocial() {
+    amPintarLista();
+    amPintarSolicitudes();
+}
+
+/* Mantener pulsado un amigo: Enviar mensaje / Ver perfil / Eliminar. */
+function amMenu(k) {
     var bd = document.createElement('div');
     bd.className = 'pf-modal-backdrop';
     bd.innerHTML =
         '<div class="window pf-modal">' +
             '<div class="title-bar">' +
-                '<div class="title-bar-text">🌐 Explorar</div>' +
+                '<div class="title-bar-text">' + esc(amUser(k).label) + '</div>' +
                 '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div>' +
             '</div>' +
-            '<div class="window-body">' + listHtml +
-                '<div class="modal-actions"><button class="button default" data-act="close" type="button">Cerrar</button></div>' +
+            '<div class="window-body">' +
+                '<div class="pfa-menu-item" data-m="chat">Enviar mensaje</div>' +
+                '<div class="pfa-menu-item" data-m="perfil">Ver perfil</div>' +
+                '<div class="pfa-menu-item peligro" data-m="eliminar">Eliminar amigo</div>' +
+                '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div>' +
             '</div>' +
         '</div>';
     document.body.appendChild(bd);
@@ -4772,13 +4960,87 @@ function openExploreDialog() {
     bd.querySelector('.title-bar-controls button').addEventListener('click', close);
     bd.querySelector('[data-act="close"]').addEventListener('click', close);
     bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
-    bd.querySelectorAll('[data-user]').forEach(function(card){
-        card.addEventListener('click', function(){
+    bd.querySelectorAll('[data-m]').forEach(function(it){
+        it.addEventListener('click', function(){
             close();
-            viewOtherUser(card.dataset.user);
+            if (it.dataset.m === 'chat') openChat(k);
+            else if (it.dataset.m === 'perfil') viewOtherUser(k);
+            else pfConfirm('¿Eliminar a ' + amUser(k).label + ' de tus amigos?', 'Eliminar', function(){ amigosAccion('friend-remove', k); });
         });
     });
 }
+
+(function setupAmigos() {
+    var view = document.getElementById('pf-view-social');
+    if (!view) return;
+    view.querySelectorAll('[data-amtab]').forEach(function(b){
+        b.addEventListener('click', function(){ amTab(b.dataset.amtab); });
+    });
+    document.getElementById('pfa-filtro').addEventListener('input', amPintarLista);
+    var tBuscar = null;
+    document.getElementById('pfa-q').addEventListener('input', function(){ clearTimeout(tBuscar); tBuscar = setTimeout(amBuscar, 300); });
+    document.getElementById('pfa-buscar-form').addEventListener('submit', function(e){ e.preventDefault(); amBuscar(); });
+
+    /* Mantener pulsado (500 ms, como en Música) sobre un amigo. */
+    var lp = null, lpX = 0, lpY = 0, lpHecho = false;
+    function lpEmpezar(el, x, y) {
+        lpCancelar();
+        lpX = x; lpY = y; lpHecho = false;
+        el.classList.add('long-pressing');
+        lp = { el: el, t: setTimeout(function(){
+            lpHecho = true;
+            el.classList.remove('long-pressing');
+            lp = null;
+            try { navigator.vibrate && navigator.vibrate(40); } catch (_) {}
+            amMenu(el.dataset.user);
+        }, 500) };
+    }
+    function lpCancelar() {
+        if (!lp) return;
+        clearTimeout(lp.t);
+        lp.el.classList.remove('long-pressing');
+        lp = null;
+    }
+    function lpMover(x, y) { if (lp && (Math.abs(x - lpX) > 12 || Math.abs(y - lpY) > 12)) lpCancelar(); }
+    view.addEventListener('touchstart', function(e){
+        var a = e.target.closest('.pfa-amigo');
+        if (a && e.touches && e.touches.length === 1) lpEmpezar(a, e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    view.addEventListener('touchmove', function(e){ if (e.touches[0]) lpMover(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    view.addEventListener('touchend', lpCancelar);
+    view.addEventListener('touchcancel', lpCancelar);
+    view.addEventListener('mousedown', function(e){
+        var a = e.target.closest('.pfa-amigo');
+        if (a && e.button === 0) lpEmpezar(a, e.clientX, e.clientY);
+    });
+    view.addEventListener('mousemove', function(e){ lpMover(e.clientX, e.clientY); });
+    view.addEventListener('mouseup', lpCancelar);
+    view.addEventListener('mouseleave', lpCancelar);
+    /* Android también lanza contextmenu al mantener pulsado. */
+    view.addEventListener('contextmenu', function(e){ if (e.target.closest('.pfa-amigo')) e.preventDefault(); });
+
+    view.addEventListener('click', function(e){
+        if (lpHecho) { lpHecho = false; e.preventDefault(); e.stopPropagation(); return; }
+        var btn = e.target.closest('button[data-act]');
+        var fila = e.target.closest('.pfa-fila[data-user]');
+        if (btn && fila) {
+            if (!btn.dataset.act) return;
+            btn.disabled = true;
+            amigosAccion(btn.dataset.act, fila.dataset.user).then(function(){ if (AMIGOS.busqueda) amBuscar(); });
+            return;
+        }
+        if (fila && !e.target.closest('button')) viewOtherUser(fila.dataset.user);
+    });
+
+    /* Solicitudes nuevas, aceptadas o canceladas (desde aquí, el PC o el
+       aviso de la carcasa): el timbre de la carcasa avisa. */
+    var t = timbreMovil();
+    if (t) {
+        var baja = t.on('amigos', amigosCargar);
+        window.addEventListener('pagehide', function(){ try { baja(); } catch (_) {} });
+    }
+    amigosCargar();
+})();
 
 /* ─── View other user ──────────────────────────────────────────── */
 function viewOtherUser(userKey) {
@@ -4813,7 +5075,7 @@ function viewOtherUserInPlace(userKey) {
             STATE.profile      = d.profile;
             STATE.lists        = d.lists;
             updateHeaderForViewing();
-            updateFollowBtn(!!d.isFollowing);
+            updateFollowBtn(d.amistad || !!d.isFollowing);
             /* Render: dirige al usuario directo a la sección de posts. */
             renderAbout(STATE.profile);
             ['movies','series','books','games','music'].forEach(function(cat){

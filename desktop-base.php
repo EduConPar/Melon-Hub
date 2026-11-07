@@ -2855,6 +2855,70 @@ window.notifSystem = (function() {
     setTimeout(pollGifts, 6000);
     window.melonTimbre.on('regalo', pollGifts, 60000);
 
+    /* Amigos (assets/profile/amigos.php, decidido así): además de la
+       campana, el haro avisa de cada solicitud de amistad pendiente
+       (Rechazar / Aceptar) y de cuando te aceptan una (una vez; se cierra
+       al tocarla). Al entrar y cuando el timbre ('amigos') dice que ha
+       cambiado algo; si no responde, cada minuto. Si la solicitud ya no
+       está (aceptada desde la campana o el móvil, cancelada), su tarjeta
+       se quita. */
+    var AMIGOS_TIT = '<img src="assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Amigos';
+    var amigosTarjetas = {};   /* user_key → id de su tarjeta de solicitud */
+    function amigosPost(action, user) {
+        return fetch('assets/profile/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: user })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d && !d.ok && d.error) window.notifSystem.show({ id: 'amigos-err-' + Date.now(), type: 'info', title: AMIGOS_TIT, message: d.error });
+            /* La página de Amigos del Perfil, si está abierta, al día. */
+            if (typeof window.profileAmigosRecargar === 'function') window.profileAmigosRecargar();
+            return d;
+        }).catch(function() {});
+    }
+    function pollAmigos() {
+        if (!window.notifSystem) return;
+        fetch('assets/profile/api.php?action=friend-avisos', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ok) return;
+                var siguen = {};
+                (d.solicitudes || []).forEach(function(x) {
+                    var id = 'amigo-sol-' + x.key + '-' + x.ts;
+                    siguen[x.key] = id;
+                    amigosTarjetas[x.key] = id;
+                    window.notifSystem.show({
+                        id:          id,
+                        type:        'action',
+                        title:       AMIGOS_TIT,
+                        message:     x.nombre + ' quiere ser tu amigo',
+                        senderImage: x.foto || '',
+                        senderKey:   x.key,
+                        sentAt:      x.ts,
+                        rejectLabel: 'Rechazar',
+                        acceptLabel: 'Aceptar',
+                        onReject:    function() { amigosPost('friend-reject', x.key); },
+                        onAccept:    function() { amigosPost('friend-accept', x.key); },
+                    });
+                });
+                Object.keys(amigosTarjetas).forEach(function(k) {
+                    if (siguen[k] === amigosTarjetas[k]) return;
+                    if (window.notifSystem.isShown(amigosTarjetas[k])) window.notifSystem.dismiss(amigosTarjetas[k]);
+                    delete amigosTarjetas[k];
+                });
+                (d.aceptadas || []).forEach(function(x) {
+                    window.notifSystem.show({
+                        id:          'amigo-ok-' + x.id,
+                        type:        'info',
+                        title:       AMIGOS_TIT,
+                        message:     x.nombre + ' ha aceptado tu solicitud de amistad',
+                        sentAt:      x.ts,
+                    });
+                });
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollAmigos, 5000);
+    window.melonTimbre.on('amigos', pollAmigos, 60000);
+
     document.getElementById('tienda-close').addEventListener('click', function() {
         taskbarManager.unregister('tienda-window');
     });

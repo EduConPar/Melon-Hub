@@ -16,6 +16,13 @@
        vez (marca `amigos_migracion_v1` en app_cache) y no tiene vuelta.
      - Notificaciones: friend-request (con Aceptar / Rechazar) y
        friend-accept.
+     - Avisos (decidido así): además de la campana, el haro del
+       escritorio (desktop-base.php, pollAmigos) y el aviso emergente del
+       móvil (mobile.php, mNotifSystem ← assets/notifications/pending.php)
+       sacan "X quiere ser tu amigo" con Rechazar / Aceptar mientras la
+       solicitud siga pendiente, y "X ha aceptado tu solicitud" una sola
+       vez (tabla amigos_avisos, `entregado`). Suenan por el timbre
+       (tema 'amigos' en el archivo de cada usuario).
    La página está en el Perfil (sección Social → Amigos, apps/perfil.php).
    ────────────────────────────────────────────────────────────────────── */
 
@@ -33,6 +40,14 @@ function amigos_ensure(PDO $pdo): void {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (from_id, to_id),
             INDEX idx_to (to_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS amigos_avisos (
+            id        INT AUTO_INCREMENT PRIMARY KEY,
+            user_id   INT NOT NULL,
+            de_id     INT NOT NULL,
+            creado    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            entregado TINYINT NOT NULL DEFAULT 0,
+            INDEX idx_user (user_id, entregado)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS app_cache (
             cache_key   VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -76,6 +91,10 @@ function amigos_estado(PDO $pdo, int $uid, int $tid): string {
 function amigos_notif(PDO $pdo, int $to, string $tipo, int $from): void {
     if (function_exists('pf_addNotif')) pf_addNotif($pdo, $to, $tipo, $from);
 }
+/* Que su haro / aviso del móvil vuelva a mirar (timbre). */
+function amigos_timbre(int $uid): void {
+    if (function_exists('rt_usuario')) rt_usuario($uid, 'amigos');
+}
 function amigos_borrarNotif(PDO $pdo, int $to, string $tipo, int $from): void {
     if (function_exists('pf_deleteNotifsMatching')) pf_deleteNotifsMatching($pdo, $to, $tipo, $from);
 }
@@ -89,6 +108,7 @@ function amigos_enviar(PDO $pdo, int $uid, int $tid): string {
     if ($e === 'ninguna') {
         $pdo->prepare("INSERT IGNORE INTO friend_requests (from_id, to_id) VALUES (?, ?)")->execute([$uid, $tid]);
         amigos_notif($pdo, $tid, 'friend-request', $uid);
+        amigos_timbre($tid);
     }
     return 'enviada';
 }
@@ -110,18 +130,23 @@ function amigos_aceptar(PDO $pdo, int $uid, int $fromId): string {
     }
     amigos_borrarNotif($pdo, $uid, 'friend-request', $fromId);
     amigos_notif($pdo, $fromId, 'friend-accept', $uid);
+    $pdo->prepare("INSERT INTO amigos_avisos (user_id, de_id) VALUES (?, ?)")->execute([$fromId, $uid]);
+    amigos_timbre($fromId);
+    amigos_timbre($uid);   /* sus otras ventanas (PC / móvil) quitan el aviso */
     return 'amigos';
 }
 
 function amigos_rechazar(PDO $pdo, int $uid, int $fromId): string {
     $pdo->prepare("DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?")->execute([$fromId, $uid]);
     amigos_borrarNotif($pdo, $uid, 'friend-request', $fromId);
+    amigos_timbre($uid);
     return amigos_estado($pdo, $uid, $fromId);
 }
 
 function amigos_cancelar(PDO $pdo, int $uid, int $toId): string {
     $pdo->prepare("DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?")->execute([$uid, $toId]);
     amigos_borrarNotif($pdo, $toId, 'friend-request', $uid);
+    amigos_timbre($toId);
     return amigos_estado($pdo, $uid, $toId);
 }
 
@@ -165,4 +190,36 @@ function amigos_buscar(PDO $pdo, int $uid, string $q): array {
         $out[] = ['key' => $r['user_key'], 'nombre' => (string)($r['label'] ?: $r['user_key']), 'estado' => amigos_estado($pdo, $uid, (int)$r['id'])];
     }
     return $out;
+}
+
+/* Para el haro del escritorio y el aviso del móvil: las solicitudes que
+   me han mandado (salen mientras sigan pendientes) y las que me han
+   aceptado (una sola vez: se marcan como entregadas al pedirlas).
+   Cada uno: key, nombre, foto (ruta desde la raíz de la web), ts (s). */
+function amigos_avisos(PDO $pdo, int $uid): array {
+    $foto = function (string $label): ?string {
+        $f = function_exists('getUserImage') ? (string)getUserImage($label) : '';
+        return $f !== '' ? preg_replace('#^(\.\./)+#', '', $f) : null;
+    };
+    $fila = function (array $r) use ($foto): array {
+        $nombre = (string)($r['label'] ?: $r['user_key']);
+        return ['key' => (string)$r['user_key'], 'nombre' => $nombre, 'foto' => $foto($nombre), 'ts' => (int)$r['ts']];
+    };
+    $st = $pdo->prepare("SELECT u.user_key, u.label, UNIX_TIMESTAMP(r.created_at) AS ts
+                           FROM friend_requests r JOIN usuarios u ON u.id = r.from_id
+                          WHERE r.to_id = ? ORDER BY r.created_at");
+    $st->execute([$uid]);
+    $solicitudes = array_map($fila, $st->fetchAll(PDO::FETCH_ASSOC));
+    $st = $pdo->prepare("SELECT a.id, u.user_key, u.label, UNIX_TIMESTAMP(a.creado) AS ts
+                           FROM amigos_avisos a JOIN usuarios u ON u.id = a.de_id
+                          WHERE a.user_id = ? AND a.entregado = 0 ORDER BY a.id");
+    $st->execute([$uid]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    if ($rows) {
+        $in = implode(',', array_map('intval', array_column($rows, 'id')));
+        $pdo->exec("UPDATE amigos_avisos SET entregado = 1 WHERE id IN ($in)");
+    }
+    $aceptadas = [];
+    foreach ($rows as $r) $aceptadas[] = ['id' => (int)$r['id']] + $fila($r);
+    return ['solicitudes' => $solicitudes, 'aceptadas' => $aceptadas];
 }

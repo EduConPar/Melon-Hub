@@ -5047,6 +5047,7 @@ window.MuShell = (function(){
     var SHOWN = {};   /* {source: {id: true}} → evita spam */
     var POLL_T = null;
     var POLL_URL = 'assets/notifications/pending.php';
+    function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
 
     /* Toast reusable (idéntico estilo a ltToast). */
     function mToast(opts) {
@@ -5189,6 +5190,36 @@ window.MuShell = (function(){
                 ],
             });
         },
+        /* Amigos (assets/profile/amigos.php, decidido así): solicitud
+           pendiente con Rechazar / Aceptar, y "te ha aceptado" (una vez,
+           se cierra sola). Si el Perfil está abierto, su página de
+           Amigos se pone al día (timbre 'amigos'). */
+        amigo: function(inv, asSheet){
+            mToast({
+                id:    'amigo-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' quiere ser tu amigo',
+                message: 'Solicitud de amistad',
+                actions: [
+                    { label: 'Rechazar', fn: function(){
+                        fetchJSON('assets/profile/api.php?action=friend-reject',
+                            { method: 'POST', body: { user: inv.fromKey } });
+                    }},
+                    { label: 'Aceptar', fn: function(){
+                        fetchJSON('assets/profile/api.php?action=friend-accept',
+                            { method: 'POST', body: { user: inv.fromKey } });
+                    }},
+                ],
+            });
+        },
+        'amigo-ok': function(inv, asSheet){
+            mToast({
+                id:    'amigo-ok-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' ha aceptado tu solicitud',
+                message: 'Ahora sois amigos',
+            });
+        },
     };
 
     /* Sondeo: descarga pending → muestra los nuevos. Si la URL tiene un
@@ -5217,6 +5248,16 @@ window.MuShell = (function(){
                 SHOWN[src][inv.id] = true;
                 if (isDeep) deepShown = true;
                 HANDLERS[src](inv, isDeep);
+            });
+            /* Solicitud de amistad que ya no está (aceptada o rechazada
+               desde el PC, cancelada): fuera su aviso. */
+            var siguen = {};
+            d.invites.forEach(function(inv){ if (inv.source === 'amigo') siguen[inv.id] = true; });
+            Object.keys(SHOWN.amigo || {}).forEach(function(id){
+                if (siguen[id]) return;
+                var t = document.getElementById('m-toast-amigo-' + id);
+                if (t) t.remove();
+                delete SHOWN.amigo[id];
             });
         });
     }
@@ -5251,7 +5292,7 @@ window.MuShell = (function(){
             pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
         };
         window.melonTimbre.on('lt', pedir, 15000);
-        ['musica', 'items', 'pareja'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        ['musica', 'items', 'pareja', 'amigos'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
         document.addEventListener('visibilitychange', function(){
             if (document.visibilityState === 'visible') pedir();
         });

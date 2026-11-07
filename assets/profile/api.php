@@ -38,6 +38,7 @@
    POST  ?action=save-lists            { category, items[] }
    POST  ?action=toggle-follow         { targetUser }  (ahora solicitudes, ver amigos.php)
    GET   ?action=friends / friend-search&q=…
+   GET   ?action=friend-avisos         → solicitudes pendientes y aceptadas sin avisar (haro)
    POST  ?action=friend-request|friend-accept|friend-reject|friend-cancel|friend-remove { user }
    POST  ?action=toggle-post-like      { targetUser, postId }
    POST  ?action=mark-notifs-read      {}
@@ -63,7 +64,7 @@
    presencia, notificaciones, heartbeat): si la BD está saturada, un solo
    reintento corto (melon_pdo en assets/config.php) en vez de ocupar un
    proceso PHP esperando; ya volverá a preguntar. */
-if (in_array($_GET['action'] ?? $_POST['action'] ?? '', ['get-unread-chats', 'presence', 'get-profile-notifs', 'heartbeat'], true)) {
+if (in_array($_GET['action'] ?? $_POST['action'] ?? '', ['get-unread-chats', 'presence', 'get-profile-notifs', 'heartbeat', 'friend-avisos'], true)) {
     define('MELON_DB_RAPIDO', true);
 }
 require_once dirname(__DIR__) . '/auth.php';
@@ -1632,6 +1633,14 @@ case 'friends': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     jsonResponse(['ok' => true] + amigos_lista($pdo, $uid));
+}
+
+/* Haro del escritorio (pollAmigos en desktop-base.php): solicitudes
+   pendientes y amistades aceptadas sin avisar (amigos_avisos). */
+case 'friend-avisos': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + amigos_avisos($pdo, $uid));
 }
 
 case 'friend-search': {
