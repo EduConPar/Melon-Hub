@@ -25,7 +25,9 @@
    cuenta (user_invites). Si la persona invitada llega a 7 días de racha
    dentro de sus primeros 14 días, las dos se llevan 500 puntos (se
    comprueba al pulsar su fueguito); si no, caduca. Quien invita se
-   entera por la campana del perfil (notifications, tipo invite-reward).
+   entera por la campana del perfil (notifications, tipo invite-reward)
+   y, en el móvil (que no tiene campana), con un aviso de la carcasa una
+   sola vez (invita_avisos → pending.php, fuente 'invita').
    ────────────────────────────────────────────────────────────────────── */
 
 const RACHA_TZ            = 'Europe/Madrid';
@@ -60,6 +62,15 @@ function racha_ensure(PDO $pdo): void {
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 resuelto_en TIMESTAMP NULL,
                 INDEX idx_inviter (inviter_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS invita_avisos (
+                id        INT AUTO_INCREMENT PRIMARY KEY,
+                user_id   INT NOT NULL,
+                de_id     INT NOT NULL,
+                puntos    INT NOT NULL,
+                creado    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                entregado TINYINT(1) NOT NULL DEFAULT 0,
+                INDEX idx_user (user_id, entregado)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         } catch (Throwable $e) { /* sin permisos de CREATE: el resto degrada */ }
     });
@@ -184,11 +195,14 @@ function racha_pulsar(PDO $pdo, int $uid): array {
     }
     if ($avisarA) {
         try {
+            $pdo->prepare("INSERT INTO invita_avisos (user_id, de_id, puntos) VALUES (?, ?, ?)")
+                ->execute([$avisarA, $uid, INVITA_PUNTOS]);
             $pdo->prepare("INSERT INTO notifications (user_id, type, from_user_id, payload, is_read) VALUES (?, 'invite-reward', ?, ?, 0)")
                 ->execute([$avisarA, $uid, json_encode(['points' => INVITA_PUNTOS])]);
-            /* Timbre 'notif' (assets/php/timbre.php): su escritorio lo ve. */
+            /* Timbre (assets/php/timbre.php): 'notif' para la campana del
+               escritorio, 'invita' para el aviso del móvil. */
             require_once dirname(__DIR__) . '/php/timbre.php';
-            rt_usuario((int)$avisarA, 'notif');
+            rt_usuario((int)$avisarA, 'notif', 'invita');
         } catch (Throwable $e) { /* sin tabla de avisos: los puntos ya están dados */ }
     }
     $st = $pdo->prepare("SELECT autismo FROM usuarios WHERE id = ?");
@@ -244,4 +258,20 @@ function invita_lista(PDO $pdo, int $uid): array {
         ];
     }
     return ['invites' => $out, 'puntos' => INVITA_PUNTOS, 'racha' => INVITA_RACHA, 'plazo' => INVITA_PLAZO_DIAS];
+}
+
+/* Invitaciones cumplidas sin avisar en el móvil (pending.php): salen una
+   vez y se marcan. Solo las de la última semana (si solo se usa el PC,
+   se ven en su campana y aquí no sale una vieja al abrir el móvil). */
+function invita_avisos(PDO $pdo, int $uid): array {
+    racha_ensure($pdo);
+    $st = $pdo->prepare("SELECT a.id, a.puntos, u.user_key, u.label FROM invita_avisos a JOIN usuarios u ON u.id = a.de_id
+                          WHERE a.user_id = ? AND a.entregado = 0 AND a.creado > NOW() - INTERVAL 7 DAY ORDER BY a.id");
+    $st->execute([$uid]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $out[] = ['id' => (int)$r['id'], 'key' => (string)$r['user_key'], 'nombre' => (string)$r['label'], 'puntos' => (int)$r['puntos']];
+    }
+    if ($out) $pdo->prepare("UPDATE invita_avisos SET entregado = 1 WHERE user_id = ? AND id <= ?")->execute([$uid, end($out)['id']]);
+    return $out;
 }

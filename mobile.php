@@ -5050,6 +5050,8 @@ window.MuShell = (function(){
     function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
 
     /* Toast reusable (idéntico estilo a ltToast). */
+    /* También para las apps de dentro (perfil: la racha encendida). */
+    window.mToast = function(opts){ mToast(opts); };
     function mToast(opts) {
         var existing = document.getElementById('m-toast-' + (opts.id || ''));
         if (existing) existing.remove();
@@ -5220,6 +5222,16 @@ window.MuShell = (function(){
                 message: 'Ahora sois amigos',
             });
         },
+        /* Invitación cumplida (racha.php): en el PC sale en la campana. */
+        'invita': function(inv, asSheet){
+            mToast({
+                id:    'invita-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' ha llegado a 7 días de racha',
+                message: '+' + (parseInt(inv.puntos, 10) || 500) + ' puntos de autismo por invitarle',
+                duration: 8000,
+            });
+        },
     };
 
     /* Sondeo: descarga pending → muestra los nuevos. Si la URL tiene un
@@ -5292,7 +5304,7 @@ window.MuShell = (function(){
             pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
         };
         window.melonTimbre.on('lt', pedir, 15000);
-        ['musica', 'items', 'pareja', 'amigos'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        ['musica', 'items', 'pareja', 'amigos', 'invita'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
         document.addEventListener('visibilitychange', function(){
             if (document.visibilityState === 'visible') pedir();
         });

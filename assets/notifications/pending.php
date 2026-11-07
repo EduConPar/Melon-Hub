@@ -3,8 +3,8 @@
    PENDING ACTION NOTIFICATIONS — endpoint unificado.
 
    Devuelve TODOS los invites pendientes del usuario actual desde las
-   fuentes (listen-together, partner, playlist colab, item colab y
-   amigos: solicitud / aceptada) en
+   fuentes (listen-together, partner, playlist colab, item colab,
+   amigos: solicitud / aceptada, e invitación cumplida) en
    un solo JSON. Usado por la shell móvil para mostrar los pendientes
    al abrir la app y vía polling cada 15s.
 
@@ -159,5 +159,15 @@ try {
         $invites[] = ['source' => 'amigo-ok', 'id' => $x['id'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre']];
     }
 } catch (Throwable $e) { error_log('[pending] amigos: ' . $e->getMessage()); }
+
+/* ── INVITACIÓN CUMPLIDA (assets/profile/racha.php) ──────────────
+   'invita' = alguien a quien invitaste llegó a 7 días de racha (en el PC
+   está en la campana; aquí sale una vez: invita_avisos la marca). */
+try {
+    require_once dirname(__DIR__) . '/profile/racha.php';
+    foreach (invita_avisos($pdo, (int)$userId) as $x) {
+        $invites[] = ['source' => 'invita', 'id' => $x['id'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre'], 'puntos' => $x['puntos']];
+    }
+} catch (Throwable $e) { }
 
 echo json_encode(['ok' => true, 'invites' => $invites], JSON_UNESCAPED_UNICODE);

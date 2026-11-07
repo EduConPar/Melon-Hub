@@ -978,6 +978,33 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-steam .button img { width: 12px; height: 12px; object-fit: contain; image-rendering: pixelated; vertical-align: -2px; margin-right: 4px; }
         .pf2m-steam-nota { width: 100%; font-size: 11px; color: var(--text-muted, #444); }
         .pf2m-steam-nota.is-aviso { color: var(--warning-text, #8a6d00); }
+        /* Racha (renderPf2Racha): fueguito pixelado al lado del nombre, gris
+           apagado / naranja encendido, con los días. Como el del PC. */
+        .pf-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .pf-name-row .mh-userbar-name { min-width: 0; }
+        .pf2m-racha { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; font-size: 13px; color: var(--text, #000); }
+        .pf2m-racha:empty { display: none; }
+        .pf2m-racha svg { width: 15px; height: 18px; display: block; filter: drop-shadow(1px 1px 0 rgba(0,0,0,.6)); }
+        .pf2m-racha.is-off b { color: var(--text-muted, #666); }
+        .pf2m-racha.is-btn { cursor: pointer; }
+        /* Invitar (menú lateral; pf2AbrirInvitar). */
+        .pf2m-inv-txt { font-size: 11px; line-height: 1.4; color: var(--text, #000); margin-bottom: 8px; }
+        .pf2m-inv-link { display: flex; gap: 4px; margin-bottom: 10px; }
+        .pf2m-inv-link input { flex: 1; min-width: 0; min-height: 28px; box-sizing: border-box; font-size: 11px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-inv-link .button { min-width: 0; padding: 0 10px; min-height: 28px; font-size: 11px; flex-shrink: 0; }
+        .pf2m-inv-h { font-weight: bold; font-size: 12px; color: var(--text, #000); margin: 0 0 4px; }
+        .pf2m-inv-list { max-height: 45vh; overflow-y: auto; }
+        .pf2m-inv-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; cursor: pointer; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-inv-av { position: relative; width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+            background: var(--inset-bg, #808080); color: var(--text, #000); font-size: 11px; }
+        .pf2m-inv-av[data-marco] { margin: calc(var(--mk-t) * 30px) calc(var(--mk-r) * 30px) calc(var(--mk-b) * 30px) calc(var(--mk-l) * 30px); }
+        .pf2m-inv-av img { width: 30px; height: 30px; object-fit: cover; display: block; }
+        .pf2m-inv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+        .pf2m-inv-st { font-size: 10px; color: var(--text-muted, #666); text-align: right; flex-shrink: 0; max-width: 55%; }
+        .pf2m-inv-row.is-cobrada .pf2m-inv-st { color: var(--accent, navy); font-weight: bold; }
+        .pf2m-inv-vacio { font-size: 11px; color: var(--text-muted, #666); padding: 8px 2px; }
         /* Selector de marco (pf2AbrirMarcos): la foto en cada marco. El
            hueco deja sitio a lo que más sobresale (Polaroid, Overdose) y la
            foto se corre para que foto + marco queden centrados (--mk-*). */
@@ -1704,7 +1731,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             </div>
             <div class="mh-userbar-text">
                 <div class="mh-userbar-greeting" id="pf-userbar-greeting">Perfil de</div>
-                <div class="mh-userbar-name" id="pf-userbar-name"><?= htmlspecialchars($userLabel) ?></div>
+                <!-- Nombre + fueguito de la racha (renderPf2Racha). -->
+                <div class="pf-name-row">
+                    <div class="mh-userbar-name" id="pf-userbar-name"><?= htmlspecialchars($userLabel) ?></div>
+                    <span class="pf2m-racha" id="pf2m-racha"></span>
+                </div>
                 <!-- Bio = "descripción" del escritorio. Si está vacía mostramos
                      "Sin descripción" como placeholder en gris. -->
                 <div class="pf-about-bio" id="pf-about-bio">Sin descripción</div>
@@ -4129,7 +4160,9 @@ function renderDrawerBody() {
                 { view: 'profile', icon: '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Perfil' },
                 { view: 'lists',   icon: '<img src="../../assets/img/appIcons/calendarioIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Mis listas' },
                 { view: 'melon',   icon: '⭐', label: 'Melon reviews' },
-                { view: 'social',  icon: '+', label: 'Amigos' }
+                { view: 'social',  icon: '+', label: 'Amigos' },
+                /* No es una vista: abre la ventana de invitar (pf2AbrirInvitar). */
+                { act: 'invitar',  icon: '<img src="../../assets/img/appIcons/puntosAutismo.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Invitar' }
             ]
         });
     } else {
@@ -4148,7 +4181,7 @@ function renderDrawerBody() {
         if (sec.title) html += '<div class="pf-drawer-section-title">' + esc(sec.title) + '</div>';
         sec.items.forEach(function(it){
             var active = STATE.view === it.view ? ' active' : '';
-            html += '<button class="button pf-drawer-item' + active + '" data-view="' + it.view + '" type="button">' +
+            html += '<button class="button pf-drawer-item' + active + '" ' + (it.act ? 'data-act="' + it.act + '"' : 'data-view="' + it.view + '"') + ' type="button">' +
                       '<span class="pf-drawer-icon">' + it.icon + '</span>' +
                       '<span>' + esc(it.label) + '</span>' +
                     '</button>';
@@ -4161,6 +4194,9 @@ function renderDrawerBody() {
             showView(btn.dataset.view);
             closeDrawer();
         });
+    });
+    DRAWER_BD2.querySelectorAll('[data-act="invitar"]').forEach(function(btn){
+        btn.addEventListener('click', function(){ closeDrawer(); pf2AbrirInvitar(); });
     });
 }
 
@@ -4715,6 +4751,7 @@ function renderPerfil2() {
     var box = document.getElementById('pf2m');
     if (!box) return;
     var v2 = pf2v();
+    renderPf2Racha();
     if (!v2) { box.innerHTML = '<div class="mh-empty">Cargando…</div>'; return; }
     var st = v2.stats || {}, c = st.counts || {}, meds = st.medals || [], fr = v2.friends || [];
     var mejor = pf2Mejor(meds);
@@ -5232,6 +5269,115 @@ function renderPf2Steam() {
         });
     }
     box.querySelector('[data-a="marco"]').addEventListener('click', pf2AbrirMarcos);
+}
+
+/* ── Racha diaria e invitaciones (assets/profile/racha.php) ──
+   Como el PC (perfil-v2.js renderRacha / openInvite): fueguito al lado
+   del nombre, apagado (gris) hasta que lo pulsas hoy y encendido después,
+   con los días. En el perfil de otra persona se ve su racha sin pulsar.
+   En el móvil no hay "title" al pasar el ratón: tocarlo cuando ya no se
+   puede encender enseña ese mismo texto en un aviso. */
+function pf2Fuego(on) {
+    var fuera = [[6,6],[5,6],[5,7],[4,7],[4,8],[3,8],[2,9],[2,9],[1,10],[1,10],[1,10],[2,9],[3,8],[4,7]];
+    var dentro = { 7: [5,6], 8: [4,7], 9: [4,7], 10: [4,7], 11: [5,6] };
+    var c1 = on ? '#ff7a1a' : '#8c8c8c', c2 = on ? '#ffd34d' : '#c8c8c8';
+    var r = '';
+    fuera.forEach(function(x, y) { r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c1 + '"/>'; });
+    Object.keys(dentro).forEach(function(y) { var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c2 + '"/>'; });
+    return '<svg viewBox="0 0 12 14" shape-rendering="crispEdges" aria-hidden="true">' + r + '</svg>';
+}
+function pf2Dias(n) { return n + (n === 1 ? ' día' : ' días'); }
+/* Aviso de la carcasa (mToast de mobile.php); fuera de ella, la ventanita. */
+function pf2Aviso(titulo, texto) {
+    try {
+        if (window.parent !== window && window.parent.mToast) {
+            window.parent.mToast({ id: 'racha', title: esc(titulo), message: esc(texto), duration: 6000 });
+            return;
+        }
+    } catch (_) {}
+    pfAlert(titulo + (texto ? ' · ' + texto : ''));
+}
+function pf2RachaTexto(r, own) {
+    if (own && !r.today) {
+        var t = 'Enciende tu racha de hoy (+' + r.puntosHoy + ' puntos de autismo)';
+        if (r.enPeligro) t += '. Ayer no la encendiste: tu protector de racha la salva';
+        else if (r.current) t += '. Llevas ' + pf2Dias(r.current);
+        return t;
+    }
+    var s = 'Racha de ' + pf2Dias(r.current || 0) + ' · mejor: ' + pf2Dias(r.best || 0);
+    if (own) s += r.protector ? ' · protector de racha guardado' : ' · sin protector de racha';
+    return s;
+}
+function renderPf2Racha() {
+    var el = document.getElementById('pf2m-racha');
+    if (!el) return;
+    var v2 = pf2v(), r = v2 && v2.racha;
+    if (!r) { el.innerHTML = ''; return; }
+    var own = !STATE.viewingUser, on = !!r.today;
+    el.className = 'pf2m-racha ' + (on ? 'is-on' : 'is-off') + (own && !on ? ' is-btn' : '');
+    el.innerHTML = pf2Fuego(on) + '<b>' + (r.current || 0) + '</b>';
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', pf2RachaTexto(r, own));
+}
+var PF2_RACHA_PIDIENDO = false;
+(function setupPf2Racha() {
+    var el = document.getElementById('pf2m-racha');
+    if (!el) return;
+    el.addEventListener('click', function() {
+        var v2 = pf2v(), r = v2 && v2.racha;
+        if (!r) return;
+        var own = !STATE.viewingUser;
+        if (!own || r.today) { pf2Aviso(own ? 'Tu racha' : 'Racha de ' + (STATE.viewingLabel || '?'), pf2RachaTexto(r, own)); return; }
+        if (PF2_RACHA_PIDIENDO) return;
+        PF2_RACHA_PIDIENDO = true;
+        pf2Api('streak-claim', {}).then(function(d) {
+            PF2_RACHA_PIDIENDO = false;
+            if (!d || !d.ok) { if (d && d.error) pfAlert(d.error); return; }
+            v2.racha = d.racha;
+            renderPf2Racha();
+            var g = d.ganado || {};
+            var lineas = ['+' + g.dia + ' puntos de autismo'];
+            (g.hitos || []).forEach(function(h) { lineas.push('¡' + h.dias + ' días de racha! +' + h.puntos + ' puntos'); });
+            if (g.invitacion) lineas.push('Invitación cumplida: +' + g.invitacion + ' puntos');
+            if (g.protector) lineas.push('Tu protector de racha la ha salvado');
+            pf2Aviso('Racha de ' + pf2Dias(d.racha.current), lineas.join(' · '));
+        }).catch(function() { PF2_RACHA_PIDIENDO = false; pfAlert('Error de conexión'); });
+    });
+})();
+
+/* Invitar (menú lateral): el enlace de invitación (enlace.php?invitar=…)
+   y cómo van mis invitaciones. Tocar una = su perfil. */
+function pf2AbrirInvitar() {
+    var v = pf2Ventana('Invitar a Melon Hub');
+    var url = window.melonLinkUrl ? window.melonLinkUrl('invitar', USER_KEY) : '';
+    v.body.innerHTML =
+        '<div class="pf2m-inv-txt">Si alguien se crea una cuenta con tu enlace y llega a 7 días de racha en sus primeros 14 días, os lleváis 500 puntos de autismo cada uno.</div>' +
+        '<div class="pf2m-inv-link"><input type="text" readonly aria-label="Enlace de invitación"><button type="button" class="button" data-a="copy">Copiar enlace</button></div>' +
+        '<div class="pf2m-inv-h">Mis invitaciones</div>' +
+        '<div class="pf2m-inv-list"><div class="pf2m-inv-vacio">Cargando…</div></div>' +
+        '<div class="modal-actions"><button type="button" class="button" data-a="cerrar">Cerrar</button></div>';
+    var input = v.body.querySelector('input');
+    input.value = url;
+    input.addEventListener('focus', function() { input.select(); });
+    v.body.querySelector('[data-a="copy"]').addEventListener('click', function() { if (window.melonCopyLink) window.melonCopyLink('invitar', USER_KEY); });
+    v.body.querySelector('[data-a="cerrar"]').addEventListener('click', v.close);
+    var list = v.body.querySelector('.pf2m-inv-list');
+    pf2Api('invites').then(function(d) {
+        var inv = (d && d.invites) || [];
+        if (!inv.length) { list.innerHTML = '<div class="pf2m-inv-vacio">Aún no has invitado a nadie.</div>'; return; }
+        list.innerHTML = inv.map(function(i) {
+            var st = i.estado === 'cobrada' ? '+' + d.puntos + ' puntos conseguidos'
+                   : i.estado === 'caducada' ? 'Caducada'
+                   : 'Racha ' + i.racha + ' / ' + d.racha + ' · quedan ' + pf2Dias(i.quedan);
+            return '<div class="pf2m-inv-row is-' + esc(i.estado) + '" data-key="' + esc(i.key) + '">' +
+                '<span class="pf2m-inv-av" data-marco-user="' + esc(i.key) + '">' +
+                (i.image ? '<img src="' + esc(pf2Ruta(i.image)) + '" alt="">' : esc((i.label || '?').slice(0, 2))) + '</span>' +
+                '<span class="pf2m-inv-name">' + esc(i.label) + '</span><span class="pf2m-inv-st">' + esc(st) + '</span></div>';
+        }).join('');
+        list.querySelectorAll('[data-key]').forEach(function(row) {
+            row.addEventListener('click', function() { v.close(); viewOtherUser(row.dataset.key); });
+        });
+    }).catch(function() { list.innerHTML = '<div class="pf2m-inv-vacio">No se han podido cargar.</div>'; });
 }
 
 /* ── Marco de la foto (assets/profile/marcos.php; en el PC, el botón
