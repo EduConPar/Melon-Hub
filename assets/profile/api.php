@@ -27,6 +27,7 @@
    GET   ?action=my-screenshots
    POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
    POST  ?action=steam-disconnect      {}                    (Steam: steam.php)
+   POST  ?action=steam-link-start      {}                    → { url } de Steam con un código de un solo uso (móvil)
    GET   ?action=steam-games
    GET   ?action=frames                                    (marcos: marcos.php)
    GET   ?action=my-frames
@@ -2467,6 +2468,17 @@ case 'gallery-screenshots': {
 
 /* ─── Steam (perfil nuevo, fase 2: steam.php) ─────────────────────
    Vincular: steam-login.php (inicio de sesión de Steam). */
+/* Conectar Steam desde el móvil: en la app de Android el inicio de
+   sesión de Steam se abre en el navegador del teléfono, sin la sesión de
+   aquí; la vuelta lleva un código de un solo uso (steam.php). */
+case 'steam-link-start': {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    require_once __DIR__ . '/perfil2.php';
+    if (steam_key() === '') jsonError('Steam no está configurado en la web');
+    $app = strpos($_SERVER['HTTP_USER_AGENT'] ?? '', 'MelonHubApp') !== false;
+    jsonResponse(['ok' => true, 'url' => steam_loginUrl('t', steam_vinculoNuevo($pdo, $userKey, $app))]);
+}
+
 case 'steam-disconnect': {
     require_once __DIR__ . '/perfil2.php';
     $uid = pf_uid($pdo, $userKey);

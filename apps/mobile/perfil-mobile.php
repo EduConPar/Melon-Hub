@@ -964,6 +964,20 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf-profile-actions .button { min-height: 28px; font-size: 11px; flex: 1; }
         /* `.button` pisa el atributo hidden (Personalizar cambia los botones). */
         .pf-profile-actions [hidden] { display: none !important; }
+        /* Franja de Steam en Personalizar (renderPf2Steam; en el PC, arriba a
+           la derecha de la cabecera): debajo de Guardar / Datos / Cancelar. */
+        .pf2m-steam {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+            padding: 0 0 8px; margin-bottom: 8px; font-size: 12px; color: var(--text, #000);
+            border-bottom: 1px solid var(--bezel-dark-1, #808080);
+        }
+        .pf2m-steam[hidden] { display: none !important; }
+        .pf2m-steam-t { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-steam-t img { width: 16px; height: 16px; object-fit: contain; image-rendering: pixelated; flex-shrink: 0; }
+        .pf2m-steam .button { min-height: 28px; font-size: 11px; min-width: 0; padding: 0 10px; flex-shrink: 0; }
+        .pf2m-steam .button img { width: 12px; height: 12px; object-fit: contain; image-rendering: pixelated; vertical-align: -2px; margin-right: 4px; }
+        .pf2m-steam-nota { width: 100%; font-size: 11px; color: var(--text-muted, #444); }
+        .pf2m-steam-nota.is-aviso { color: var(--warning-text, #8a6d00); }
         /* ── Perfil nuevo (estilo Steam en el móvil; renderPerfil2) ──
            Como antes la lista de posts: la cabecera y los botones se
            quedan arriba y esto hace scroll por dentro (`flex: 1` +
@@ -1698,6 +1712,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
                 <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
             </div>
+            <!-- Steam (solo en Personalizar): conectar / desconectar. -->
+            <div class="pf2m-steam" id="pf2m-steam" hidden></div>
             <!-- Perfil nuevo estilo Steam (renderPerfil2): nivel y mejor
                  medalla, estado, cuadrícula (Medallas, Amigos, actividad),
                  expositores y comentarios. -->
@@ -5112,6 +5128,8 @@ function pf2Editar(on) {
     if (on) PF2E.draft = pf2Copia(v2.showcases || []);
     ['pf-edit-profile-btn', 'pf-link-btn'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !!on; });
     ['pf2-guardar', 'pf2-datos', 'pf2-cancelar'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !on; });
+    PF2E.steamEsperando = false;
+    renderPf2Steam();
     renderPf2Expositores();
     if (on) {
         var box = document.getElementById('pf2m'), ex = document.getElementById('pf2m-expo');
@@ -5129,6 +5147,84 @@ function pf2Guardar() {
         pf2Editar(false);
     }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
 }
+
+/* ── Steam (franja de Personalizar; assets/profile/steam.php) ──
+   Como "Conectar Steam" del PC, pero en la app de Android el inicio de
+   sesión de Steam se abre en el navegador del teléfono (no tiene la
+   sesión de aquí): steam-link-start da la URL con un código de un solo
+   uso. Al acabar, el timbre ('steam') o volver a la app ponen esto al día. */
+function renderPf2Steam() {
+    var box = document.getElementById('pf2m-steam');
+    if (!box) return;
+    var v2 = pf2v();
+    if (!PF2E.editing || !v2) { box.hidden = true; box.innerHTML = ''; return; }
+    var st = v2.steam || {};
+    var ico = '<img src="../../assets/img/appIcons/steamIcon.png" alt="">';
+    box.hidden = false;
+    if (!st.configured) {
+        box.innerHTML = '<span class="pf2m-steam-t">' + ico + 'Steam no está configurado en la web</span>';
+        return;
+    }
+    if (st.linked) {
+        box.innerHTML = '<span class="pf2m-steam-t">' + ico + '<b>' + esc(st.persona || 'Steam vinculado') + '</b></span>' +
+            '<button type="button" class="button" data-a="off">Desconectar</button>' +
+            (st['private'] ? '<div class="pf2m-steam-nota is-aviso">Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.</div>' : '');
+        box.querySelector('[data-a="off"]').addEventListener('click', function() {
+            pfConfirm('¿Desconectar tu cuenta de Steam?', 'Desconectar', function() {
+                pf2Api('steam-disconnect', {}).then(function(d) {
+                    if (!d || !d.ok) { pfAlert((d && d.error) || 'No se pudo desconectar'); return; }
+                    pf2SteamAlDia();
+                }).catch(function() { pfAlert('Error de conexión'); });
+            });
+        });
+        return;
+    }
+    box.innerHTML = '<span class="pf2m-steam-t">' + ico + 'Steam</span>' +
+        '<button type="button" class="button" data-a="on">' + ico + 'Conectar Steam</button>' +
+        (PF2E.steamEsperando ? '<div class="pf2m-steam-nota">Inicia sesión en Steam en el navegador y vuelve aquí.</div>' : '');
+    box.querySelector('[data-a="on"]').addEventListener('click', function() {
+        var b = this;
+        b.disabled = true;
+        pf2Api('steam-link-start', {}).then(function(d) {
+            b.disabled = false;
+            if (!d || !d.ok || !d.url) { pfAlert((d && d.error) || 'No se pudo abrir Steam'); return; }
+            /* Un enlace normal: la app lo abre fuera (como el icono de Steam
+               del perfil); en el navegador, en otra pestaña. */
+            var a = document.createElement('a');
+            a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+            document.body.appendChild(a); a.click(); a.remove();
+            PF2E.steamEsperando = true;
+            renderPf2Steam();
+        }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+    });
+}
+/* Vuelve a pedir el estado de Steam (y el icono de Steam de la cabecera,
+   que el vincular y el desconectar cambian). Los expositores en edición
+   se quedan como están: solo se repintan (el texto de los vacíos de
+   Steam depende de si está conectado). */
+function pf2SteamAlDia() {
+    return pf2Api('get-profile').then(function(p) {
+        var v2 = pf2v();
+        if (!p || !p.v2 || !v2 || STATE.viewingUser) return;
+        var antes = !!(v2.steam && v2.steam.linked);
+        v2.steam = p.v2.steam;
+        if (STATE.profile) { STATE.profile.steam = p.steam; renderAbout(STATE.profile); }
+        if (v2.steam && v2.steam.linked !== antes) PF2E.steamEsperando = false;
+        renderPf2Steam();
+        renderPf2Expositores();
+    }).catch(function() {});
+}
+(function setupPf2Steam() {
+    function siEspera() { if (PF2E.editing && PF2E.steamEsperando) pf2SteamAlDia(); }
+    var t = timbreMovil();
+    if (t) {
+        var baja = t.on('steam', function() { if (PF2E.editing) pf2SteamAlDia(); });
+        window.addEventListener('pagehide', function() { try { baja(); } catch (_) {} });
+    }
+    /* Al volver del navegador (por si el timbre tarda). */
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) siEspera(); });
+    window.addEventListener('focus', siEspera);
+})();
 
 /* Los expositores en modo Personalizar (lo llama renderPf2Expositores). */
 function renderPf2Edicion(box) {

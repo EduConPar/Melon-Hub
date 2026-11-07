@@ -6,6 +6,10 @@
      steam-login.php → steam-callback.php). Así se sabe que la cuenta es
      tuya; se guarda el SteamID64 en usuarios.steam_id y el icono de Steam
      del perfil pasa a enlazar a ese perfil.
+   - Desde el móvil (api.php steam-link-start): en la app de Android Steam
+     se abre en el navegador del teléfono, que no tiene la sesión de Melon
+     Hub. La vuelta lleva un código de un solo uso (steam_vinculos, 10 min)
+     que dice de quién es, en vez de la sesión.
    - Datos: Steam Web API con STEAM_API_KEY (.env; se pide gratis en
      steamcommunity.com/dev/apikey). Todo en la caché del servidor
      (app_cache): juegos y horas 6 h, logros del jugador 12 h, nombres /
@@ -34,7 +38,53 @@ function steam_ensure(PDO $pdo): void {
                 $pdo->exec("ALTER TABLE usuarios ADD COLUMN steam_id VARCHAR(20) NULL");
             }
         } catch (Throwable $e) { /* sin permisos: no hay Steam */ }
+        $pdo->exec("CREATE TABLE IF NOT EXISTS steam_vinculos (
+            token    CHAR(32)    NOT NULL PRIMARY KEY,
+            user_key VARCHAR(50) NOT NULL,
+            app      TINYINT(1)  NOT NULL DEFAULT 0,
+            caduca   DATETIME    NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     });
+}
+
+/* URL del inicio de sesión de Steam que vuelve a steam-callback.php con
+   `?<param>=<valor>` (state de la sesión o código del móvil). */
+function steam_origen(): string {
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    return ($https ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
+}
+function steam_loginUrl(string $param, string $valor): string {
+    $origin = steam_origen();
+    $return = $origin . rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/steam-callback.php?' . $param . '=' . $valor;
+    return steam_openid_url() . '?' . http_build_query([
+        'openid.ns'         => 'http://specs.openid.net/auth/2.0',
+        'openid.mode'       => 'checkid_setup',
+        'openid.return_to'  => $return,
+        'openid.realm'      => $origin . '/',
+        'openid.identity'   => 'http://specs.openid.net/auth/2.0/identifier_select',
+        'openid.claimed_id' => 'http://specs.openid.net/auth/2.0/identifier_select',
+    ]);
+}
+
+/* Código de un solo uso para vincular desde el móvil ($app: la app de
+   Android, que al acabar ofrece volver a ella). */
+function steam_vinculoNuevo(PDO $pdo, string $userKey, bool $app): string {
+    steam_ensure($pdo);
+    $pdo->exec("DELETE FROM steam_vinculos WHERE caduca < NOW()");
+    $token = bin2hex(random_bytes(16));
+    $pdo->prepare("INSERT INTO steam_vinculos (token, user_key, app, caduca) VALUES (?, ?, ?, NOW() + INTERVAL 10 MINUTE)")
+        ->execute([$token, $userKey, $app ? 1 : 0]);
+    return $token;
+}
+/* Lo gasta: ['user_key', 'app'] o null si no existe o ha caducado. */
+function steam_vinculoUsar(PDO $pdo, string $token): ?array {
+    if (!preg_match('/^[0-9a-f]{32}$/', $token)) return null;
+    steam_ensure($pdo);
+    $st = $pdo->prepare("SELECT user_key, app FROM steam_vinculos WHERE token = ? AND caduca >= NOW()");
+    $st->execute([$token]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    $pdo->prepare("DELETE FROM steam_vinculos WHERE token = ?")->execute([$token]);
+    return $row ? ['user_key' => (string)$row['user_key'], 'app' => (bool)$row['app']] : null;
 }
 
 function steam_idOf(PDO $pdo, int $uid): string {
