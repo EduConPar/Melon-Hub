@@ -962,102 +962,83 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             margin-bottom: 8px;
         }
         .pf-profile-actions .button { min-height: 28px; font-size: 11px; flex: 1; }
-        /* Posts list scrollable INTERNAMENTE: el header (userbar),
-           actions y el form de nuevo post se quedan fijos arriba, y
-           solo la lista de posts hace scroll. `flex: 1` la hace ocupar
-           el espacio que queda en la vista (que ya es flex column con
-           min-height: 0); `min-height: 0` permite que un hijo flex
-           sobredimensionado pueda recortarse y activar overflow.
-           `overscroll-behavior: contain` evita que el scroll se
-           propague al padre cuando llega a los extremos. */
-        .pf-posts-list {
-            display: flex; flex-direction: column; gap: 8px;
-            padding: 0 4px 8px 0;
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
+        /* ── Perfil nuevo (estilo Steam en el móvil; renderPerfil2) ──
+           Como antes la lista de posts: la cabecera y los botones se
+           quedan arriba y esto hace scroll por dentro (`flex: 1` +
+           `min-height: 0` en la vista, que es flex en columna). */
+        .pf2m {
+            display: flex; flex-direction: column; gap: 6px;
+            padding: 0 2px 10px 0; flex: 1; min-height: 0;
+            overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
         }
-        .pf-post {
-            background: var(--input-bg, #fff);
-            padding: 8px 10px;
-            box-shadow:
-                inset  1px  1px var(--bezel-dark-1, #808080),
-                inset -1px -1px var(--bezel-light-1, #fff);
+        /* En una columna con scroll, que nada se encoja (la franja del
+           estado salía aplastada). */
+        .pf2m > * { flex-shrink: 0; }
+        .pf2m-relieve {
+            background: var(--win-bg, silver); color: var(--text, #000);
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf);
         }
-        .pf-post-head {
-            display: flex; align-items: center; gap: 6px;
-            font-size: 11px; margin-bottom: 6px;
+        /* Kawaii cambia los relieves por bordes, como el resto de su interfaz. */
+        body.pf-iface-kawaii .pf2m-relieve { box-shadow: none; border: 2px solid var(--border, #49388B); }
+        .pf2m-level {
+            width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 15px; flex-shrink: 0;
+            background: var(--accent, navy); color: var(--accent-text, #fff);
+            box-shadow: 0 0 0 2px var(--win-bg, silver), 0 0 0 3px var(--accent, navy);
         }
-        .pf-post-author { font-weight: bold; color: var(--accent, #000080); }
-        .pf-post-time { font-size: 10px; color: var(--text-faint, #666); margin-left: auto; }
-        .pf-post-text {
-            font-size: 12px; line-height: 1.4;
-            white-space: pre-wrap; word-break: break-word;
-            color: var(--text, #000);
-        }
-        .pf-post-img {
-            display: block; max-width: 100%; margin-top: 6px;
-            border: 1px solid var(--bezel-dark-1, #808080);
-        }
-        .pf-post-foot {
-            display: flex; align-items: center; gap: 4px;
-            margin-top: 6px; padding-top: 6px;
-            border-top: 1px solid var(--bezel-dark-1, #808080);
-        }
-        .pf-post-btn {
-            min-height: 22px; min-width: 36px;
-            font-size: 11px; padding: 0 6px;
-        }
-        .pf-post-btn.is-liked { color: var(--accent, #000080); font-weight: bold; }
-        .pf-post-btn.danger { color: var(--error-text, #c00); margin-left: auto; }
-        .pf-post-comments {
-            margin-top: 6px; padding-top: 6px;
-            border-top: 1px solid var(--bezel-dark-1, #808080);
-        }
-        .pf-post-comments[hidden] { display: none; }
-        .pf-comment {
-            display: flex; gap: 6px;
-            padding: 4px 0; font-size: 11px;
-        }
-        .pf-comment-author { font-weight: bold; color: var(--accent, #000080); }
-        .pf-comment-text   { flex: 1; word-break: break-word; }
-        .pf-comment-del {
-            min-width: 18px; min-height: 18px; padding: 0;
-            font-size: 10px; color: var(--error-text, #c00);
-        }
-        .pf-comment-form {
-            display: flex; gap: 4px; margin-top: 4px;
-        }
-        .pf-comment-form input {
-            flex: 1; font-size: 11px; padding: 3px 6px;
-        }
-        .pf-comment-form button { font-size: 11px; min-height: 22px; }
-        .pf-new-post {
-            display: flex; flex-direction: column; gap: 4px;
-            padding: 8px; margin-bottom: 10px;
-            background: var(--input-bg, #fff);
-            box-shadow:
-                inset  1px  1px var(--bezel-dark-1, #808080),
-                inset -1px -1px var(--bezel-light-1, #fff);
-        }
-        /* El atributo HTML `hidden` lo pisaría `display:flex` de arriba —
-           lo forzamos para que toggleProfileActions(true) realmente oculte
-           el form cuando estoy viendo a otro usuario. */
-        .pf-new-post[hidden] { display: none !important; }
-        #pf-edit-profile-btn[hidden],
-        #pf-follow-btn[hidden],
-        #pf-chat-btn[hidden] { display: none !important; }
-        .pf-new-post textarea {
-            width: 100%; box-sizing: border-box;
-            font-family: inherit; font-size: 12px;
-            resize: vertical; min-height: 50px;
-        }
-        .pf-new-post input { font-size: 11px; padding: 3px 6px; }
-        .pf-new-post-actions {
-            display: flex; justify-content: flex-end; gap: 4px;
-        }
+        /* Nivel + la mejor medalla (sin barra de XP, como Steam). */
+        .pf2m-lvlbox { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 8px; padding: 12px 10px; }
+        .pf2m-lvl { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 22px; }
+        .pf2m-best { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .pf2m-best svg { width: 44px; height: 52px; flex-shrink: 0; }
+        .pf2m-best-t { font-size: 12px; line-height: 1.35; min-width: 0; }
+        .pf2m-best-t small { display: block; color: var(--text-muted, #444); font-size: 11px; }
+        /* Franja del estado ("Currently Online"). */
+        .pf2m-estado { padding: 12px; font-size: 17px; color: var(--accent, navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-estado.is-offline { color: var(--text-muted, #444); }
+        .pf2m-estado.is-dnd { color: #d04040; }
+        .pf2m-estado.is-away { color: #c99a0e; }
+        /* Cuadrícula de 2 columnas: título + número; Medallas y Amigos con sus iconos. */
+        .pf2m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .pf2m-tile { padding: 9px 9px 8px; min-width: 0; }
+        .pf2m-tile[data-t] { cursor: pointer; }
+        .pf2m-tile[data-t]:active { box-shadow: inset 1px 1px var(--bezel-dark-1, #0a0a0a), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-tile-t { font-size: 13px; display: flex; align-items: baseline; gap: 7px; white-space: nowrap; overflow: hidden; }
+        .pf2m-tile-t span { color: var(--text-muted, #444); font-size: 17px; }
+        .pf2m-icons { display: flex; gap: 6px; margin-top: 8px; align-items: center; overflow: hidden; }
+        .pf2m-icons svg { width: 30px; height: 36px; flex-shrink: 0; }
+        .pf2m-fav { width: 34px; height: 34px; flex-shrink: 0; background: var(--input-bg, #fff); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+        .pf2m-fav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        /* Ventana de medallas (al tocar "Medallas"). */
+        .pf2m-mrow { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 11px; line-height: 1.4; }
+        .pf2m-mrow + .pf2m-mrow { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-mrow svg { width: 34px; height: 40px; flex-shrink: 0; }
+        .pf2m-mrow.locked svg { opacity: .35; filter: grayscale(1); }
+        .pf2m-mtxt { flex: 1; min-width: 0; }
+        .pf2m-bar { height: 6px; margin-top: 3px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-bar i { display: block; height: 100%; background: var(--accent, navy); }
+        /* Comentarios (el muro; sustituye a los posts). */
+        .pf2m-com-win { margin: 0; }
+        .pf2m-com-win .title-bar-text { display: flex; align-items: center; gap: 5px; width: 100%; }
+        .pf2m-com-win .title-bar-text span { margin-left: auto; font-weight: normal; opacity: .85; }
+        .pf2m-com-win .window-body { margin: 6px; color: var(--text, #000); }
+        .pf2m-new { display: flex; gap: 6px; }
+        .pf2m-new input { flex: 1; min-width: 0; min-height: 30px; box-sizing: border-box;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-new .button { min-width: 0; padding: 0 10px; }
+        .pf2m-com { display: flex; gap: 8px; padding: 7px 0; align-items: flex-start; }
+        .pf2m-com + .pf2m-com { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-com-av { width: 32px; height: 32px; flex-shrink: 0; background: var(--input-bg, #fff); }
+        .pf2m-com-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pf2m-com-main { flex: 1; min-width: 0; font-size: 11px; overflow-wrap: anywhere; }
+        .pf2m-com-who { font-weight: bold; cursor: pointer; }
+        .pf2m-com-when { color: var(--text-muted, #444); font-size: 10px; margin-left: 5px; }
+        .pf2m-com-txt { margin-top: 2px; line-height: 1.35; white-space: pre-wrap; }
+        .pf2m-com-img { margin-top: 5px; }
+        .pf2m-com-img img { max-width: 100%; max-height: 260px; display: block; }
+        .pf2m-del { min-width: 0 !important; width: 26px; min-height: 24px !important; padding: 0 !important; flex-shrink: 0; }
+        .pf2m-vacio { font-size: 11px; color: var(--text-muted, #444); padding: 8px 2px; }
 
         /* ── Amigos (vista "social"; amPintar) ──
            Filas como en el PC: foto con marco y punto de presencia,
@@ -1518,7 +1499,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf-ep-addbar input[type="text"] { width: 100%; box-sizing: border-box; }
     </style>
 </head>
-<body class="mh-body <?= htmlspecialchars($activeThemeClass) ?>">
+<body class="mh-body <?= htmlspecialchars($activeThemeClass) ?> pf-iface-<?= htmlspecialchars($_lookIface) ?>">
 
 <div class="window mh-window" id="perfilWindow">
     <div class="title-bar">
@@ -1569,14 +1550,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
                 <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
             </div>
-            <div class="pf-new-post" id="pf-new-post">
-                <textarea id="pf-post-text" maxlength="1000" placeholder="Escribe algo..."></textarea>
-                <input type="text" id="pf-post-img" maxlength="2000" placeholder="URL de imagen (opcional)">
-                <div class="pf-new-post-actions">
-                    <button class="button default" id="pf-post-publish" type="button">Publicar</button>
-                </div>
-            </div>
-            <div class="pf-posts-list" id="pf-posts-list"></div>
+            <!-- Perfil nuevo estilo Steam (renderPerfil2): nivel y mejor
+                 medalla, estado, cuadrícula (Medallas, Amigos, actividad),
+                 expositores y comentarios. -->
+            <div class="pf2m" id="pf2m"><div class="mh-empty">Cargando…</div></div>
         </div>
 
         <!-- VISTA: Mis listas (tabs + sub-tabs + destacados + lista) -->
@@ -1770,10 +1747,8 @@ function fetchProfile() {
             /* get-profile devuelve following → cache para vista Social. */
             STATE.myFollowing = (STATE.profile.following || []).slice();
             renderAbout(STATE.profile);
-            /* Si estamos en vista Perfil (mía), re-render de posts. */
-            if (!STATE.viewingUser && STATE.view === 'profile') {
-                renderPosts(STATE.profile.posts || []);
-            }
+            /* Mi perfil: el perfil nuevo. */
+            if (!STATE.viewingUser) renderPerfil2();
         })
         .catch(function(){
             var bioEl = document.getElementById('pf-about-bio');
@@ -4010,9 +3985,8 @@ function showView(name) {
     });
     /* Acciones específicas por vista. */
     if (name === 'profile') {
-        /* Posts ya cargados con fetchProfile; render si tenemos datos. */
-        if (STATE.profile && STATE.profile.posts) renderPosts(STATE.profile.posts);
-        /* Si estoy viendo otro usuario, oculto edit + new-post y enseño follow. */
+        renderPerfil2();
+        /* Si estoy viendo otro usuario, oculto Editar y enseño amistad / chat. */
         toggleProfileActions();
     } else if (name === 'social') {
         renderSocial();
@@ -4399,18 +4373,16 @@ function relTimeStr(ts) {
     });
 })();
 
-/* Edit profile / nuevo post solo en mi perfil. Botón Seguir solo cuando
+/* Editar perfil solo en mi perfil. Botón Seguir solo cuando
    estoy viendo a otro. Chat solo si hay seguimiento mutuo. */
 function toggleProfileActions() {
     var viewing = !!STATE.viewingUser;
     var editBtn = document.getElementById('pf-edit-profile-btn');
     var followBtn = document.getElementById('pf-follow-btn');
     var chatBtn = document.getElementById('pf-chat-btn');
-    var newPost = document.getElementById('pf-new-post');
     editBtn.hidden   = viewing;
     followBtn.hidden = !viewing;
     chatBtn.hidden   = !(viewing && isMutual(STATE.viewingUser));
-    newPost.hidden   = viewing;
 }
 
 /* Mutualidad: sigo a X Y X me sigue. Necesario para el chat (el server
@@ -4489,6 +4461,7 @@ function refreshPresenceDots() {
             __pfLastNp   = (d.nowPlaying && typeof d.nowPlaying === 'object') ? d.nowPlaying : {};
             __pfLastSeen = (d.lastSeen && typeof d.lastSeen === 'object') ? d.lastSeen : {};
             if (STATE.view === 'social') amPintarLista();
+            pf2Estado();
             applyPresence();
         })
         .catch(function() {});
@@ -4497,66 +4470,6 @@ window.__pfApplyPresence = applyPresence;
 refreshPresenceDots();
 setInterval(refreshPresenceDots, 20000);
 
-/* ─── Posts ─────────────────────────────────────────────────────── */
-function renderPosts(posts) {
-    var listEl = document.getElementById('pf-posts-list');
-    if (!listEl) return;
-    if (!posts || !posts.length) {
-        listEl.innerHTML = '<div class="mh-empty"><span class="mh-empty-icon"><img src="../../assets/img/appIcons/newsIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>Sin posts todavía</div>';
-        return;
-    }
-    var iAmOwner = !STATE.viewingUser;
-    var authorKey = STATE.viewingUser || USER_KEY;
-    var authorLabel = STATE.viewingLabel || USER_LABEL;
-    var html = '';
-    posts.forEach(function(p){
-        var imgHtml = p.imageUrl ? '<img class="pf-post-img" src="' + esc(p.imageUrl) + '" alt="" loading="lazy">' : '';
-        var liked = (p.likes || []).indexOf(USER_KEY) !== -1;
-        var likeCount = (p.likes || []).length;
-        var commentCount = (p.comments || []).length;
-        var canDel = iAmOwner;
-        /* En mis propios posts no puedo darme like — render del botón
-           como disabled para que se vea el contador pero no responda. */
-        var likeBtnAttr = iAmOwner ? ' disabled' : '';
-        html +=
-            '<div class="pf-post" data-post-id="' + p.id + '">' +
-                '<div class="pf-post-head">' +
-                    '<span class="pf-post-author">' + esc(authorLabel) + '</span>' +
-                    '<span class="pf-post-time">' + relTime(p.createdAt) + '</span>' +
-                '</div>' +
-                (p.text ? '<div class="pf-post-text">' + esc(p.text) + '</div>' : '') +
-                imgHtml +
-                '<div class="pf-post-foot">' +
-                    '<button class="button pf-post-btn' + (liked ? ' is-liked' : '') + '" data-act="like" type="button"' + likeBtnAttr + '>' +
-                        (liked ? '❤' : '♡') + ' ' + likeCount +
-                    '</button>' +
-                    '<button class="button pf-post-btn" data-act="comments" type="button"><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + commentCount + '</button>' +
-                    (canDel ? '<button class="button pf-post-btn danger" data-act="delete" type="button"><img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;"></button>' : '') +
-                '</div>' +
-                '<div class="pf-post-comments" data-comments-for="' + p.id + '" hidden></div>' +
-            '</div>';
-    });
-    listEl.innerHTML = html;
-
-    listEl.querySelectorAll('.pf-post').forEach(function(postEl){
-        var pid = parseInt(postEl.dataset.postId, 10);
-        var post = posts.find(function(x){ return x.id === pid; });
-        if (!post) return;
-        var likeBtn = postEl.querySelector('[data-act="like"]');
-        /* No bindeamos handler si está disabled (posts propios). */
-        if (likeBtn && !likeBtn.disabled) {
-            likeBtn.addEventListener('click', function(){ togglePostLike(post, postEl); });
-        }
-        var cmtBtn  = postEl.querySelector('[data-act="comments"]');
-        if (cmtBtn)  cmtBtn.addEventListener('click', function(){ toggleComments(post, postEl); });
-        var delBtn  = postEl.querySelector('[data-act="delete"]');
-        if (delBtn)  delBtn.addEventListener('click', function(){
-            pfConfirm('¿Eliminar el post?', 'Eliminar', function(){ deletePost(post.id); });
-        });
-    });
-}
-
-/* Helper de fecha relativa (ahora / hace Nm / hace Nh / hace Nd). */
 function relTime(ts) {
     var diff = Math.floor(Date.now() / 1000) - (ts || 0);
     if (diff < 60)    return 'ahora';
@@ -4565,178 +4478,190 @@ function relTime(ts) {
     return 'hace ' + Math.floor(diff / 86400) + 'd';
 }
 
-function togglePostLike(post, postEl) {
-    var targetUser = STATE.viewingUser || USER_KEY;
-    fetch(API + '?action=toggle-post-like', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUser: targetUser, postId: post.id })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        /* La API responde { ok, liked: bool, count: int }, no un array
-           `likes`. El check antiguo Array.isArray(d.likes) siempre fallaba
-           y el UI no se refrescaba. Reconstruimos post.likes localmente
-           a partir de `liked` para que el próximo re-render mantenga el
-           estado. */
-        if (!d || !d.ok) return;
-        var liked = !!d.liked;
-        var count = d.count | 0;
-        if (!Array.isArray(post.likes)) post.likes = [];
-        var idx = post.likes.indexOf(USER_KEY);
-        if (liked && idx === -1)        post.likes.push(USER_KEY);
-        else if (!liked && idx !== -1)  post.likes.splice(idx, 1);
-        var btn = postEl.querySelector('[data-act="like"]');
-        if (btn) {
-            btn.classList.toggle('is-liked', liked);
-            btn.textContent = (liked ? '❤' : '♡') + ' ' + count;
-        }
-    })
-    .catch(function(){});
+/* ─── Perfil nuevo (estilo Steam; assets/profile/perfil2.php → v2) ────
+   Decidido así (7/11, con una captura del perfil de Steam en el móvil
+   de referencia). Debajo de la cabecera y los botones, de arriba abajo:
+     - Nivel N y, a la derecha, la mejor medalla (la de más nivel) con su
+       XP. Sin barra de XP (como Steam).
+     - Franja con el estado: En línea / Escuchando… / Ausente / No
+       molestar / Desconectado (el perfil propio, en línea).
+     - Cuadrícula de 2 columnas, solo con lo que tiene el PC: Medallas
+       (las ganadas en pequeño; al tocar, la lista con la ficha de cada
+       una) · Amigos (fotos en fila; al tocar, la página de Amigos) ·
+       Reseñas · Capturas · Horas escuchadas · En Melon Hub (estos no
+       hacen nada).
+     - Expositores (punto 3, aún no) justo encima de los comentarios.
+     - Comentarios: el muro (los posts de antes pasaron aquí en el PC).
+       Escribe cualquiera con cuenta; borra el dueño del muro o el autor.
+   Las fotos de v2 vienen desde la raíz de la web: aquí se les pone
+   ../../ delante (pf2Ruta). */
+var PF2_TIERS = [null, ['#b06a2c', '#e6a46a', 'Bronce'], ['#8c8c8c', '#e8e8e8', 'Plata'],
+                 ['#b8860b', '#ffe066', 'Oro'], ['#3a9bd5', '#bfe9ff', 'Diamante']];
+var PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* = PF2_TIER_XP de perfil2.php */
+function pf2v() { return (STATE.profile && STATE.profile.v2) || null; }
+function pf2Ruta(u) {
+    if (!u) return '';
+    return /^(https?:|data:|\/|\.\.\/)/.test(u) ? u : '../../' + u;
 }
+/* La misma medalla que el PC (perfil-v2.js, medalSvg). */
+function pf2Medalla(m) {
+    var t = m.unique ? ['var(--accent)', 'color-mix(in srgb, var(--accent) 30%, #fff)'] : (PF2_TIERS[m.tier] || PF2_TIERS[1]);
+    return '<svg viewBox="0 0 34 40"><path d="M9 0h6l2 10-6 0z" fill="var(--accent)"/><path d="M19 0h6l-5 10h-3z" fill="var(--accent-deep, var(--accent))"/>' +
+        '<circle cx="17" cy="25" r="13" style="fill:' + t[1] + ';stroke:' + t[0] + '" stroke-width="3"/>' +
+        '<text x="17" y="30" font-size="13" text-anchor="middle">' + m.emoji + '</text></svg>';
+}
+/* La de más nivel (a igualdad, la primera de la lista); la de Tester
+   solo si no hay ninguna otra. */
+function pf2Mejor(meds) {
+    var mejor = null;
+    meds.forEach(function(m) {
+        if (!m.tier) return;
+        if (!mejor || (mejor.unique && !m.unique) || (!m.unique && m.tier > mejor.tier)) mejor = m;
+    });
+    return mejor;
+}
+function pf2ProfileKey() { return STATE.viewingUser || USER_KEY; }
 
-function toggleComments(post, postEl) {
-    var box = postEl.querySelector('[data-comments-for="' + post.id + '"]');
+function renderPerfil2() {
+    var box = document.getElementById('pf2m');
     if (!box) return;
-    if (!box.hidden) { box.hidden = true; return; }
-    renderComments(post, box);
-    box.hidden = false;
-}
-
-function renderComments(post, box) {
-    var comments = post.comments || [];
-    var html = '';
-    comments.forEach(function(c){
-        var canDel = (c.authorKey === USER_KEY) || (!STATE.viewingUser);
-        html +=
-            '<div class="pf-comment" data-comment-id="' + c.id + '">' +
-                '<span class="pf-comment-author">' + esc(c.authorLabel || c.authorKey) + ':</span>' +
-                '<span class="pf-comment-text">' + esc(c.text) + '</span>' +
-                (canDel ? '<button class="button pf-comment-del" data-act="del-comment" type="button">×</button>' : '') +
-            '</div>';
-    });
-    /* Form solo si soy yo o si estoy viendo otro (puedo comentar en posts ajenos). */
-    html +=
-        '<div class="pf-comment-form">' +
-            '<input type="text" maxlength="500" placeholder="Comentar...">' +
-            '<button class="button" type="button">Enviar</button>' +
-        '</div>';
+    var v2 = pf2v();
+    if (!v2) { box.innerHTML = '<div class="mh-empty">Cargando…</div>'; return; }
+    var st = v2.stats || {}, c = st.counts || {}, meds = st.medals || [], fr = v2.friends || [];
+    var mejor = pf2Mejor(meds);
+    var ganadas = meds.filter(function(m) { return m.tier > 0; });
+    var html = '<div class="pf2m-relieve pf2m-lvlbox"><div class="pf2m-lvl">Nivel <span class="pf2m-level">' + (st.level || 1) + '</span></div>' +
+        (mejor
+            ? '<div class="pf2m-best">' + pf2Medalla(mejor) + '<div class="pf2m-best-t">' + esc(mejor.name) +
+              '<small>' + (mejor.unique ? 'Única' : esc(PF2_TIERS[mejor.tier][2]) + ' · ' + PF2_TIER_XP[mejor.tier] + ' XP') + '</small></div></div>'
+            : '<div class="pf2m-best"><div class="pf2m-best-t"><small>Sin medallas todavía</small></div></div>') + '</div>';
+    html += '<div class="pf2m-relieve pf2m-estado" id="pf2m-estado"></div>';
+    var tile = function(tit, n, dentro, t) {
+        return '<div class="pf2m-relieve pf2m-tile"' + (t ? ' data-t="' + t + '"' : '') + '><div class="pf2m-tile-t">' + tit + ' <span>' + n + '</span></div>' +
+            (dentro ? '<div class="pf2m-icons">' + dentro + '</div>' : '') + '</div>';
+    };
+    var fotos = fr.slice(0, 4).map(function(f) {
+        return '<span class="pf2m-fav" data-marco-user="' + esc(f.key) + '">' +
+            (f.image ? '<img src="' + esc(pf2Ruta(f.image)) + '" alt="">' : esc((f.label || '?').slice(0, 2))) + '</span>';
+    }).join('');
+    html += '<div class="pf2m-grid">' +
+        tile('Medallas', ganadas.length, ganadas.slice(0, 3).map(pf2Medalla).join(''), 'med') +
+        tile('Amigos', fr.length, fotos, 'am') +
+        tile('Reseñas', c.reviews || 0) + tile('Capturas', c.shots || 0) +
+        tile('Horas escuchadas', (c.hours || 0).toLocaleString('es')) +
+        tile('En Melon Hub', (c.days || 0) + (c.days === 1 ? ' día' : ' días')) + '</div>';
+    /* Expositores (punto 3): irán aquí, justo encima de los comentarios. */
+    html += '<div class="window pf2m-com-win" id="pf2m-com"></div>';
     box.innerHTML = html;
-    box.querySelectorAll('[data-act="del-comment"]').forEach(function(btn){
-        var row = btn.closest('[data-comment-id]');
-        var cid = parseInt(row.dataset.commentId, 10);
-        btn.addEventListener('click', function(){ deleteComment(post, cid, box); });
-    });
-    var input = box.querySelector('input');
-    var sendBtn = box.querySelector('.pf-comment-form button');
-    function send(){
-        var txt = input.value.trim();
-        if (!txt) return;
-        addComment(post, txt, box);
-        input.value = '';
-    }
-    sendBtn.addEventListener('click', send);
-    input.addEventListener('keydown', function(e){ if (e.key === 'Enter') send(); });
-}
-
-function addComment(post, text, box) {
-    fetch(API + '?action=add-comment', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.id, text: text })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok && d.comment) {
-            post.comments = post.comments || [];
-            post.comments.push(d.comment);
-            renderComments(post, box);
-            /* Actualiza el contador del botón. */
-            var postEl = box.closest('.pf-post');
-            var btn = postEl && postEl.querySelector('[data-act="comments"]');
-            if (btn) btn.innerHTML = '<img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + post.comments.length;
-        }
-    })
-    .catch(function(){});
-}
-
-function deleteComment(post, cid, box) {
-    fetch(API + '?action=delete-comment', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: cid })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok) {
-            post.comments = (post.comments || []).filter(function(c){ return c.id !== cid; });
-            renderComments(post, box);
-            var postEl = box.closest('.pf-post');
-            var btn = postEl && postEl.querySelector('[data-act="comments"]');
-            if (btn) btn.innerHTML = '<img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + post.comments.length;
-        }
-    })
-    .catch(function(){});
-}
-
-function deletePost(postId) {
-    fetch(API + '?action=delete-post', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: postId })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok && STATE.profile && STATE.profile.posts) {
-            STATE.profile.posts = STATE.profile.posts.filter(function(p){ return p.id !== postId; });
-            renderPosts(STATE.profile.posts);
-        }
-    })
-    .catch(function(){});
-}
-
-(function(){
-    var btn = document.getElementById('pf-post-publish');
-    if (!btn) return;
-    /* Guard contra doble-submit: con lag de red el usuario puede pulsar
-       el botón varias veces antes de que la primera request acabe, y
-       cada click insertaba un post duplicado. Mientras `_inFlight=true`
-       ignoramos clicks adicionales y deshabilitamos el botón
-       visualmente. */
-    var _inFlight = false;
-    btn.addEventListener('click', function(){
-        if (_inFlight) return;
-        var textEl = document.getElementById('pf-post-text');
-        var imgEl  = document.getElementById('pf-post-img');
-        var text = (textEl.value || '').trim();
-        var img  = (imgEl.value || '').trim();
-        if (!text && !img) return;
-        _inFlight = true;
-        btn.disabled = true;
-        fetch(API + '?action=add-post', {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, image_url: img })
-        })
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-            if (d && d.ok && d.post) {
-                STATE.profile = STATE.profile || {};
-                STATE.profile.posts = STATE.profile.posts || [];
-                STATE.profile.posts.unshift(d.post);
-                renderPosts(STATE.profile.posts);
-                textEl.value = ''; imgEl.value = '';
-            } else if (d && d.error) {
-                pfAlert(d.error);
-            }
-        })
-        .catch(function(){})
-        .finally(function(){
-            _inFlight = false;
-            btn.disabled = false;
+    pf2Estado();
+    renderPf2Comentarios();
+    box.querySelectorAll('.pf2m-tile[data-t]').forEach(function(t) {
+        t.addEventListener('click', function() {
+            if (t.dataset.t === 'med') pf2AbrirMedallas();
+            else showView('social');   /* la página de Amigos (la tuya, como en el PC) */
         });
     });
-})();
+}
+
+/* La franja del estado; también al llegar la presencia nueva. */
+function pf2Estado() {
+    var el = document.getElementById('pf2m-estado');
+    if (!el) return;
+    var k = pf2ProfileKey(), cls = 'online', txt = 'En línea';
+    if (STATE.viewingUser) {
+        if (!__pfLastOnline[k]) { cls = 'offline'; txt = 'Desconectado'; }
+        else if (__pfLastNp[k] && __pfLastNp[k].title) txt = 'Escuchando: ' + __pfLastNp[k].title + (__pfLastNp[k].artist ? ' — ' + __pfLastNp[k].artist : '');
+        else if (__pfLastDnd[k]) { cls = 'dnd'; txt = 'No molestar'; }
+        else if (__pfLastAway[k]) { cls = 'away'; txt = 'Ausente'; }
+    }
+    el.className = 'pf2m-relieve pf2m-estado is-' + cls;
+    el.textContent = txt;
+}
+
+/* Tocar "Medallas": todas, con la ficha de cada una (lo que en el PC sale
+   al pasar el ratón). */
+function pf2AbrirMedallas() {
+    var v2 = pf2v();
+    if (!v2) return;
+    var filas = ((v2.stats || {}).medals || []).map(function(m) {
+        var ficha;
+        if (m.unique) ficha = esc(m.desc || '');
+        else {
+            var sig = m.next == null ? 'Nivel máximo'
+                : PF2_TIERS[m.tier + 1][2] + ' con ' + m.next.toLocaleString('es') + ' ' + m.unit.split(' ')[0];
+            ficha = m.value.toLocaleString('es') + ' ' + esc(m.unit) + ' · ' + esc(sig) +
+                '<div class="pf2m-bar"><i style="width:' + (m.progress || 0) + '%"></i></div>';
+        }
+        return '<div class="pf2m-mrow' + (m.tier ? '' : ' locked') + '">' + pf2Medalla(m) + '<div class="pf2m-mtxt"><b>' + esc(m.name) + ' · ' +
+            (m.unique ? 'Única' : (m.tier ? PF2_TIERS[m.tier][2] : 'Sin medalla')) + '</b><br>' + ficha + '</div></div>';
+    }).join('');
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal"><div class="title-bar"><div class="title-bar-text">Medallas</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div>' +
+        '<div class="window-body">' + filas + '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div></div></div>';
+    document.body.appendChild(bd);
+    var cerrar = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', cerrar);
+    bd.querySelector('[data-act="close"]').addEventListener('click', cerrar);
+    bd.addEventListener('click', function(e) { if (e.target === bd) cerrar(); });
+}
+
+/* Comentarios del muro (wall-comment / delete-wall-comment, como el PC). */
+function renderPf2Comentarios() {
+    var box = document.getElementById('pf2m-com');
+    var v2 = pf2v();
+    if (!box || !v2) return;
+    var list = v2.comments || [];
+    box.innerHTML = '<div class="title-bar"><div class="title-bar-text"><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;">' +
+        'Comentarios<span>' + list.length + '</span></div></div><div class="window-body">' +
+        '<div class="pf2m-new"><input type="text" maxlength="500" placeholder="Escribe un comentario…"><button type="button" class="button">Publicar</button></div>' +
+        '<div class="pf2m-com-list"></div></div>';
+    var input = box.querySelector('input'), btn = box.querySelector('.pf2m-new .button');
+    var enviar = function() {
+        var text = input.value.trim();
+        if (!text || btn.disabled) return;
+        btn.disabled = true;
+        fetch(API + '?action=wall-comment', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: pf2ProfileKey(), text: text })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            btn.disabled = false;
+            if (d && d.ok) { v2.comments = d.comments; renderPf2Comentarios(); }
+            else pfAlert((d && d.error) || 'No se pudo publicar');
+        }).catch(function() { btn.disabled = false; pfAlert('Error de conexión'); });
+    };
+    btn.addEventListener('click', enviar);
+    input.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); enviar(); } });
+    var ul = box.querySelector('.pf2m-com-list');
+    if (!list.length) { ul.innerHTML = '<div class="pf2m-vacio">Aún no hay comentarios.</div>'; return; }
+    list.forEach(function(cm) {
+        var d = document.createElement('div');
+        d.className = 'pf2m-com';
+        d.innerHTML = '<span class="pf2m-com-av" data-marco-user="' + esc(cm.authorKey) + '">' +
+                (cm.avatar ? '<img src="' + esc(pf2Ruta(cm.avatar)) + '" alt="">' : '') + '</span>' +
+            '<div class="pf2m-com-main"><span class="pf2m-com-who">' + esc(cm.author) + '</span><span class="pf2m-com-when">' + esc(relTime(cm.ts)) + '</span>' +
+                (cm.text ? '<div class="pf2m-com-txt">' + esc(cm.text) + '</div>' : '') +
+                (cm.imageUrl ? '<div class="pf2m-com-img"><img src="' + esc(cm.imageUrl) + '" alt="" loading="lazy"></div>' : '') +
+            '</div>' + (cm.canDelete ? '<button type="button" class="button pf2m-del" title="Borrar comentario">✕</button>' : '');
+        var abrir = function() { if (cm.authorKey !== USER_KEY) viewOtherUser(cm.authorKey); };
+        d.querySelector('.pf2m-com-who').addEventListener('click', abrir);
+        d.querySelector('.pf2m-com-av').addEventListener('click', abrir);
+        var del = d.querySelector('.pf2m-del');
+        if (del) del.addEventListener('click', function() {
+            pfConfirm('¿Borrar este comentario?', 'Borrar', function() {
+                fetch(API + '?action=delete-wall-comment', {
+                    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: cm.id })
+                }).then(function(r) { return r.json(); }).then(function(r) {
+                    if (r && r.ok) { v2.comments = r.comments; renderPf2Comentarios(); }
+                    else pfAlert((r && r.error) || 'No se pudo borrar');
+                }).catch(function() { pfAlert('Error de conexión'); });
+            });
+        });
+        ul.appendChild(d);
+    });
+}
 
 /* 🔗 Enlace del perfil que se está viendo (el mío si no). */
 document.getElementById('pf-link-btn').addEventListener('click', function(){
@@ -5072,11 +4997,12 @@ function viewOtherUserInPlace(userKey) {
             if (!d || d.error) { pfAlert((d && d.error) || 'No se pudo cargar el perfil'); return; }
             STATE.viewingUser  = d.userKey;
             STATE.viewingLabel = d.label;
-            STATE.profile      = d.profile;
+            STATE.profile      = d.profile || {};
+            /* view-user manda el perfil nuevo aparte (get-profile, dentro). */
+            if (d.v2) STATE.profile.v2 = d.v2;
             STATE.lists        = d.lists;
             updateHeaderForViewing();
             updateFollowBtn(d.amistad || !!d.isFollowing);
-            /* Render: dirige al usuario directo a la sección de posts. */
             renderAbout(STATE.profile);
             ['movies','series','books','games','music'].forEach(function(cat){
                 var arr = (STATE.lists && STATE.lists[cat]) || [];
