@@ -1006,7 +1006,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-tile[data-t]:active { box-shadow: inset 1px 1px var(--bezel-dark-1, #0a0a0a), inset -1px -1px var(--bezel-light-1, #fff); }
         .pf2m-tile-t { font-size: 13px; display: flex; align-items: baseline; gap: 7px; white-space: nowrap; overflow: hidden; }
         .pf2m-tile-t span { color: var(--text-muted, #444); font-size: 17px; }
-        .pf2m-icons { display: flex; gap: 6px; margin-top: 8px; align-items: center; overflow: hidden; }
+        .pf2m-icons { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
         .pf2m-icons svg { width: 30px; height: 36px; flex-shrink: 0; }
         .pf2m-fav { width: 34px; height: 34px; flex-shrink: 0; background: var(--input-bg, #fff); display: flex; align-items: center; justify-content: center; font-size: 11px; }
         .pf2m-fav img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1039,6 +1039,76 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-com-img img { max-width: 100%; max-height: 260px; display: block; }
         .pf2m-del { min-width: 0 !important; width: 26px; min-height: 24px !important; padding: 0 !important; flex-shrink: 0; }
         .pf2m-vacio { font-size: 11px; color: var(--text-muted, #444); padding: 8px 2px; }
+
+        /* ── Expositores (renderPf2Expositores): los del PC en una columna,
+           cada uno en su ventanita como "Comentarios" (boceto aprobado:
+           electron/.e2e/perfil-movil-mock/preview-expositores.png). ── */
+        .pf2m-expo { display: flex; flex-direction: column; gap: 6px; }
+        .pf2m-expo:empty { display: none; }
+        .pf2m-x { margin: 0; }
+        .pf2m-x .title-bar-text { display: flex; align-items: center; gap: 5px; width: 100%; }
+        .pf2m-x .title-bar-text span { margin-left: auto; font-weight: normal; opacity: .85; }
+        .pf2m-x .window-body { margin: 6px; color: var(--text, #000); position: relative; }
+        .pf2m-hund { background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-stars { color: var(--accent, navy); }
+        .pf2m-noimg { display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; font-size: 10px;
+            background: var(--input-bg, #fff); color: var(--input-text, #000); box-sizing: border-box; }
+        /* Pósteres (juegos, películas, series, libros) y discos: 3 por fila. */
+        .pf2m-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .pf2m-row3 img, .pf2m-row3 .pf2m-noimg { width: 100%; display: block; object-fit: cover; }
+        .pf2m-poster img, .pf2m-poster .pf2m-noimg { aspect-ratio: 2/3; cursor: pointer; }
+        .pf2m-album img, .pf2m-album .pf2m-noimg { aspect-ratio: 1; }
+        .pf2m-album span { display: block; font-size: 10px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-album > div, .pf2m-pl-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        .pf2m-album > div.long-pressing, .pf2m-pl-row.long-pressing { opacity: .6; }
+        /* Ficha al tocar (lo que en el PC sale al pasar el ratón). */
+        .pf2m-tip { position: absolute; z-index: 5; left: 4px; right: 4px; font-size: 11px; padding: 6px 8px; line-height: 1.5;
+            background: var(--warning-bg, #fffbe6); color: var(--warning-text, #444); border: 1px solid var(--bezel-dark-2, grey); }
+        .pf2m-tip .pf2m-tr { display: flex; justify-content: space-between; gap: 8px; }
+        .pf2m-tip .pf2m-tr > span { display: inline-flex; align-items: center; gap: 4px; }
+        .pf2m-tip .pf2m-bar { margin: 2px 0 3px; }
+        /* Juego destacado */
+        .pf2m-gf { display: flex; gap: 10px; }
+        .pf2m-gf > img, .pf2m-gf > .pf2m-noimg { width: 120px; aspect-ratio: 2/3; object-fit: cover; display: flex; flex-shrink: 0; }
+        .pf2m-gf-t { flex: 1; min-width: 0; font-size: 11px; }
+        .pf2m-gf-t h3 { margin: 0 0 4px; font-size: 15px; }
+        .pf2m-gf-t .pf2m-bar { height: 8px; margin: 3px 0 6px; }
+        .pf2m-gf-p { display: flex; justify-content: space-between; margin-top: 6px; }
+        .pf2m-gf-achs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .pf2m-gf-achs img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+        /* Playlist destacada */
+        .pf2m-pl { display: flex; gap: 10px; }
+        .pf2m-pl > img, .pf2m-pl > .pf2m-noimg { width: 110px; height: 110px; object-fit: cover; flex-shrink: 0; }
+        .pf2m-pl-t { flex: 1; min-width: 0; font-size: 11px; }
+        .pf2m-pl-t h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+        .pf2m-pl-t small { color: var(--text-muted, #444); }
+        .pf2m-pl-btns { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+        .pf2m-pl-btns .button { min-width: 0; padding: 0 8px; min-height: 28px; }
+        .pf2m-pl-btns svg { fill: var(--btn-text, #000); margin-right: 4px; vertical-align: 0; }
+        .pf2m-pl-tracks { margin-top: 8px; font-size: 11px; }
+        .pf2m-pl-row { display: flex; gap: 6px; padding: 3px 0; }
+        .pf2m-pl-row i { font-style: normal; color: var(--text-muted, #444); width: 12px; text-align: right; flex-shrink: 0; }
+        .pf2m-pl-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-pl-row em { font-style: normal; color: var(--text-muted, #444); }
+        /* Logros de Steam: filas de 7; los raros (< 10 %) con brillo. */
+        .pf2m-ach7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .pf2m-ach7 img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+        .pf2m-ach7 img.raro, .pf2m-gf-achs img.raro { box-shadow: 0 0 0 2px var(--accent, navy), 0 0 6px var(--accent, navy); }
+        .pf2m-ach-stats { display: flex; gap: 26px; margin-top: 8px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--text, #000) 25%, transparent); }
+        .pf2m-ach-stats b { display: block; font-size: 22px; }
+        .pf2m-ach-stats span { font-size: 10px; }
+        /* Reseña destacada */
+        .pf2m-rev { display: flex; gap: 10px; }
+        .pf2m-rev > img { width: 70px; aspect-ratio: 2/3; object-fit: cover; flex-shrink: 0; }
+        .pf2m-rev h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+        .pf2m-rev small { color: var(--text-muted, #444); display: block; }
+        .pf2m-rev p { margin: 4px 0 0; font-size: 11px; line-height: 1.4; white-space: pre-wrap; }
+        /* Capturas: la primera grande y las demás debajo. */
+        .pf2m-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .pf2m-shots img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+        .pf2m-shots img:first-child { grid-column: 1 / -1; }
+        .pf2m-shot-cap { grid-column: 1 / -1; font-size: 10px; color: var(--text-muted, #444); }
+        .pf2m-txt { font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 
         /* ── Amigos (vista "social"; amPintar) ──
            Filas como en el PC: foto con marco y punto de presencia,
@@ -1075,6 +1145,13 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         }
         .pfa-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .pfa-av.has-presence-dot { overflow: visible; }
+        /* El marco (marcos.css) sobresale de la foto lo que digan sus
+           --mk-* (14 % de serie; Paint, polaroid… más): se le deja ese
+           hueco o lo recorta la vista (se cortaba por los lados). Igual en
+           las fotos del perfil nuevo (recuadro Amigos, comentarios). */
+        .pfa-av[data-marco] { margin: calc(var(--mk-t) * 36px) calc(var(--mk-r) * 36px) calc(var(--mk-b) * 36px) calc(var(--mk-l) * 36px); }
+        .pf2m-fav[data-marco] { margin: calc(var(--mk-t) * 34px) calc(var(--mk-r) * 34px) calc(var(--mk-b) * 34px) calc(var(--mk-l) * 34px); position: relative; }
+        .pf2m-com-av[data-marco] { margin: calc(var(--mk-t) * 32px) calc(var(--mk-r) * 32px) calc(var(--mk-b) * 32px) calc(var(--mk-l) * 32px); position: relative; }
         .pfa-txt { flex: 1; min-width: 0; }
         .pfa-nom { font-size: 12px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pfa-est { font-size: 10px; color: var(--text-muted, #444); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
@@ -4540,7 +4617,8 @@ function renderPerfil2() {
         return '<div class="pf2m-relieve pf2m-tile"' + (t ? ' data-t="' + t + '"' : '') + '><div class="pf2m-tile-t">' + tit + ' <span>' + n + '</span></div>' +
             (dentro ? '<div class="pf2m-icons">' + dentro + '</div>' : '') + '</div>';
     };
-    var fotos = fr.slice(0, 4).map(function(f) {
+    /* Tres, como Steam: con marco no caben más en el recuadro. */
+    var fotos = fr.slice(0, 3).map(function(f) {
         return '<span class="pf2m-fav" data-marco-user="' + esc(f.key) + '">' +
             (f.image ? '<img src="' + esc(pf2Ruta(f.image)) + '" alt="">' : esc((f.label || '?').slice(0, 2))) + '</span>';
     }).join('');
@@ -4550,10 +4628,12 @@ function renderPerfil2() {
         tile('Reseñas', c.reviews || 0) + tile('Capturas', c.shots || 0) +
         tile('Horas escuchadas', (c.hours || 0).toLocaleString('es')) +
         tile('En Melon Hub', (c.days || 0) + (c.days === 1 ? ' día' : ' días')) + '</div>';
-    /* Expositores (punto 3): irán aquí, justo encima de los comentarios. */
+    /* Expositores, justo encima de los comentarios. */
+    html += '<div class="pf2m-expo" id="pf2m-expo"></div>';
     html += '<div class="window pf2m-com-win" id="pf2m-com"></div>';
     box.innerHTML = html;
     pf2Estado();
+    renderPf2Expositores();
     renderPf2Comentarios();
     box.querySelectorAll('.pf2m-tile[data-t]').forEach(function(t) {
         t.addEventListener('click', function() {
@@ -4606,6 +4686,289 @@ function pf2AbrirMedallas() {
     bd.querySelector('[data-act="close"]').addEventListener('click', cerrar);
     bd.addEventListener('click', function(e) { if (e.target === bd) cerrar(); });
 }
+
+/* ─── Expositores (los del PC, perfil-v2.js RENDER, en una columna) ───
+   Decidido así (7/11, boceto aprobado en
+   electron/.e2e/perfil-movil-mock/preview-expositores.png): cada uno en su
+   ventanita, uno debajo de otro, encima de los comentarios. Lo que en el
+   PC sale al pasar el ratón (ficha de un juego, de un logro) sale al
+   tocar; lo que sale con clic derecho ("▶ Reproducir" en discos y en las
+   canciones de la playlist), al mantener pulsado. A los demás no se les
+   enseñan los vacíos; los de pago sin comprar no salen (se ven en
+   Personalizar). */
+var PF2_TYPES = {
+    media:  { label: 'Media favorita',   icon: 'juegosIcon' },
+    shots:  { label: 'Capturas',         icon: 'galeriaIcon' },
+    review: { label: 'Reseña destacada', icon: 'bestOfTheYearIcon' },
+    steam_rare: { label: 'Logros raros de Steam', icon: 'steamIcon' },
+    steam_ach:  { label: 'Logros de Steam',       icon: 'steamIcon' },
+    game_feat:  { label: 'Juego destacado',       icon: 'juegosIcon' },
+    playlist:   { label: 'Playlist destacada',    icon: 'songIcon' },
+    text:       { label: 'Texto libre',           icon: 'newsIcon' }
+};
+var PF2_MEDIA = {
+    games:  { label: 'Juegos favoritos',    icon: 'juegosIcon' },
+    movies: { label: 'Películas favoritas', icon: 'pelisIcon' },
+    series: { label: 'Series favoritas',    icon: 'melonArchiveIcon' },
+    books:  { label: 'Libros favoritos',    icon: 'booksIcon' },
+    music:  { label: 'Música favorita',     icon: 'musicaIcon' }
+};
+var PF2_CAT_LABEL = { movies: 'Película', series: 'Serie', books: 'Libro', games: 'Juego', music: 'Música' };
+function pf2Ic(n, size) {
+    size = size || 14;
+    return '<img src="../../assets/img/appIcons/' + n + '.png" alt="" style="width:' + size + 'px;height:' + size + 'px;object-fit:contain;image-rendering:pixelated;">';
+}
+function pf2Stars(n) {
+    n = Math.max(0, Math.min(5, Number(n) || 0));
+    var full = Math.floor(n);
+    return '★'.repeat(full) + (n - full >= 0.5 ? '½' : '');
+}
+function pf2Vacio(sc) {
+    if (sc.locked) return true;
+    var d = sc.data;
+    if (!d) return true;
+    if (Array.isArray(d)) return !d.length;
+    if (sc.type.indexOf('steam_') === 0) return !(d.items || []).length;
+    if (sc.type === 'playlist') return !d.id;
+    if (sc.type === 'text') return !d.text;
+    return !d.title;
+}
+function pf2TextoVacio(type) {
+    if (type.indexOf('steam_') === 0) {
+        var st = (pf2v() || {}).steam || {};
+        if (!st.configured) return 'Steam no está configurado en la web.';
+        if (!st.linked) return 'Conecta tu Steam en Personalizar.';
+        if (st['private']) return 'Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.';
+        if (type === 'steam_rare') return 'Aún no hay logros que enseñar.';
+    }
+    return 'Vacío: elige qué enseñar en Personalizar.';
+}
+function pf2Img(u, cls) {
+    return u ? '<img' + (cls ? ' class="' + cls + '"' : '') + ' src="' + esc(pf2Ruta(u)) + '" alt="" loading="lazy">' : '';
+}
+
+function renderPf2Expositores() {
+    var box = document.getElementById('pf2m-expo');
+    var v2 = pf2v();
+    if (!box || !v2) return;
+    var own = !STATE.viewingUser;
+    box.innerHTML = '';
+    (v2.showcases || []).forEach(function(sc) {
+        var vacio = pf2Vacio(sc);
+        if (sc.locked || (vacio && !own)) return;
+        var t = sc.type === 'media' ? (PF2_MEDIA[(sc.config || {}).cat] || PF2_MEDIA.games) : PF2_TYPES[sc.type];
+        if (!t) return;
+        var sub = '';
+        if (sc.type === 'shots' && v2.stats) sub = (sc.data || []).length + ' de ' + ((v2.stats.counts || {}).shots || 0);
+        var w = document.createElement('div');
+        w.className = 'window pf2m-x';
+        w.innerHTML = '<div class="title-bar"><div class="title-bar-text">' + pf2Ic(t.icon) + esc(t.label) + (sub ? '<span>' + sub + '</span>' : '') +
+            '</div></div><div class="window-body"></div>';
+        var body = w.querySelector('.window-body');
+        if (vacio) body.innerHTML = '<div class="pf2m-vacio">' + esc(pf2TextoVacio(sc.type)) + '</div>';
+        else PF2_RENDER[sc.type](body, sc.data, sc);
+        box.appendChild(w);
+    });
+}
+
+/* Ficha al tocar, dentro del expositor (una abierta a la vez; tocar
+   otra vez o en cualquier otro sitio la cierra). */
+function pf2Ficha(body, html, y) {
+    var vieja = document.querySelector('.pf2m-tip');
+    var misma = vieja && vieja.parentNode === body && vieja.dataset.y === String(y);
+    if (vieja) vieja.remove();
+    if (misma) return;
+    var t = document.createElement('div');
+    t.className = 'pf2m-tip';
+    t.dataset.y = String(y);
+    t.style.top = y + 'px';
+    t.innerHTML = html;
+    body.appendChild(t);
+}
+document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-ficha]') || e.target.closest('.pf2m-tip')) return;
+    var t = document.querySelector('.pf2m-tip');
+    if (t) t.remove();
+});
+function pf2Ach(a) {
+    return '<b>' + esc(a.name) + '</b>' + (a.desc ? '<br>' + esc(a.desc) : '') + (a.game ? '<br><i>' + esc(a.game) + '</i>' : '') +
+        (a.percent != null ? '<br>Lo tiene el ' + String(a.percent).replace('.', ',') + ' % de los jugadores' : '');
+}
+/* Toca un elemento con data-ficha: la ficha sale debajo de él. */
+function pf2Fichas(body, fichas) {
+    body.querySelectorAll('[data-ficha]').forEach(function(el) {
+        el.addEventListener('click', function() {
+            var r = el.getBoundingClientRect(), rb = body.getBoundingClientRect();
+            pf2Ficha(body, fichas[+el.dataset.ficha], Math.round(r.bottom - rb.top + 2));
+        });
+    });
+}
+
+/* Mantener pulsado (500 ms, como en Amigos y Música): menú con
+   "▶ Reproducir" (en el PC, clic derecho). */
+function pf2Mantener(el, fn) {
+    var t = null, x = 0, y = 0;
+    var parar = function() { if (t) { clearTimeout(t); t = null; } el.classList.remove('long-pressing'); };
+    var empezar = function(px, py) {
+        parar(); x = px; y = py;
+        el.classList.add('long-pressing');
+        t = setTimeout(function() { t = null; el.classList.remove('long-pressing'); try { navigator.vibrate && navigator.vibrate(40); } catch (_) {} fn(); }, 500);
+    };
+    el.addEventListener('touchstart', function(e) { if (e.touches.length === 1) empezar(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    el.addEventListener('touchmove', function(e) { if (t && (Math.abs(e.touches[0].clientX - x) > 12 || Math.abs(e.touches[0].clientY - y) > 12)) parar(); }, { passive: true });
+    el.addEventListener('touchend', parar);
+    el.addEventListener('touchcancel', parar);
+    el.addEventListener('mousedown', function(e) { if (e.button === 0) empezar(e.clientX, e.clientY); });
+    el.addEventListener('mouseup', parar);
+    el.addEventListener('mouseleave', parar);
+    el.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+}
+function pf2Menu(titulo, items) {
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal"><div class="title-bar"><div class="title-bar-text">' + esc(titulo) + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div><div class="window-body">' +
+        items.map(function(it, i) { return '<div class="pfa-menu-item" data-i="' + i + '">' + esc(it.label) + '</div>'; }).join('') +
+        '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div></div></div>';
+    document.body.appendChild(bd);
+    var cerrar = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', cerrar);
+    bd.querySelector('[data-act="close"]').addEventListener('click', cerrar);
+    bd.addEventListener('click', function(e) { if (e.target === bd) cerrar(); });
+    bd.querySelectorAll('[data-i]').forEach(function(el) {
+        el.addEventListener('click', function() { cerrar(); items[+el.dataset.i].fn(); });
+    });
+}
+/* Playlist de cualquiera (shared-playlist, como melonPlayPlaylistById del
+   PC) en el reproductor de la carcasa (MuShell.loadQueue). */
+function pf2TocarPlaylist(id, desde) {
+    var SHELL = null;
+    try { SHELL = window.parent.MuShell; } catch (_) {}
+    fetch('../../assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(pl) {
+            if (!pl || !pl.ok) { pfAlert((pl && pl.error) || 'No se pudo abrir la playlist.'); return; }
+            var tracks = (pl.tracks || []).filter(function(t) { return t && t.videoId; });
+            if (!tracks.length || !SHELL || typeof SHELL.loadQueue !== 'function') return;
+            SHELL.loadQueue(tracks, Math.max(0, Math.min(desde | 0, tracks.length - 1)), pl.name || 'Playlist');
+        })
+        .catch(function() { pfAlert('Error de conexión'); });
+}
+
+var PF2_RENDER = {
+    media: function(body, data, sc) {
+        if ((sc.config || {}).cat === 'music') PF2_RENDER.music(body, data);
+        else PF2_RENDER.posters(body, data);
+    },
+    /* Juegos, películas, series, libros: tocar = su ficha (Steam y reseña). */
+    posters: function(body, data) {
+        var fichas = data.map(function(it) {
+            var h = '<b>' + esc(it.title) + '</b>';
+            var st = it.steam;
+            if (st && !st.inSteam) h += '<div class="pf2m-tr"><span>' + pf2Ic('steamIcon', 12) + 'No está en su Steam</span></div>';
+            else if (st) {
+                h += '<div class="pf2m-tr"><span>' + pf2Ic('steamIcon', 12) + 'Horas en Steam</span><b>' + st.hours.toLocaleString('es') + ' h</b></div>';
+                if (st.total) h += '<div class="pf2m-tr"><span>' + pf2Ic('bestOfTheYearIcon', 12) + 'Logros</span><b>' + st.achieved + ' / ' + st.total + '</b></div>' +
+                    '<div class="pf2m-hund pf2m-bar"><i style="width:' + Math.round(100 * st.achieved / st.total) + '%"></i></div>';
+            }
+            return h + '<div class="pf2m-tr"><span>Reseña</span>' + (it.stars != null ? '<span class="pf2m-stars">' + pf2Stars(it.stars) + '</span>' : '<b>Sin reseña</b>') + '</div>';
+        });
+        body.innerHTML = '<div class="pf2m-row3 pf2m-poster">' + data.map(function(it, i) {
+            return it.image ? '<img data-ficha="' + i + '" src="' + esc(pf2Ruta(it.image)) + '" alt="" loading="lazy">'
+                            : '<div class="pf2m-noimg" data-ficha="' + i + '">' + esc(it.title) + '</div>';
+        }).join('') + '</div>';
+        pf2Fichas(body, fichas);
+    },
+    /* Discos: portada del álbum y nombre; mantener pulsado = Reproducir. */
+    music: function(body, data) {
+        body.innerHTML = '<div class="pf2m-row3 pf2m-album">' + data.map(function(it) {
+            return '<div>' + (it.cover ? '<img src="' + esc(pf2Ruta(it.cover)) + '" alt="" loading="lazy">' : '<div class="pf2m-noimg">' + esc(it.title) + '</div>') +
+                '<span>' + esc(it.title) + '</span></div>';
+        }).join('') + '</div>';
+        body.querySelectorAll('.pf2m-album > div').forEach(function(el, i) {
+            var it = data[i];
+            pf2Mantener(el, function() {
+                pf2Menu(it.title + (it.artist ? ' — ' + it.artist : ''), [{ label: '▶ Reproducir', fn: function() {
+                    playMusicItem({ type: it.type, title: it.title, artist: it.artist, ytId: it.ytId, ytPlaylistId: it.ytPlaylistId, spotifyAlbumId: it.spotifyAlbumId });
+                } }]);
+            });
+        });
+    },
+    shots: function(body, data) {
+        var big = data[0];
+        body.innerHTML = '<div class="pf2m-shots">' + data.map(function(sh) { return pf2Img(sh.url); }).join('') +
+            ((big.caption || big.game) ? '<div class="pf2m-shot-cap">' + esc(big.caption || '') + (big.caption && big.game ? ' · ' : '') + (big.game ? '<i>' + esc(big.game) + '</i>' : '') + '</div>' : '') +
+            '</div>';
+    },
+    review: function(body, r) {
+        body.innerHTML = '<div class="pf2m-rev">' + pf2Img(r.image) + '<div><h3>' + esc(r.title) + (r.artist ? ' — ' + esc(r.artist) : '') +
+            ' <span class="pf2m-stars">' + pf2Stars(r.stars) + '</span></h3><small>' + esc(PF2_CAT_LABEL[r.category] || '') + '</small>' +
+            (r.comment ? '<p>' + esc(r.comment) + '</p>' : '') + '</div></div>';
+    },
+    /* Juego destacado: con Steam, horas, logros X / Y y los elegidos
+       (tocar = su ficha); sin Steam, la reseña. */
+    game_feat: function(body, g) {
+        var st = g.steam, der = '<h3>' + esc(g.title) + '</h3>', fichas = [];
+        if (st && st.inSteam) {
+            der += pf2Ic('steamIcon', 12) + ' <b>' + st.hours.toLocaleString('es') + ' h</b> jugadas';
+            if (st.total) {
+                var pct = Math.round(100 * st.achieved / st.total);
+                der += '<div class="pf2m-gf-p"><span>Logros <b>' + st.achieved + ' / ' + st.total + '</b></span><span>' + pct + ' %</span></div>' +
+                    '<div class="pf2m-hund pf2m-bar"><i style="width:' + pct + '%"></i></div>';
+            }
+            if ((st.items || []).length) der += '<div class="pf2m-gf-achs">' + st.items.map(function(a, i) {
+                fichas.push(pf2Ach(a));
+                return '<img data-ficha="' + i + '" class="' + (a.percent != null && a.percent < 10 ? 'raro' : '') + '" src="' + esc(a.icon) + '" alt="">';
+            }).join('') + '</div>';
+        } else {
+            if (st && !st.inSteam) der += '<div style="opacity:.8">' + pf2Ic('steamIcon', 12) + ' No está en su Steam</div>';
+            der += '<div style="margin-top:4px">Reseña ' + (g.stars != null ? '<span class="pf2m-stars">' + pf2Stars(g.stars) + '</span>' : '<b>Sin reseña</b>') + '</div>' +
+                (g.comment ? '<div style="margin-top:4px;line-height:1.4;white-space:pre-wrap">' + esc(g.comment) + '</div>' : '');
+        }
+        body.innerHTML = '<div class="pf2m-gf">' + (g.image ? pf2Img(g.image) : '<div class="pf2m-noimg">' + esc(g.title) + '</div>') +
+            '<div class="pf2m-gf-t">' + der + '</div></div>';
+        pf2Fichas(body, fichas);
+    },
+    playlist: function(body, pl) {
+        var fmt = function(sec) { sec = sec | 0; return sec ? Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2) : ''; };
+        body.innerHTML = '<div class="pf2m-pl">' + (pl.image ? pf2Img(pl.image) : '<div class="pf2m-noimg"></div>') +
+            '<div class="pf2m-pl-t"><h3>' + esc(pl.name) + '</h3><small>' + pl.count + (pl.count === 1 ? ' canción' : ' canciones') +
+                (pl.owner ? ' · playlist de ' + esc(pl.owner) : '') + '</small>' +
+            '<div class="pf2m-pl-btns">' +
+                (pl.count ? '<button type="button" class="button" data-a="play"><svg viewBox="0 0 8 8" width="8" height="8"><path d="M1 0l6 4-6 4z"/></svg>Reproducir</button>' : '') +
+                (window.melonCopyLink ? '<button type="button" class="button" data-a="link">Copiar enlace</button>' : '') +
+            '</div></div></div>' +
+            '<div class="pf2m-pl-tracks">' + (pl.tracks || []).map(function(t, i) {
+                return '<div class="pf2m-pl-row"><i>' + (i + 1) + '</i><span><b>' + esc(t.title) + '</b>' + (t.artist ? ' — ' + esc(t.artist) : '') +
+                    '</span><em>' + fmt(t.duration) + '</em></div>';
+            }).join('') + '</div>';
+        var pb = body.querySelector('[data-a="play"]');
+        if (pb) pb.addEventListener('click', function() { pf2TocarPlaylist(pl.id, 0); });
+        var lb = body.querySelector('[data-a="link"]');
+        if (lb) lb.addEventListener('click', function() { window.melonCopyLink('playlist', String(pl.id)); });
+        body.querySelectorAll('.pf2m-pl-row').forEach(function(row, i) {
+            pf2Mantener(row, function() {
+                var t = pl.tracks[i];
+                pf2Menu(t.title + (t.artist ? ' — ' + t.artist : ''), [{ label: '▶ Reproducir', fn: function() { pf2TocarPlaylist(pl.id, i); } }]);
+            });
+        });
+    },
+    steam_rare: function(body, d) { PF2_RENDER.logros(body, d); },
+    steam_ach:  function(body, d) { PF2_RENDER.logros(body, d); },
+    logros: function(body, d) {
+        var items = d.items || [], tot = d.totals || {};
+        body.innerHTML = '<div class="pf2m-ach7">' + items.map(function(a, i) {
+            return '<img data-ficha="' + i + '" class="' + (a.percent != null && a.percent < 10 ? 'raro' : '') + '" src="' + esc(a.icon) + '" alt="">';
+        }).join('') + '</div>' +
+            '<div class="pf2m-ach-stats"><div><b>' + (tot.games || 0).toLocaleString('es') + '</b><span>juegos</span></div>' +
+            '<div><b>' + (tot.hours || 0).toLocaleString('es') + '</b><span>horas jugadas</span></div></div>';
+        pf2Fichas(body, items.map(pf2Ach));
+    },
+    text: function(body, d) {
+        body.innerHTML = '<div class="pf2m-txt"></div>';
+        body.firstChild.textContent = d.text;
+    }
+};
 
 /* Comentarios del muro (wall-comment / delete-wall-comment, como el PC). */
 function renderPf2Comentarios() {
