@@ -962,6 +962,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             margin-bottom: 8px;
         }
         .pf-profile-actions .button { min-height: 28px; font-size: 11px; flex: 1; }
+        /* `.button` pisa el atributo hidden (Personalizar cambia los botones). */
+        .pf-profile-actions [hidden] { display: none !important; }
         /* ── Perfil nuevo (estilo Steam en el móvil; renderPerfil2) ──
            Como antes la lista de posts: la cabecera y los botones se
            quedan arriba y esto hace scroll por dentro (`flex: 1` +
@@ -1109,6 +1111,70 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-shots img:first-child { grid-column: 1 / -1; }
         .pf2m-shot-cap { grid-column: 1 / -1; font-size: 10px; color: var(--text-muted, #444); }
         .pf2m-txt { font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+        /* ── Personalizar (pf2Editar / renderPf2Edicion; boceto aprobado:
+           preview-personalizar.png). Se ordena manteniendo pulsada la barra. ── */
+        .pf2m-ed { outline: 2px dashed var(--accent, navy); outline-offset: 2px; }
+        .pf2m-ed { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        .pf2m-ed-bar { cursor: grab; }
+        .pf2m-ed.long-pressing { opacity: .7; }
+        .pf2m-ed-asa { font-size: 14px; line-height: 1; margin-right: 1px; opacity: .9; }
+        .pf2m-ed .title-bar-text { gap: 4px; }
+        .pf2m-ed-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* 98.css lo pinta blanco y themes.css repite la flecha: con el tema. */
+        .pf2m-ed-sel { flex: 1; min-width: 0; height: 24px; font-size: 11px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important;
+            background-repeat: no-repeat !important; background-position: top 2px right 2px !important; }
+        .pf2m-ed-sel option { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        body.pf-iface-kawaii .pf2m-ed-sel { font-size: 13px !important; height: 28px; }
+        .pf2m-ed-btn { min-width: 0 !important; min-height: 24px !important; padding: 0 7px !important; font-size: 11px; flex-shrink: 0; }
+        .pf2m-arrastra { opacity: .85; box-shadow: 0 8px 22px rgba(0,0,0,.45); position: relative; z-index: 5; }
+        .pf2m-slot { border: 1px dashed var(--bezel-dark-1, #808080); color: var(--text, #000); font-size: 12px; text-align: center; padding: 16px 8px; }
+        .pf2m-slot.add { cursor: pointer; font-weight: bold; }
+        .pf2m-slot-info { font-size: 11px; color: var(--text-muted, #444); text-align: center; padding: 4px; }
+        .pf2m-tipo { padding: 11px 8px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-tipo:active { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pf2m-tipo small { margin-left: auto; color: var(--text-muted, #444); font-size: 10px; }
+        /* Selectores */
+        .pf2m-picker .window-body { overflow-y: auto; min-height: 0; }
+        .pf2m-buscar { display: flex; gap: 6px; margin-bottom: 6px; }
+        .pf2m-buscar input { flex: 1; min-width: 0; min-height: 30px; box-sizing: border-box;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-buscar .button { min-width: 0; padding: 0 8px; }
+        .pf2m-pk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 4px; max-height: 46vh; overflow-y: auto; }
+        .pf2m-pk-grid.pf2m-pk-wide { grid-template-columns: repeat(2, 1fr); }
+        .pf2m-pk-corta { max-height: 26vh; }
+        .pf2m-pk { position: relative; font-size: 10px; text-align: center; cursor: pointer; color: var(--input-text, #000); min-width: 0; }
+        .pf2m-pk img, .pf2m-pk-ph { width: 100%; display: block; object-fit: cover; background: color-mix(in srgb, var(--text, #000) 8%, transparent); }
+        .pf2m-pk.portrait img, .pf2m-pk.portrait .pf2m-pk-ph { aspect-ratio: 2/3; }
+        .pf2m-pk.square img, .pf2m-pk.square .pf2m-pk-ph { aspect-ratio: 1; }
+        .pf2m-pk.wide img, .pf2m-pk.wide .pf2m-pk-ph { aspect-ratio: 16/9; }
+        .pf2m-pk.on img, .pf2m-pk.on .pf2m-pk-ph { outline: 3px solid var(--accent, navy); outline-offset: -3px; }
+        .pf2m-pk-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        .pf2m-pk-n { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent, navy);
+            color: var(--accent-text, #fff); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
+        .pf2m-pk-list { max-height: 40vh; overflow-y: auto; margin-bottom: 4px; }
+        .pf2m-pk-row { display: flex; align-items: center; gap: 8px; padding: 6px; font-size: 11px; cursor: pointer; color: var(--input-text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--input-text, #000) 12%, transparent); }
+        .pf2m-pk-row img, .pf2m-pk-ri { width: 32px; height: 32px; object-fit: cover; flex-shrink: 0; }
+        .pf2m-pk-rt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .pf2m-pk-row.on { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pf2m-pk-row.on small, .pf2m-pk-row.on .pf2m-stars { color: var(--accent-text, #fff); }
+        .pf2m-pk-h { font-size: 11px; margin: 6px 0 4px; color: var(--text, #000); }
+        .pf2m-pk-h .button { min-width: 0; padding: 0 8px; margin-top: 4px; }
+        .pf2m-ach-sel { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; min-height: 40px; margin-bottom: 6px; }
+        .pf2m-ach-it { position: relative; width: 40px; height: 40px; cursor: pointer; }
+        .pf2m-ach-it img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pf2m-ach-it i { position: absolute; right: -3px; top: -3px; font-style: normal; font-size: 9px; font-weight: bold; min-width: 14px; height: 14px; border-radius: 7px;
+            background: var(--accent, navy); color: var(--accent-text, #fff); display: flex; align-items: center; justify-content: center; }
+        .pf2m-ta { width: 100%; box-sizing: border-box; resize: vertical; background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; font-size: 12px; }
+        .pf2m-shot-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+        .pf2m-shot-row { display: flex; gap: 4px; align-items: center; font-size: 11px; }
+        .pf2m-shot-row input { flex: 1; min-width: 0; background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-pie { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .pf2m-pie span { flex: 1; min-width: 120px; font-size: 11px; color: var(--text-muted, #444); }
+        .pf2m-pie .button { min-width: 0; padding: 0 10px; min-height: 28px; }
 
         /* ── Amigos (vista "social"; amPintar) ──
            Filas como en el PC: foto con marco y punto de presencia,
@@ -1621,7 +1687,12 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <!-- VISTA: Perfil (edit + posts) -->
         <div class="pf-view" id="pf-view-profile">
             <div class="pf-profile-actions" id="pf-profile-actions">
-                <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Editar perfil</button>
+                <!-- Personalizar (antes "Editar perfil"): modo de los
+                     expositores; los datos, con "Datos" de dentro. -->
+                <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Personalizar</button>
+                <button class="button" id="pf2-guardar" type="button" hidden>✓ Guardar</button>
+                <button class="button" id="pf2-datos" type="button" hidden>Datos</button>
+                <button class="button" id="pf2-cancelar" type="button" hidden>Cancelar</button>
                 <button class="button" id="pf-follow-btn" type="button" hidden>+ Agregar amigo</button>
                 <button class="button" id="pf-chat-btn" type="button" hidden><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Chat</button>
                 <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
@@ -1794,6 +1865,8 @@ var STATE = {
     unreadChats: {}        /* { userKey: unreadCount } — actualizado por polling */
 };
 var USER_LABEL = <?= json_encode($userLabel) ?>;
+/* Google Drive (Capturas de Personalizar): el mismo cliente que la Galería. */
+var PF2_GOOGLE_CLIENT_ID = <?= json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : '') ?>;
 var PAREJA_ID  = <?= (int)$parejaId ?>;
 var USER_KEY   = <?= json_encode($userKey) ?>;
 /* Si llegamos vía ?as=USERKEY, el server ya emitió HTML con la
@@ -3713,6 +3786,12 @@ function openAddItemDialog(cat) {
             document.getElementById('cnt-' + cat).textContent = STATE.lists[cat].length;
             renderActiveList();
             close();
+            /* Creado desde un selector de Personalizar ("＋ Crear juego"):
+               queda elegido allí. */
+            if (typeof window.__pf2mAfterAdd === 'function') {
+                var creado = STATE.lists[cat].find(function(x){ return x && x.title && x.title.toLowerCase() === lower; }) || item;
+                window.__pf2mAfterAdd(cat, creado);
+            }
         })
         .catch(function(){ errEl.textContent = 'Error de conexión.'; });
     });
@@ -3983,7 +4062,10 @@ document.addEventListener('click', function(e){
 });
 
 /* Botón "Editar perfil" — vive ahora en la vista Perfil. */
-document.getElementById('pf-edit-profile-btn').addEventListener('click', openEditProfileDialog);
+document.getElementById('pf-edit-profile-btn').addEventListener('click', function(){ pf2Editar(true); });
+document.getElementById('pf2-datos').addEventListener('click', openEditProfileDialog);
+document.getElementById('pf2-guardar').addEventListener('click', pf2Guardar);
+document.getElementById('pf2-cancelar').addEventListener('click', function(){ pf2Editar(false); });
 
 /* ─── Sidebar drawer ──────────────────────────────────────────────
    Botón ☰ abre el panel lateral. El backdrop y la × lo cierran.
@@ -4752,6 +4834,7 @@ function renderPf2Expositores() {
     var v2 = pf2v();
     if (!box || !v2) return;
     var own = !STATE.viewingUser;
+    if (own && PF2E.editing) { renderPf2Edicion(box); return; }
     box.innerHTML = '';
     (v2.showcases || []).forEach(function(sc) {
         var vacio = pf2Vacio(sc);
@@ -4967,6 +5050,818 @@ var PF2_RENDER = {
     text: function(body, d) {
         body.innerHTML = '<div class="pf2m-txt"></div>';
         body.firstChild.textContent = d.text;
+    }
+};
+
+/* ─── Personalizar (expositores) ──────────────────────────────────────
+   Decidido así (7/11, boceto aprobado en
+   electron/.e2e/perfil-movil-mock/preview-personalizar.png): el botón
+   "Editar perfil" pasa a ser "Personalizar" y entra en este modo; los
+   datos (bio, cumpleaños…) se editan con el botón "Datos" de dentro.
+   Arriba ✓ Guardar · Datos · Cancelar. Cada expositor con su barra:
+   título (Media favorita: desplegable con el tipo), Editar y ✕; se
+   ORDENA manteniendo pulsada la barra y arrastrando (como el PC, con el
+   dedo). "＋ Añadir expositor" en los huecos libres y "Usas N de M
+   huecos". Los selectores (Editar) son los del PC (perfil-v2.js PICK) en
+   ventanitas del móvil. Nada cambia hasta Guardar (save-showcases, la
+   misma acción que el PC). */
+var PF2_PAID = ['review', 'game_feat', 'playlist'];
+var PF2_MEDIA_CATS = ['games', 'movies', 'series', 'books', 'music'];
+var PF2_MAX = { shots: 3, game_feat: 8, text: 1000 };
+var PF2_FAV_NOUN = { games: ['juego', 'juegos', false], movies: ['película', 'películas', true],
+                     series: ['serie', 'series', true], books: ['libro', 'libros', false] };
+var PF2E = { editing: false, draft: [], catalog: {}, myShots: null };
+
+function pf2Copia(o) { return JSON.parse(JSON.stringify(o)); }
+function pf2Api(action, body) {
+    return fetch(API + '?action=' + action, body === undefined ? { credentials: 'same-origin' } : {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); });
+}
+function pf2Perks() { return ((pf2v() || {}).perks) || {}; }
+function pf2MediaMax(cat) { return (pf2Perks().media || {})[cat] || 3; }
+function pf2AchMax(type) { return 7 * ((pf2Perks().steamRows || {})[type] || 1); }
+function pf2Libre(type) { return PF2_PAID.indexOf(type) < 0 || !!(pf2Perks().unlocked || {})[type]; }
+function pf2MediaUsadas(menos) {
+    return PF2E.draft.filter(function(s) { return s.type === 'media' && s !== menos; }).map(function(s) { return s.config.cat; });
+}
+function pf2Vacia(t, cat) {
+    if (t === 'review') return { config: { category: '', title: '' }, data: {} };
+    if (t === 'media') return { config: cat === 'music' ? { cat: cat, ids: [] } : { cat: cat, titles: [] }, data: [] };
+    if (t === 'steam_rare') return { config: {}, data: {} };
+    if (t === 'steam_ach') return { config: { items: [] }, data: {} };
+    if (t === 'game_feat') return { config: { title: '', ach: [] }, data: {} };
+    if (t === 'playlist') return { config: { id: 0 }, data: {} };
+    if (t === 'text') return { config: { text: '' }, data: {} };
+    return { config: { ids: [] }, data: [] };
+}
+function pf2OwnList(cat) { return (STATE.lists && STATE.lists[cat]) || []; }
+function pf2OwnReview(cat, title) {
+    var low = String(title).toLowerCase();
+    var it = pf2OwnList(cat).find(function(x) { return String(x.title).toLowerCase() === low; });
+    return it && it.review ? it.review : null;
+}
+function pf2CatImg(cat, t) { return PF2E.catalog[cat + '|' + String(t).toLowerCase()]; }
+function pf2SetCatImg(cat, t, img) { if (img) PF2E.catalog[cat + '|' + String(t).toLowerCase()] = img; }
+
+/* Entrar / salir del modo. */
+function pf2Editar(on) {
+    var v2 = pf2v();
+    if (on && !v2) return;
+    PF2E.editing = !!on;
+    if (on) PF2E.draft = pf2Copia(v2.showcases || []);
+    ['pf-edit-profile-btn', 'pf-link-btn'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !!on; });
+    ['pf2-guardar', 'pf2-datos', 'pf2-cancelar'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !on; });
+    renderPf2Expositores();
+    if (on) {
+        var box = document.getElementById('pf2m'), ex = document.getElementById('pf2m-expo');
+        if (box && ex) box.scrollTop = Math.max(0, ex.offsetTop - box.offsetTop - 6);
+    }
+}
+function pf2Guardar() {
+    var b = document.getElementById('pf2-guardar');
+    b.disabled = true;
+    pf2Api('save-showcases', { showcases: PF2E.draft.map(function(s) { return { type: s.type, config: s.config }; }) }).then(function(d) {
+        b.disabled = false;
+        if (!d || !d.ok) { pfAlert((d && d.error) || 'No se pudieron guardar los expositores'); return; }
+        var v2 = pf2v();
+        v2.showcases = d.showcases; v2.slots = d.slots; if (d.perks) v2.perks = d.perks;
+        pf2Editar(false);
+    }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+}
+
+/* Los expositores en modo Personalizar (lo llama renderPf2Expositores). */
+function renderPf2Edicion(box) {
+    var v2 = pf2v();
+    box.innerHTML = '';
+    PF2E.draft.forEach(function(sc, i) {
+        var t = sc.type === 'media' ? (PF2_MEDIA[sc.config.cat] || PF2_MEDIA.games) : PF2_TYPES[sc.type];
+        if (!t) return;
+        var titulo = '<span class="pf2m-ed-t">' + esc(t.label) + '</span>';
+        if (sc.type === 'media') {
+            var usadas = pf2MediaUsadas(sc);
+            titulo = '<select class="pf2m-ed-sel" aria-label="Tipo">' + PF2_MEDIA_CATS.filter(function(c) {
+                return c === sc.config.cat || usadas.indexOf(c) < 0;
+            }).map(function(c) {
+                return '<option value="' + c + '"' + (c === sc.config.cat ? ' selected' : '') + '>' + esc(PF2_MEDIA[c].label) + '</option>';
+            }).join('') + '</select>';
+        }
+        var w = document.createElement('div');
+        w.className = 'window pf2m-x pf2m-ed';
+        w.dataset.idx = i;
+        w.innerHTML = '<div class="title-bar pf2m-ed-bar"><div class="title-bar-text"><span class="pf2m-ed-asa" aria-hidden="true">⠿</span>' + pf2Ic(t.icon) + titulo +
+            (sc.type === 'steam_rare' || sc.locked ? '' : '<button type="button" class="button pf2m-ed-btn" data-a="edit">Editar</button>') +
+            '<button type="button" class="button pf2m-ed-btn" data-a="del" aria-label="Quitar expositor">✕</button></div></div><div class="window-body"></div>';
+        var body = w.querySelector('.window-body');
+        if (sc.locked) body.innerHTML = '<div class="pf2m-vacio pf2m-ed-lock">Bloqueado: cómpralo en la tienda (pestaña Perfil) para que salga en tu perfil.</div>';
+        else if (pf2Vacio(sc)) {
+            /* Lo de Steam explica qué falta; lo demás, que se elige con Editar. */
+            var tv = pf2TextoVacio(sc.type);
+            body.innerHTML = '<div class="pf2m-vacio">' + esc(/^Vacío/.test(tv) ? 'Pulsa "Editar" para elegir qué enseñar.' : tv) + '</div>';
+        }
+        else PF2_RENDER[sc.type](body, sc.data, sc);
+        var sel = w.querySelector('.pf2m-ed-sel');
+        if (sel) sel.addEventListener('change', function() {
+            var b = pf2Vacia('media', sel.value);
+            sc.config = b.config; sc.data = b.data;
+            renderPf2Expositores();
+        });
+        var eb = w.querySelector('[data-a="edit"]');
+        if (eb) eb.addEventListener('click', function() { pf2AbrirSelector(i); });
+        w.querySelector('[data-a="del"]').addEventListener('click', function() {
+            PF2E.draft.splice(i, 1);
+            renderPf2Expositores();
+        });
+        pf2Arrastrable(w, box);
+        box.appendChild(w);
+    });
+    var usados = PF2E.draft.length, huecos = v2.slots || 2, max = v2.maxSlots || 5;
+    for (var k = usados; k < huecos; k++) {
+        var add = document.createElement('div');
+        add.className = 'pf2m-slot add';
+        add.textContent = '＋ Añadir expositor';
+        add.addEventListener('click', pf2AbrirTipos);
+        box.appendChild(add);
+    }
+    var info = document.createElement('div');
+    info.className = 'pf2m-slot-info';
+    info.innerHTML = 'Usas <b>' + usados + ' de ' + huecos + '</b> huecos' +
+        (huecos < max ? ' · consigue más en la tienda de puntos (hasta ' + max + ')' : ' (máximo)');
+    box.appendChild(info);
+}
+
+/* Ordenar: mantener pulsado el expositor (500 ms; en cualquier sitio
+   menos los botones y el desplegable, que en Media favorita ocupa casi
+   toda la barra) y arrastrar. Mientras se
+   arrastra no hay scroll de la página (se mueve sola cerca de los
+   bordes) y el expositor se coloca delante del primero cuyo centro queda
+   por debajo del dedo. Al soltar, el borrador toma el orden nuevo. */
+function pf2Arrastrable(w, box) {
+    var bar = w;
+    var t = null, x0 = 0, y0 = 0, arr = false, scrollT = null, ultY = 0;
+    var scroller = document.getElementById('pf2m');
+    var parar = function() { if (t) { clearTimeout(t); t = null; } bar.classList.remove('long-pressing'); };
+    var empezar = function(x, y, e) {
+        if (e.target.closest('button, select')) return;
+        parar(); x0 = x; y0 = y;
+        bar.classList.add('long-pressing');
+        t = setTimeout(function() {
+            t = null; arr = true; ultY = y0;
+            bar.classList.remove('long-pressing');
+            w.classList.add('pf2m-arrastra');
+            try { navigator.vibrate && navigator.vibrate(40); } catch (_) {}
+            scrollT = setInterval(function() {
+                var r = scroller.getBoundingClientRect();
+                if (ultY < r.top + 50) scroller.scrollTop -= 12;
+                else if (ultY > r.bottom - 50) scroller.scrollTop += 12;
+                else return;
+                colocar(ultY);
+            }, 30);
+        }, 500);
+    };
+    var colocar = function(y) {
+        var otros = Array.prototype.filter.call(box.querySelectorAll('.pf2m-ed'), function(x) { return x !== w; });
+        var antes = otros.find(function(x) { var r = x.getBoundingClientRect(); return y < r.top + r.height / 2; });
+        if (antes) { if (w.nextSibling !== antes) box.insertBefore(w, antes); }
+        else {
+            var ultimo = otros[otros.length - 1];
+            if (ultimo && ultimo.nextSibling !== w) box.insertBefore(w, ultimo.nextSibling);
+        }
+    };
+    var mover = function(x, y, e) {
+        if (t && (Math.abs(x - x0) > 12 || Math.abs(y - y0) > 12)) parar();
+        if (!arr) return;
+        if (e.cancelable) e.preventDefault();
+        ultY = y;
+        colocar(y);
+    };
+    var soltar = function() {
+        parar();
+        if (!arr) return;
+        arr = false;
+        clearInterval(scrollT);
+        w.classList.remove('pf2m-arrastra');
+        var orden = Array.prototype.map.call(box.querySelectorAll('.pf2m-ed'), function(x) { return +x.dataset.idx; });
+        PF2E.draft = orden.map(function(i) { return PF2E.draft[i]; });
+        renderPf2Expositores();
+    };
+    bar.addEventListener('touchstart', function(e) { if (e.touches.length === 1) empezar(e.touches[0].clientX, e.touches[0].clientY, e); }, { passive: true });
+    bar.addEventListener('touchmove', function(e) { mover(e.touches[0].clientX, e.touches[0].clientY, e); }, { passive: false });
+    bar.addEventListener('touchend', soltar);
+    bar.addEventListener('touchcancel', soltar);
+    bar.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    /* Ratón (pruebas en el escritorio): el mismo gesto. */
+    bar.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        empezar(e.clientX, e.clientY, e);
+        var mm = function(ev) { mover(ev.clientX, ev.clientY, ev); };
+        var mu = function() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); soltar(); };
+        document.addEventListener('mousemove', mm);
+        document.addEventListener('mouseup', mu);
+    });
+}
+
+/* "＋ Añadir expositor": los tipos que faltan (Media favorita mientras
+   quede algún tipo libre; los de pago, solo comprados, como el PC). */
+function pf2AbrirTipos() {
+    var usados = PF2E.draft.map(function(s) { return s.type; });
+    var libres = PF2_MEDIA_CATS.filter(function(c) { return pf2MediaUsadas(null).indexOf(c) < 0; });
+    var filas = [];
+    libres.forEach(function(c) { filas.push({ t: 'media', cat: c, label: PF2_MEDIA[c].label, icon: PF2_MEDIA[c].icon }); });
+    Object.keys(PF2_TYPES).forEach(function(t) {
+        if (t === 'media' || usados.indexOf(t) >= 0 || !pf2Libre(t)) return;
+        filas.push({ t: t, label: PF2_TYPES[t].label, icon: PF2_TYPES[t].icon, pago: PF2_PAID.indexOf(t) >= 0 });
+    });
+    var bd = pf2Ventana('Añadir expositor');
+    bd.body.innerHTML = (filas.length ? filas.map(function(f, i) {
+        return '<div class="pf2m-tipo" data-i="' + i + '">' + pf2Ic(f.icon) + esc(f.label) + (f.pago ? '<small>De pago</small>' : '') + '</div>';
+    }).join('') : '<div class="pf2m-vacio">Ya tienes todos los tipos.</div>') +
+        '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div>';
+    bd.body.querySelector('[data-act="close"]').addEventListener('click', bd.close);
+    bd.body.querySelectorAll('[data-i]').forEach(function(el) {
+        el.addEventListener('click', function() {
+            var f = filas[+el.dataset.i], b = pf2Vacia(f.t, f.cat);
+            bd.close();
+            PF2E.draft.push({ type: f.t, config: b.config, data: b.data });
+            renderPf2Expositores();
+            /* Los raros se calculan solos al guardar. */
+            if (f.t !== 'steam_rare') pf2AbrirSelector(PF2E.draft.length - 1);
+        });
+    });
+}
+
+/* Ventanita del móvil (como pfConfirm) para los selectores. */
+function pf2Ventana(titulo) {
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal pf2m-picker"><div class="title-bar"><div class="title-bar-text">' + esc(titulo) + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div><div class="window-body"></div></div>';
+    document.body.appendChild(bd);
+    var close = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); window.__pf2mAfterAdd = null; };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', close);
+    return { bd: bd, body: bd.querySelector('.window-body'), close: close };
+}
+/* Pie: información + Aceptar / Cancelar. */
+function pf2Pie(v, onOk) {
+    var f = document.createElement('div');
+    f.className = 'pf2m-pie';
+    f.innerHTML = '<span></span><button type="button" class="button" data-a="ok">Aceptar</button><button type="button" class="button" data-a="no">Cancelar</button>';
+    f.querySelector('[data-a="ok"]').addEventListener('click', function() { if (onOk() === false) return; v.close(); renderPf2Expositores(); });
+    f.querySelector('[data-a="no"]').addEventListener('click', v.close);
+    v.body.appendChild(f);
+    return f.querySelector('span');
+}
+function pf2AbrirSelector(idx) {
+    var sc = PF2E.draft[idx];
+    if (!sc || sc.locked) return;
+    if (sc.type === 'media') { if (sc.config.cat === 'music') PF2_PICK.music(sc); else PF2_PICK.fav(sc, sc.config.cat); return; }
+    if (PF2_PICK[sc.type]) PF2_PICK[sc.type](sc);
+}
+/* Casilla de una cuadrícula de selector (póster, cuadrada o 16:9). */
+function pf2Casilla(attr, valor, img, titulo, n, forma) {
+    return '<div class="pf2m-pk ' + (forma || 'portrait') + (n ? ' on' : '') + '" data-' + attr + '="' + esc(valor) + '">' +
+        (img ? '<img src="' + esc(pf2Ruta(img)) + '" alt="" loading="lazy">' : '<div class="pf2m-pk-ph"></div>') +
+        (n ? '<span class="pf2m-pk-n">' + n + '</span>' : '') + '<div class="pf2m-pk-t">' + esc(titulo) + '</div></div>';
+}
+function pf2Marcar(grid, attr, sel, conv) {
+    grid.querySelectorAll('.pf2m-pk').forEach(function(e) {
+        var v = e.dataset[attr], n = sel.indexOf(conv ? conv(v) : v) + 1;
+        e.classList.toggle('on', n > 0);
+        var b = e.querySelector('.pf2m-pk-n');
+        if (n && !b) { b = document.createElement('span'); b.className = 'pf2m-pk-n'; e.insertBefore(b, e.querySelector('.pf2m-pk-t')); }
+        if (n) b.textContent = n; else if (b) b.remove();
+    });
+}
+/* Portada del álbum de un disco sin portada (find-album, como el PC). */
+function pf2BuscarPortada(it) {
+    var key = 'pf2:cover:' + (it.ytId || (it.title + '|' + it.artist));
+    try { var c = localStorage.getItem(key); if (c) return Promise.resolve(c); } catch (_) {}
+    var q = '../../assets/music/api.php?action=find-album&title=' + encodeURIComponent(it.title || '') +
+        '&artist=' + encodeURIComponent(it.artist || '') + (it.ytId ? '&videoId=' + encodeURIComponent(it.ytId) : '');
+    return fetch(q, { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
+        var url = (d && (d.albumImage || d.image)) || '';
+        if (url) { try { localStorage.setItem(key, url); } catch (_) {} }
+        return url;
+    }).catch(function() { return ''; });
+}
+function pf2EsMiniYt(u) { return /ytimg\.com|youtube\.com|img\.youtube/i.test(u || ''); }
+
+/* Google Drive de la Galería (mismo permiso, carpeta y token que
+   galeria-mobile.php): para Capturas. */
+var PF2_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+var PF2_DRIVE_FOLDER = 'Scrapbook Melon - Galería';
+function pf2DriveToken() {
+    try { var t = JSON.parse(localStorage.getItem('galeria_drive_token') || 'null'); if (t && t.expires_at > Date.now() + 30000) return t; } catch (_) {}
+    return null;
+}
+function pf2DriveConectar(cb) {
+    var listo = function() { return window.google && google.accounts && google.accounts.oauth2; };
+    var seguir = function() {
+        if (!PF2_GOOGLE_CLIENT_ID) { cb(new Error('Google no está configurado en la web')); return; }
+        google.accounts.oauth2.initTokenClient({ client_id: PF2_GOOGLE_CLIENT_ID, scope: PF2_DRIVE_SCOPE, callback: function(resp) {
+            if (resp.error) { cb(new Error(resp.error)); return; }
+            var t = { access_token: resp.access_token, expires_at: Date.now() + resp.expires_in * 1000 - 60000 };
+            try { localStorage.setItem('galeria_drive_token', JSON.stringify(t)); localStorage.setItem('galeria_drive_ever_auth', '1'); } catch (_) {}
+            cb(null, t);
+        } }).requestAccessToken({ prompt: '' });
+    };
+    if (listo()) { seguir(); return; }
+    if (!document.querySelector('script[data-pf2-gis]')) {
+        var s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.setAttribute('data-pf2-gis', '1');
+        document.head.appendChild(s);
+    }
+    var n = 0, iv = setInterval(function() {
+        if (listo()) { clearInterval(iv); seguir(); }
+        else if (++n > 80) { clearInterval(iv); cb(new Error('no se pudo cargar el inicio de sesión de Google')); }
+    }, 250);
+}
+function pf2Drive(url, opts) {
+    var t = pf2DriveToken();
+    if (!t) return Promise.reject({ auth: true });
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + t.access_token });
+    return fetch(url, opts).then(function(r) {
+        if (r.status === 401) { try { localStorage.removeItem('galeria_drive_token'); } catch (_) {} throw { auth: true }; }
+        if (!r.ok) return r.text().then(function(x) { throw new Error('Drive ' + r.status + ': ' + x.slice(0, 120)); });
+        return r;
+    });
+}
+function pf2Galeria() {
+    var q = "mimeType='application/vnd.google-apps.folder' and name='" + PF2_DRIVE_FOLDER.replace(/'/g, "\\'") + "' and trashed=false";
+    return pf2Drive('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)&spaces=drive')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.files || !d.files.length) return [];
+            var q2 = "'" + d.files[0].id + "' in parents and trashed=false and mimeType contains 'image/'";
+            return pf2Drive('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q2) +
+                '&fields=files(id,name,mimeType,thumbnailLink)&orderBy=modifiedTime desc&pageSize=200')
+                .then(function(r) { return r.json(); })
+                .then(function(x) { return (x.files || []).filter(function(f) { return !/\.(psd|kra|ora|csp)$/i.test(f.name); }); });
+        });
+}
+function pf2DriveMini(f, ph) {
+    var poner = function(url) {
+        var img = new Image();
+        img.alt = ''; img.referrerPolicy = 'no-referrer'; img.src = url;
+        if (ph.parentNode) ph.parentNode.replaceChild(img, ph);
+    };
+    var blob = function() {
+        pf2Drive('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media').then(function(r) { return r.blob(); })
+            .then(function(b) { poner(URL.createObjectURL(b)); }).catch(function() {});
+    };
+    if (!f.thumbnailLink) { blob(); return; }
+    var p = new Image();
+    p.referrerPolicy = 'no-referrer';
+    p.onload = function() { poner(f.thumbnailLink); };
+    p.onerror = blob;
+    p.src = f.thumbnailLink;
+}
+function pf2DrivePublico(id) {
+    return pf2Drive('https://www.googleapis.com/drive/v3/files/' + id + '/permissions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    }).catch(function(e) {
+        if (e && e.auth) throw new Error('Tu conexión con Google Drive ha caducado: vuelve a abrir Capturas.');
+        if (!/duplicate|alreadyExists|exists/i.test((e && e.message) || '')) throw e;
+    });
+}
+
+var PF2_PICK = {
+    /* Juegos, películas, series, libros: del catálogo de todos; los
+       elegidos salen primero, numerados por orden. "＋ Crear …" abre el
+       diálogo de añadir a la lista y lo deja elegido. */
+    fav: function(sc, cat) {
+        var noun = PF2_FAV_NOUN[cat], fem = noun[2], max = pf2MediaMax(cat);
+        var sel = (sc.config.titles || []).slice(0, max), res = [];
+        var v = pf2Ventana(PF2_MEDIA[cat].label);
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar ' + noun[0] + '…"><button type="button" class="button" data-a="new">＋ Crear ' + noun[0] + '</button></div>' +
+            '<div class="pf2m-pk-grid pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var info = pf2Pie(v, function() {
+            var prev = sc.data || [];
+            sc.config = { cat: cat, titles: sel.slice() };
+            sc.data = sel.map(function(t) {
+                var rv = pf2OwnReview(cat, t);
+                var own = pf2OwnList(cat).find(function(x) { return x.title.toLowerCase() === t.toLowerCase(); });
+                var old = prev.find(function(x) { return x && x.title === t; });
+                var d = { title: t, image: pf2CatImg(cat, t) || (own && own.image) || '', stars: rv ? rv.stars : null };
+                if (old && old.steam !== undefined) d.steam = old.steam;
+                return d;
+            });
+        });
+        var pintar = function() {
+            var titulos = sel.concat(res.map(function(g) { return g.title; }).filter(function(t) { return sel.indexOf(t) < 0; }));
+            grid.innerHTML = titulos.length ? titulos.map(function(t) {
+                return pf2Casilla('t', t, pf2CatImg(cat, t), t, sel.indexOf(t) + 1);
+            }).join('') : '<div class="pf2m-vacio">No hay ' + noun[1] + ' con ese nombre. Puedes ' + (fem ? 'crearla' : 'crearlo') + '.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var t = el.dataset.t, k = sel.indexOf(t);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(t);
+                    pf2Marcar(grid, 't', sel);
+                    info.textContent = sel.length + ' de ' + max + ' · toca para elegir; el número es el orden';
+                });
+            });
+            info.textContent = sel.length + ' de ' + max + ' · toca para elegir; el número es el orden';
+        };
+        var timer = null;
+        var buscar = function() {
+            pf2Api('game-catalog&cat=' + cat + '&q=' + encodeURIComponent(input.value.trim())).then(function(d) {
+                res = (d && d.games) || [];
+                res.forEach(function(x) { pf2SetCatImg(cat, x.title, x.image); });
+                pintar();
+            });
+        };
+        input.addEventListener('input', function() { clearTimeout(timer); timer = setTimeout(buscar, 250); });
+        v.body.querySelector('[data-a="new"]').addEventListener('click', function() {
+            window.__pf2mAfterAdd = function(c, item) {
+                if (c !== cat) return;
+                pf2SetCatImg(cat, item.title, item.image);
+                if (sel.indexOf(item.title) < 0 && sel.length < max) sel.push(item.title);
+                buscar();
+            };
+            openAddItemDialog(cat);
+        });
+        sel.forEach(function(t) {
+            var own = pf2OwnList(cat).find(function(x) { return x.title.toLowerCase() === t.toLowerCase(); });
+            if (own && own.image && !pf2CatImg(cat, t)) pf2SetCatImg(cat, t, own.image);
+        });
+        (sc.data || []).forEach(function(d) { pf2SetCatImg(cat, d.title, d.image); });
+        buscar();
+    },
+    /* Música favorita: de mi lista de música (hasta 3, 5 con mejoras). */
+    music: function(sc) {
+        var max = pf2MediaMax('music'), sel = (sc.config.ids || []).slice(0, max);
+        var items = pf2OwnList('music').filter(function(it) { return /^\d+$/.test(String(it.id)); });
+        var v = pf2Ventana('Música favorita');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-grid pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var info = pf2Pie(v, function() {
+            sc.config = { cat: 'music', ids: sel.slice() };
+            sc.data = sel.map(function(id) {
+                var it = items.find(function(x) { return +x.id === id; });
+                if (!it) return null;
+                var prev = (sc.data || []).find(function(d) { return d && d.id === id; });
+                return { id: id, title: it.title, artist: it.artist || '', type: it.type || 'song', ytId: it.ytId || '',
+                         ytPlaylistId: it.ytPlaylistId || '', spotifyAlbumId: it.spotifyAlbumId || '',
+                         cover: (prev && prev.cover) || (pf2EsMiniYt(it.image) ? '' : (it.image || '')) };
+            }).filter(Boolean);
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = items.filter(function(it) { return !q || (it.title + ' ' + (it.artist || '')).toLowerCase().indexOf(q) >= 0; });
+            grid.innerHTML = r.length ? r.map(function(it) {
+                return pf2Casilla('id', it.id, pf2EsMiniYt(it.image) ? '' : it.image, it.title, sel.indexOf(+it.id) + 1, 'square');
+            }).join('') : '<div class="pf2m-vacio">No tienes música en tu lista.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                var ph = el.querySelector('.pf2m-pk-ph');
+                if (ph) {
+                    var it = items.find(function(x) { return String(x.id) === el.dataset.id; });
+                    if (it) pf2BuscarPortada(it).then(function(url) { if (url && ph.parentNode) ph.outerHTML = '<img src="' + esc(url) + '" alt="">'; });
+                }
+                el.addEventListener('click', function() {
+                    var id = +el.dataset.id, k = sel.indexOf(id);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(id);
+                    pf2Marcar(grid, 'id', sel, Number);
+                    info.textContent = sel.length + ' de ' + max;
+                });
+            });
+            info.textContent = sel.length + ' de ' + max;
+        };
+        input.addEventListener('input', pintar);
+        pintar();
+    },
+    /* Reseña destacada: una de mis reseñas. */
+    review: function(sc) {
+        var cur = sc.config && sc.config.title ? sc.config.category + '|' + sc.config.title.toLowerCase() : '';
+        var filas = [];
+        PF2_MEDIA_CATS.forEach(function(cat) { pf2OwnList(cat).forEach(function(it) { if (it.review && it.review.stars != null) filas.push({ cat: cat, it: it }); }); });
+        var v = pf2Ventana('Reseña destacada');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-list pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), list = v.body.querySelector('.pf2m-pk-list');
+        pf2Pie(v, function() {
+            var x = filas.find(function(r) { return r.cat + '|' + r.it.title.toLowerCase() === cur; });
+            if (!x) return;
+            sc.config = { category: x.cat, title: x.it.title };
+            sc.data = { category: x.cat, title: x.it.title, artist: x.it.artist || '', image: x.it.image || '', stars: x.it.review.stars, comment: x.it.review.comment || '' };
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = filas.filter(function(x) { return !q || x.it.title.toLowerCase().indexOf(q) >= 0; });
+            list.innerHTML = r.length ? r.map(function(x) {
+                var k = x.cat + '|' + x.it.title.toLowerCase();
+                return '<div class="pf2m-pk-row' + (k === cur ? ' on' : '') + '" data-k="' + esc(k) + '">' +
+                    (x.it.image ? '<img src="' + esc(pf2Ruta(x.it.image)) + '" alt="">' : '<span class="pf2m-pk-ri"></span>') +
+                    '<span class="pf2m-pk-rt">' + esc(x.it.title) + ' <small>(' + PF2_CAT_LABEL[x.cat] + ')</small></span>' +
+                    '<span class="pf2m-stars">' + pf2Stars(x.it.review.stars) + '</span></div>';
+            }).join('') : '<div class="pf2m-vacio">No tienes reseñas todavía.</div>';
+            list.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    cur = el.dataset.k;
+                    list.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', e === el); });
+                });
+            });
+        };
+        input.addEventListener('input', pintar);
+        pintar();
+    },
+    /* Playlist destacada: una de mis playlists (propias o colaborativas). */
+    playlist: function(sc) {
+        var cur = sc.config.id || 0, todas = [];
+        var v = pf2Ventana('Playlist destacada');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-list pf2m-hund"><div class="pf2m-vacio">Cargando tus playlists…</div></div>';
+        var input = v.body.querySelector('input'), list = v.body.querySelector('.pf2m-pk-list');
+        pf2Pie(v, function() {
+            var p = todas.find(function(x) { return x.id === cur; });
+            if (!p) return;
+            sc.config = { id: p.id };
+            sc.data = p;
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = todas.filter(function(p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; });
+            list.innerHTML = r.length ? r.map(function(p) {
+                return '<div class="pf2m-pk-row' + (p.id === cur ? ' on' : '') + '" data-id="' + p.id + '">' +
+                    (p.image ? '<img src="' + esc(pf2Ruta(p.image)) + '" alt="">' : '<span class="pf2m-pk-ri"></span>') +
+                    '<span class="pf2m-pk-rt">' + esc(p.name) + (p.owner ? ' <small>(de ' + esc(p.owner) + ')</small>' : '') + '</span>' +
+                    '<small>' + p.count + (p.count === 1 ? ' canción' : ' canciones') + '</small></div>';
+            }).join('') : '<div class="pf2m-vacio">' + (todas.length ? 'Ninguna con ese nombre.' : 'No tienes playlists todavía.') + '</div>';
+            list.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    cur = +el.dataset.id;
+                    list.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', e === el); });
+                });
+            });
+        };
+        input.addEventListener('input', pintar);
+        pf2Api('my-playlists').then(function(d) { todas = (d && d.playlists) || []; pintar(); });
+    },
+    /* Texto libre. */
+    text: function(sc) {
+        var v = pf2Ventana('Texto libre');
+        v.body.innerHTML = '<textarea class="pf2m-ta" rows="9" maxlength="' + PF2_MAX.text + '"></textarea>';
+        var ta = v.body.querySelector('textarea');
+        ta.value = sc.config.text || '';
+        var info = pf2Pie(v, function() {
+            var t = ta.value.replace(/\r\n?/g, '\n').trim().slice(0, PF2_MAX.text);
+            sc.config = { text: t };
+            sc.data = { text: t };
+        });
+        var cuenta = function() { info.textContent = ta.value.length + ' / ' + PF2_MAX.text; };
+        ta.addEventListener('input', cuenta);
+        cuenta();
+    },
+    /* Juego destacado: un juego del catálogo y, con Steam, hasta 8 de sus
+       logros conseguidos. */
+    game_feat: function(sc) {
+        var cur = sc.config.title || '', ach = (sc.config.ach || []).slice();
+        var st = (pf2v() || {}).steam || {};
+        var steamOn = !!(st.configured && st.linked && !st['private']);
+        var match = null, achList = [], res = [];
+        var v = pf2Ventana('Juego destacado');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar juego…"><button type="button" class="button" data-a="new">＋ Crear juego</button></div>' +
+            '<div class="pf2m-pk-grid pf2m-hund pf2m-pk-corta"></div><div class="pf2m-pk-h"></div>' +
+            '<div class="pf2m-pk-list pf2m-hund" data-r="ach"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var achH = v.body.querySelector('.pf2m-pk-h'), achL = v.body.querySelector('[data-r="ach"]');
+        var info = pf2Pie(v, function() {
+            if (!cur) return;
+            var rv = pf2OwnReview('games', cur);
+            var own = pf2OwnList('games').find(function(x) { return x.title.toLowerCase() === cur.toLowerCase(); });
+            var inSteam = !!(match && match.inSteam);
+            sc.config = { title: cur, ach: inSteam ? ach.slice() : [] };
+            sc.data = { title: cur, image: pf2CatImg('games', cur) || (own && own.image) || '', stars: rv ? rv.stars : null, comment: (rv && rv.comment) || '',
+                steam: !steamOn ? null : !inSteam ? { inSteam: false } : { inSteam: true, appid: match.appid, hours: match.hours, achieved: match.achieved, total: match.total,
+                    items: ach.map(function(a) { return achList.find(function(x) { return x.apiname === a; }); }).filter(Boolean) } };
+        });
+        var pintarRes = function() {
+            var titulos = res.map(function(g) { return g.title; });
+            if (cur && titulos.indexOf(cur) < 0) titulos.unshift(cur);
+            grid.innerHTML = titulos.length ? titulos.map(function(t) { return pf2Casilla('t', t, pf2CatImg('games', t), t, t === cur ? 1 : 0); }).join('')
+                : '<div class="pf2m-vacio">No hay juegos con ese nombre. Puedes crearlo.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    if (el.dataset.t === cur) return;
+                    cur = el.dataset.t; ach = [];
+                    pf2Marcar(grid, 't', [cur]);
+                    cargarSteam();
+                });
+            });
+        };
+        var pintarAch = function() {
+            achL.innerHTML = achList.length ? achList.map(function(a) {
+                var n = ach.indexOf(a.apiname) + 1;
+                return '<div class="pf2m-pk-row' + (n ? ' on' : '') + '" data-api="' + esc(a.apiname) + '"><img src="' + esc(a.icon) + '" alt="">' +
+                    '<span class="pf2m-pk-rt"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc || '') + '</small></span>' +
+                    (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+            }).join('') : '<div class="pf2m-vacio">' + (match && match.total ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>';
+            achL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var k = ach.indexOf(el.dataset.api);
+                    if (k >= 0) ach.splice(k, 1); else if (ach.length < PF2_MAX.game_feat) ach.push(el.dataset.api);
+                    el.classList.toggle('on', ach.indexOf(el.dataset.api) >= 0);
+                    info.textContent = ach.length + ' de ' + PF2_MAX.game_feat + ' logros';
+                });
+            });
+            info.textContent = match && match.inSteam ? ach.length + ' de ' + PF2_MAX.game_feat + ' logros' : '';
+        };
+        var cargarSteam = function() {
+            match = null; achList = []; achL.style.display = 'none'; info.textContent = '';
+            if (!cur) { achH.textContent = ''; return; }
+            if (!steamOn) { achH.textContent = pf2TextoVacio('steam_ach') + ' Sin Steam se enseñan la portada y tu reseña.'; return; }
+            var t = cur;
+            achH.textContent = 'Buscando el juego en tu Steam…';
+            pf2Api('steam-game-match&title=' + encodeURIComponent(t)).then(function(d) {
+                if (t !== cur) return;
+                match = d && d.steam;
+                if (!match || !match.inSteam) { achH.textContent = 'Este juego no está en tu Steam: se enseñan la portada y tu reseña.'; return; }
+                achH.textContent = 'Logros que se enseñan (máx. ' + PF2_MAX.game_feat + ') · ' + match.hours.toLocaleString('es') + ' h jugadas:';
+                achL.style.display = '';
+                achL.innerHTML = '<div class="pf2m-vacio">Cargando logros…</div>';
+                return pf2Api('steam-game-achievements&appid=' + match.appid).then(function(r) {
+                    if (t !== cur) return;
+                    achList = (r && r.achievements) || [];
+                    ach = ach.filter(function(x) { return achList.some(function(a) { return a.apiname === x; }); });
+                    pintarAch();
+                });
+            });
+        };
+        var timer = null;
+        var buscar = function() {
+            pf2Api('game-catalog&q=' + encodeURIComponent(input.value.trim())).then(function(d) {
+                res = (d && d.games) || [];
+                res.forEach(function(x) { pf2SetCatImg('games', x.title, x.image); });
+                pintarRes();
+            });
+        };
+        input.addEventListener('input', function() { clearTimeout(timer); timer = setTimeout(buscar, 250); });
+        v.body.querySelector('[data-a="new"]').addEventListener('click', function() {
+            window.__pf2mAfterAdd = function(c, item) {
+                if (c !== 'games') return;
+                pf2SetCatImg('games', item.title, item.image);
+                cur = item.title; ach = [];
+                buscar(); cargarSteam();
+            };
+            openAddItemDialog('games');
+        });
+        if (sc.data && sc.data.image) pf2SetCatImg('games', sc.data.title, sc.data.image);
+        buscar();
+        cargarSteam();
+    },
+    /* Logros de Steam a elegir: primero el juego, debajo sus logros. */
+    steam_ach: function(sc) {
+        var st = (pf2v() || {}).steam || {};
+        var v = pf2Ventana('Logros de Steam');
+        if (!st.linked) { v.body.innerHTML = '<div class="pf2m-vacio">' + esc(pf2TextoVacio('steam_ach')) + '</div>'; pf2Pie(v, function() {}); return; }
+        var max = pf2AchMax('steam_ach');
+        var sel = ((sc.data && sc.data.items) || []).slice(0, max), juegos = [], curJ = null;
+        var clave = function(a) { return a.appid + '|' + a.apiname; };
+        v.body.innerHTML = '<div class="pf2m-pk-h">Elegidos (máx. ' + max + '):</div><div class="pf2m-ach-sel pf2m-hund"></div>' +
+            '<div class="pf2m-buscar"><input type="search" placeholder="Buscar juego…"></div>' +
+            '<div class="pf2m-pk-list pf2m-hund pf2m-pk-corta" data-r="games"></div><div class="pf2m-pk-list pf2m-hund" data-r="ach"><div class="pf2m-vacio">Elige un juego.</div></div>';
+        var selL = v.body.querySelector('.pf2m-ach-sel'), input = v.body.querySelector('input');
+        var gamesL = v.body.querySelector('[data-r="games"]'), achL = v.body.querySelector('[data-r="ach"]');
+        var info = pf2Pie(v, function() {
+            sc.config = { items: sel.map(function(a) { return { appid: a.appid, apiname: a.apiname }; }) };
+            sc.data = { items: sel.slice(), totals: { games: st.games || 0, hours: st.hours || 0 } };
+        });
+        var pintarSel = function() {
+            selL.innerHTML = sel.length ? sel.map(function(a, i) {
+                return '<span class="pf2m-ach-it" data-k="' + esc(clave(a)) + '"><img src="' + esc(a.icon) + '" alt=""><i>' + (i + 1) + '</i></span>';
+            }).join('') : '<div class="pf2m-vacio">Ninguno todavía.</div>';
+            selL.querySelectorAll('[data-k]').forEach(function(el) {
+                el.addEventListener('click', function() { sel = sel.filter(function(x) { return clave(x) !== el.dataset.k; }); pintarSel(); marcarAch(); });
+            });
+            info.textContent = sel.length + ' de ' + max;
+        };
+        var marcarAch = function() {
+            if (!curJ) return;
+            achL.querySelectorAll('.pf2m-pk-row').forEach(function(e) {
+                e.classList.toggle('on', sel.some(function(x) { return x.appid === curJ.appid && x.apiname === e.dataset.api; }));
+            });
+        };
+        var pintarJuegos = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = juegos.filter(function(g) { return !q || g.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 300);
+            gamesL.innerHTML = r.map(function(g) {
+                return '<div class="pf2m-pk-row' + (curJ && curJ.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span class="pf2m-pk-rt">' + esc(g.name) + '</span><small>' + g.hours + ' h</small></div>';
+            }).join('') || '<div class="pf2m-vacio">Sin juegos.</div>';
+            gamesL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    curJ = juegos.find(function(g) { return g.appid === +el.dataset.app; });
+                    gamesL.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', +e.dataset.app === curJ.appid); });
+                    verJuego(curJ);
+                });
+            });
+        };
+        var verJuego = function(g) {
+            achL.innerHTML = '<div class="pf2m-vacio">Cargando logros…</div>';
+            pf2Api('steam-game-achievements&appid=' + g.appid).then(function(d) {
+                if (!curJ || curJ.appid !== g.appid) return;
+                var list = (d && d.achievements) || [];
+                if (!list.length) { achL.innerHTML = '<div class="pf2m-vacio">' + ((d && d.total) ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>'; return; }
+                achL.innerHTML = list.map(function(a) {
+                    var on = sel.some(function(x) { return x.appid === g.appid && x.apiname === a.apiname; });
+                    return '<div class="pf2m-pk-row' + (on ? ' on' : '') + '" data-api="' + esc(a.apiname) + '"><img src="' + esc(a.icon) + '" alt="">' +
+                        '<span class="pf2m-pk-rt"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc || '') + '</small></span>' +
+                        (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+                }).join('');
+                achL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                    el.addEventListener('click', function() {
+                        var a = list.find(function(x) { return x.apiname === el.dataset.api; });
+                        var k = g.appid + '|' + a.apiname, at = sel.findIndex(function(x) { return clave(x) === k; });
+                        if (at >= 0) sel.splice(at, 1); else if (sel.length < max) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
+                        pintarSel(); marcarAch();
+                    });
+                });
+            });
+        };
+        input.addEventListener('input', pintarJuegos);
+        pintarSel();
+        gamesL.innerHTML = '<div class="pf2m-vacio">Cargando tu biblioteca…</div>';
+        pf2Api('steam-games').then(function(d) {
+            if (!d || !d.ok) { gamesL.innerHTML = '<div class="pf2m-vacio"></div>'; gamesL.firstChild.textContent = (d && d.error) || 'No se pudo leer tu Steam'; return; }
+            juegos = d.games; pintarJuegos();
+        });
+    },
+    /* Capturas: de la Galería (Google Drive), hasta 3, con pie y juego. */
+    shots: function(sc) {
+        var v = pf2Ventana('Capturas');
+        v.body.innerHTML = '<div class="pf2m-pk-h"></div><div class="pf2m-pk-grid pf2m-hund pf2m-pk-wide"></div><div class="pf2m-shot-meta"></div>';
+        var msg = v.body.querySelector('.pf2m-pk-h'), grid = v.body.querySelector('.pf2m-pk-grid'), metaBox = v.body.querySelector('.pf2m-shot-meta');
+        var files = [], sel = [], meta = {};
+        var info = pf2Pie(v, function() {
+            var ok = v.body.querySelector('[data-a="ok"]');
+            ok.disabled = true; ok.textContent = 'Guardando…';
+            Promise.all(sel.map(pf2DrivePublico)).then(function() {
+                return pf2Api('gallery-screenshots', { items: sel.map(function(id) { var m = meta[id] || {}; return { driveId: id, caption: m.caption || '', game: m.game || '' }; }) });
+            }).then(function(d) {
+                if (!d || !d.ok) throw new Error((d && d.error) || 'No se pudo guardar');
+                sc.config = { ids: d.shots.map(function(x) { return x.id; }) };
+                sc.data = d.shots;
+                PF2E.myShots = null;
+                v.close();
+                renderPf2Expositores();
+            }).catch(function(e) { ok.disabled = false; ok.textContent = 'Aceptar'; pfAlert((e && e.message) || 'No se pudo guardar'); });
+            return false;   /* se cierra cuando acaba */
+        });
+        var ok = v.body.querySelector('[data-a="ok"]');
+        var marcar = function() {
+            pf2Marcar(grid, 'id', sel);
+            metaBox.innerHTML = sel.map(function(id, i) {
+                var m = meta[id] || { caption: '', game: '' };
+                return '<div class="pf2m-shot-row"><b>' + (i + 1) + '</b>' +
+                    '<input type="text" data-id="' + esc(id) + '" data-f="caption" maxlength="200" placeholder="Pie de foto (opcional)" value="' + esc(m.caption) + '">' +
+                    '<input type="text" data-id="' + esc(id) + '" data-f="game" maxlength="200" placeholder="Juego (opcional)" value="' + esc(m.game) + '"></div>';
+            }).join('');
+            metaBox.querySelectorAll('input').forEach(function(inp) {
+                inp.addEventListener('input', function() { var m = meta[inp.dataset.id] || (meta[inp.dataset.id] = { caption: '', game: '' }); m[inp.dataset.f] = inp.value; });
+            });
+            info.textContent = sel.length + ' de ' + PF2_MAX.shots;
+        };
+        var pintar = function() {
+            grid.innerHTML = files.map(function(f) { return pf2Casilla('id', f.id, '', f.name, sel.indexOf(f.id) + 1, 'wide'); }).join('');
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                var f = files.find(function(x) { return x.id === el.dataset.id; });
+                pf2DriveMini(f, el.querySelector('.pf2m-pk-ph'));
+                el.addEventListener('click', function() {
+                    var k = sel.indexOf(f.id);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < PF2_MAX.shots) sel.push(f.id);
+                    marcar();
+                });
+            });
+            marcar();
+        };
+        var pedirConexion = function() {
+            msg.innerHTML = 'Para elegir capturas de tu Galería tienes que conectar tu Google Drive (el mismo que usa la Galería). ' +
+                '<button type="button" class="button" data-a="drive">Conectar Google Drive</button>';
+            grid.innerHTML = ''; metaBox.innerHTML = ''; ok.disabled = true;
+            msg.querySelector('[data-a="drive"]').addEventListener('click', function() {
+                pf2DriveConectar(function(err) {
+                    if (err) { msg.textContent = 'No se pudo conectar: ' + err.message; return; }
+                    ok.disabled = false;
+                    empezar();
+                });
+            });
+        };
+        var empezar = function() {
+            if (!pf2DriveToken()) { pedirConexion(); return; }
+            msg.textContent = 'Cargando tu Galería…';
+            pf2Galeria().then(function(list) {
+                files = list;
+                msg.textContent = files.length ? 'Elige hasta ' + PF2_MAX.shots + ' imágenes de tu Galería (la primera sale grande):' : 'Tu Galería está vacía: sube imágenes desde la app Galería.';
+                pintar();
+            }).catch(function(e) {
+                if (e && e.auth) { pedirConexion(); return; }
+                msg.textContent = 'No se pudo leer tu Galería: ' + ((e && e.message) || 'error');
+            });
+        };
+        var mias = PF2E.myShots ? Promise.resolve(PF2E.myShots) : pf2Api('my-screenshots').then(function(d) { return (PF2E.myShots = (d && d.shots) || []); });
+        mias.then(function(shots) {
+            shots.forEach(function(x) { if (x.driveId) meta[x.driveId] = { caption: x.caption || '', game: x.game || '' }; });
+            (sc.config.ids || []).forEach(function(id) { var x = shots.find(function(y) { return y.id === id; }); if (x && x.driveId) sel.push(x.driveId); });
+            empezar();
+        });
     }
 };
 
