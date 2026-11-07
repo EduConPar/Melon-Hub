@@ -16,7 +16,9 @@ import org.json.JSONObject;
 /* La web (mobile.php) avisa de cuándo suena y cuándo se pausa:
      Capacitor.nativePromise('MelonMusic', 'setPlaying', { playing, title, artist, videoId })
    Mientras suena: servicio en primer plano + WebView "visible", para que
-   ni salir de la app ni apagar la pantalla corten la música.
+   ni salir de la app ni apagar la pantalla corten la música. El servicio
+   (MusicService) lleva la notificación con los controles; al pausar
+   sigue (la notificación queda en pausa) hasta que se cierra la app.
 
    También es el camino de vuelta del widget (PlayerWidget): sus botones
    llegan a la web como el evento "widgetCommand"
@@ -24,6 +26,7 @@ import org.json.JSONObject;
      { action: 'set-shuffle', on }   (🔀 tocado con la app cerrada)
      { action: 'play-playlist', name, tracks, index }
      { action: 'open-calendar', day }  (widgets de calendario, CalendarWidget)
+     { action: 'seek', position }      (barra de la notificación, en segundos)
    y la web le cuenta al widget qué suena y con qué colores pintarse:
      setWidgetState({ playing, title, artist, videoId, position, duration, shuffle })
      setWidgetTheme({ interface, colors: { 'win-bg': '#…', … } }) */
@@ -73,6 +76,9 @@ public class MelonMusicPlugin extends Plugin {
         handler.removeCallbacks(progressTick);
         WidgetStore.savePosition(getContext());
         PlayerWidget.refresh(getContext());
+        /* Sin la página nadie toca la música: fuera la notificación
+           (aunque estuviera en pausa). */
+        MusicService.stop(getContext());
     }
 
     static boolean isAlive() {
@@ -111,24 +117,21 @@ public class MelonMusicPlugin extends Plugin {
     @PluginMethod
     public void setPlaying(PluginCall call) {
         boolean playing = call.getBoolean("playing", false);
-        Intent svc = new Intent(getContext(), MusicService.class);
+        /* Primero lo que suena: la notificación del servicio lo saca de aquí. */
+        WidgetStore.setNowPlaying(getContext(), playing, call.getString("title", ""), call.getString("artist", ""), call.getString("videoId", ""));
 
         if (playing) {
-            svc.putExtra(MusicService.EXTRA_TITLE, call.getString("title", ""));
-            svc.putExtra(MusicService.EXTRA_ARTIST, call.getString("artist", ""));
             try {
-                ContextCompat.startForegroundService(getContext(), svc);
+                ContextCompat.startForegroundService(getContext(), new Intent(getContext(), MusicService.class));
             } catch (Exception e) {
                 /* Android 12+ no deja arrancarlo desde segundo plano (p. ej.
                    si la canción siguiente empieza con la app ya oculta y el
                    servicio se había parado). Si ya estaba en marcha, sigue. */
                 Log.w("MelonMusic", "No se pudo arrancar el servicio", e);
             }
-        } else {
-            getContext().stopService(svc);
         }
-
-        WidgetStore.setNowPlaying(getContext(), playing, call.getString("title", ""), call.getString("artist", ""), call.getString("videoId", ""));
+        /* Al pausar, el servicio sigue: la notificación pasa a pausa (y
+           suelta CPU y wifi) con el repintado. */
         PlayerWidget.refresh(getContext());
 
         getActivity().runOnUiThread(() -> {

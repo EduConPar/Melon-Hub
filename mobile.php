@@ -2392,7 +2392,8 @@ window.MuShell = (function(){
         nativeWidgetState(playing);
     }
 
-    /* Botones del widget de la app (MusicWidget). Con una app vieja el
+    /* Botones del widget y de la notificación de música de la app
+       (PlayerWidget, MusicService). Con una app vieja el
        evento no llega nunca y no pasa nada. */
     (function setupNativeWidget(){
         var cap = window.Capacitor;
@@ -2406,6 +2407,14 @@ window.MuShell = (function(){
                 else if (cmd.action === 'shuffle') setShuffle(!SHUFFLE_ON);
                 else if (cmd.action === 'set-shuffle') setShuffle(!!cmd.on);
                 else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
+                else if (cmd.action === 'seek') {
+                    /* Barra de la notificación de música (MusicService). */
+                    if (!YT_PLAYER || typeof YT_PLAYER.seekTo !== 'function') return;
+                    try { YT_PLAYER.seekTo(Math.max(0, Number(cmd.position) || 0), true); } catch (_) {}
+                    restorePos = 0;
+                    saveLastPos();
+                    nativeWidgetStateNow();
+                }
             });
         } catch (_) {}
     })();

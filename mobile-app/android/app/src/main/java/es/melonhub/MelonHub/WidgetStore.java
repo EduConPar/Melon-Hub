@@ -157,6 +157,15 @@ final class WidgetStore {
             .apply();
     }
 
+    /* Salto con la barra de la notificación (MusicService), sin esperar a
+       que la web lo confirme. */
+    static void setPosition(Context ctx, double position) {
+        prefs(ctx).edit()
+            .putFloat("position", (float) position)
+            .putLong("positionAt", SystemClock.elapsedRealtime())
+            .apply();
+    }
+
     static boolean shuffle(Context ctx) {
         return prefs(ctx).getBoolean("shuffle", false);
     }

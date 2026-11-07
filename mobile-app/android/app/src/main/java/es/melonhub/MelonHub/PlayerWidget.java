@@ -82,12 +82,15 @@ public class PlayerWidget extends AppWidgetProvider {
     }
 
     /* La web suele avisar varias veces seguidas (setPlaying, setWidgetState,
-       la carátula…): se juntan en un solo repintado. */
+       la carátula…): se juntan en un solo repintado. La notificación de
+       música (MusicService) pinta lo mismo, así que se repinta a la vez. */
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static Context refreshCtx;
     private static final Runnable REFRESH = () -> {
         Context c = refreshCtx;
-        if (c != null) refreshNow(c);
+        if (c == null) return;
+        MusicService.refresh(c);
+        refreshNow(c);
     };
 
     static void refresh(Context ctx) {

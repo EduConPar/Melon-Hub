@@ -31,7 +31,7 @@ public class WidgetPlayActivity extends Activity {
         JSObject cmd = command != null ? controlCommand(command) : playlistCommand();
         if (cmd != null) {
             if (MelonMusicPlugin.isAlive()) {
-                if (startsMusic(cmd)) startMusicService(cmd);
+                if (startsMusic(cmd)) startMusicService();
                 MelonMusicPlugin.sendWidgetCommand(cmd);
             } else if (!"prev".equals(command) && !"next".equals(command)) {
                 MelonMusicPlugin.pendingWidgetCommand = cmd;
@@ -60,18 +60,10 @@ public class WidgetPlayActivity extends Activity {
         return "play-playlist".equals(cmd.optString("action")) || !WidgetStore.playing(this);
     }
 
-    private void startMusicService(JSObject cmd) {
-        String title = WidgetStore.title(this);
-        String artist = WidgetStore.artist(this);
-        JSONArray tracks = cmd.optJSONArray("tracks");
-        JSONObject tr = tracks != null ? tracks.optJSONObject(cmd.optInt("index", 0)) : null;
-        if (tr != null) {
-            title = tr.optString("title");
-            artist = tr.optString("artist");
-        }
-        Intent svc = new Intent(this, MusicService.class)
-            .putExtra(MusicService.EXTRA_TITLE, title)
-            .putExtra(MusicService.EXTRA_ARTIST, artist);
+    /* La notificación saca la canción de WidgetStore (con una playlist,
+       playlistCommand ya ha apuntado la elegida). */
+    private void startMusicService() {
+        Intent svc = new Intent(this, MusicService.class);
         try {
             ContextCompat.startForegroundService(this, svc);
         } catch (Exception e) {
