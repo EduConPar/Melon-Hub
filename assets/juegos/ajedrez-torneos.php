@@ -14,7 +14,8 @@
    la partida por el 3.er puesto entre los que pierden en semifinales.
    A la hora de inicio (ajz_torTick, sin cron): lleno → empieza; si no,
    se cancela y se devuelve todo (entradas y premios). Antes de empezar
-   uno puede borrarse (recupera la entrada) y el anfitrión cancelarlo.
+   uno puede borrarse (recupera la entrada) y el anfitrión cancelarlo o
+   editarlo (nombre, ritmo, hora y premios; ajz_torEditar).
    Discord: el bot lo anuncia en el MISMO canal que los eventos del
    calendario (EV_DISCORD_CHANNEL de assets/events/api.php) y edita el
    mensaje al apuntarse/borrarse gente, al empezar, al acabar (podio) y
@@ -182,6 +183,44 @@ function ajz_torSalir(PDO $pdo, int $uid, int $id): void {
         ajz_pagar($pdo, $uid, (int)$pagado);
         rt_torneo($id);
         rt_usuario($uid, 'ajz', 'aviso');
+    });
+    ajz_torDiscordLuego($pdo, $id);
+}
+
+/* Editar (botón "Editar" del torneo, solo el anfitrión y antes de que
+   empiece): nombre, ritmo, hora de inicio y premios. La entrada y los
+   jugadores no se tocan una vez creado, para no mover lo que ya ha pagado
+   la gente. Premios: se le cobra o se le devuelve la diferencia. La hora
+   solo se comprueba si cambia (si ya faltan menos de 5 min, se puede
+   seguir editando lo demás). Si cambia, a cada apuntado se le avisa en su
+   archivo del timbre: su escritorio vuelve a mirar cuándo empieza. */
+function ajz_torEditar(PDO $pdo, int $uid, int $id, array $d): void {
+    $nombre = trim(preg_replace('/\s+/u', ' ', (string)($d['nombre'] ?? '')));
+    if ($nombre === '' || mb_strlen($nombre) > 60) throw new InvalidArgumentException('El nombre tiene que tener entre 1 y 60 letras');
+    [$base, $inc] = ajz_ritmo($d['min'] ?? 0, $d['inc'] ?? 0);
+    $n = [];
+    foreach (['premio1', 'premio2', 'premio3'] as $k) {
+        $n[$k] = (int)($d[$k] ?? 0);
+        if ($n[$k] < 0 || $n[$k] > AJZ_TOR_PUNTOS_MAX) throw new InvalidArgumentException('Cantidad de puntos no válida');
+    }
+    $empieza = ajz_torHora((string)($d['empieza'] ?? ''));
+    ajz_tx($pdo, function () use ($pdo, $uid, $id, $nombre, $base, $inc, $n, $empieza) {
+        $t = ajz_torCargar($pdo, $id, true);
+        if ($t['host_id'] !== $uid) throw new InvalidArgumentException('Solo puede editarlo quien lo organiza');
+        $ahora = bm_ms();
+        if ($t['estado'] !== 'inscripcion' || $ahora >= $t['empieza']) throw new InvalidArgumentException('El torneo ya ha empezado');
+        /* El minuto que enseña el formulario: sin tocar la hora, vuelve igual. */
+        $cambiaHora = intdiv($empieza, 60000) !== intdiv($t['empieza'], 60000);
+        if (!$cambiaHora) $empieza = $t['empieza'];
+        if ($cambiaHora && $empieza < $ahora + AJZ_TOR_MIN_ANTES) throw new InvalidArgumentException('Tiene que empezar dentro de 5 minutos como pronto');
+        if ($cambiaHora && $empieza > $ahora + AJZ_TOR_MAX_DIAS * 86400000) throw new InvalidArgumentException('Como mucho, dentro de ' . AJZ_TOR_MAX_DIAS . ' días');
+        $dif = ($n['premio1'] + $n['premio2'] + $n['premio3']) - ($t['premio1'] + $t['premio2'] + $t['premio3']);
+        if ($dif > 0 && !ajz_cobrar($pdo, $uid, $dif)) throw new InvalidArgumentException('No tienes puntos suficientes para subir los premios');
+        if ($dif < 0) ajz_pagar($pdo, $uid, -$dif);
+        $pdo->prepare("UPDATE ajz_torneos SET nombre = ?, base_ms = ?, inc_ms = ?, empieza = ?, premio1 = ?, premio2 = ?, premio3 = ? WHERE id = ?")
+            ->execute([$nombre, $base, $inc, $empieza, $n['premio1'], $n['premio2'], $n['premio3'], $id]);
+        rt_torneo($id);
+        if ($cambiaHora) foreach (ajz_torInscritos($pdo, $id) as $i) rt_usuario((int)$i['user_id'], 'ajz', 'aviso');
     });
     ajz_torDiscordLuego($pdo, $id);
 }
@@ -407,6 +446,8 @@ function ajz_torVer(PDO $pdo, int $uid, int $id): array {
         'lista'     => array_values(array_filter($apuntados)),
         'apuntado'  => in_array($uid, array_map('intval', array_column($ins, 'user_id')), true),
         'soyHost'   => $t['host_id'] === $uid,
+        'min'       => intdiv($t['base_ms'], 60000),   /* para el formulario de editar */
+        'inc'       => intdiv($t['inc_ms'], 1000),
         'cuadro'    => $cuadro,
         'miPartida' => $miPartida,
         'podio'     => $podio,

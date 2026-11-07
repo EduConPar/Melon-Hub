@@ -24,6 +24,9 @@
                          jugadas y estado).
      rt/t/<id>.json      un torneo: {"v"}.
      rt/ajz.json         la lista de torneos: {"v"}.
+     rt/c/<t|p><id>.json chat de un torneo o de una partida: {"v"} (sin
+                         el texto, que se pide a la API con sesión;
+                         assets/juegos/ajedrez-chat.php).
 
    Se escriben DESPUÉS de confirmar la transacción (ajz_tx llama a
    rt_vaciar) o al acabar la petición: si la ventana viera el archivo
@@ -47,6 +50,7 @@ function rt_codigo(int $uid): string {
 function rt_urlUsuario(int $uid): string { return 'rt/u/' . rt_codigo($uid) . '.json'; }
 function rt_urlPartida(int $id): string  { return 'rt/p/' . $id . '.json'; }
 function rt_urlTorneo(int $id): string   { return 'rt/t/' . $id . '.json'; }
+function rt_urlChat(string $tipo, int $id): string { return 'rt/c/' . ($tipo === 'p' ? 'p' : 't') . $id . '.json'; }
 /* Sesión de Escuchar juntos (assets/listen/api.php): lo que suena, para
    los invitados; con código para que no se lean las de otros. */
 function rt_urlSesion(int $id): string {
@@ -61,7 +65,7 @@ function rt_urlPresencia(): string {
 
 /* Lo pendiente de esta petición: se junta (varios cambios del mismo
    usuario o partida = una escritura) y se escribe en rt_vaciar. */
-$GLOBALS['_rt'] = ['u' => [], 'p' => [], 't' => [], 'g' => []];
+$GLOBALS['_rt'] = ['u' => [], 'p' => [], 't' => [], 'g' => [], 'c' => []];
 register_shutdown_function('rt_vaciar');
 
 function rt_usuario(int $uid, string ...$temas): void {
@@ -74,6 +78,7 @@ function rt_torneo(int $id): void {
     $GLOBALS['_rt']['t'][$id] = true;
     $GLOBALS['_rt']['g']['ajz'] = true;   /* cambia también la lista de torneos */
 }
+function rt_chat(string $tipo, int $id): void { $GLOBALS['_rt']['c'][rt_urlChat($tipo, $id)] = true; }
 function rt_listaTorneos(): void { $GLOBALS['_rt']['g']['ajz'] = true; }
 /* Ha cambiado su saldo de puntos: la tienda abierta lo vuelve a pedir. */
 function rt_saldo(int $uid): void { rt_usuario($uid, 'saldo'); }
@@ -86,16 +91,17 @@ function rt_asegurarUsuario(int $uid): void {
     if ($uid > 0 && !is_file(rt_dir() . '/' . rt_urlUsuario($uid))) rt_usuario($uid);
 }
 
-function rt_descartar(): void { $GLOBALS['_rt'] = ['u' => [], 'p' => [], 't' => [], 'g' => []]; }
+function rt_descartar(): void { $GLOBALS['_rt'] = ['u' => [], 'p' => [], 't' => [], 'g' => [], 'c' => []]; }
 
 function rt_vaciar(): void {
     $q = $GLOBALS['_rt'] ?? null;
-    if (!$q || (!$q['u'] && !$q['p'] && !$q['t'] && !$q['g'])) return;
+    if (!$q || (!$q['u'] && !$q['p'] && !$q['t'] && !$q['g'] && !$q['c'])) return;
     rt_descartar();
     try {
         foreach ($q['p'] as $id => $x) rt_escribir(rt_urlPartida((int)$id), ['v' => rt_version(), 'n' => $x['n'], 'e' => $x['e']]);
         foreach ($q['t'] as $id => $_) rt_escribir(rt_urlTorneo((int)$id), ['v' => rt_version()]);
         foreach ($q['g'] as $nombre => $_) rt_escribir('rt/' . $nombre . '.json', ['v' => rt_version()]);
+        foreach ($q['c'] as $rel => $_) rt_escribir($rel, ['v' => rt_version()]);
         if ($q['u']) rt_sumarUsuarios($q['u']);
     } catch (Throwable $e) {
         error_log('[timbre] ' . $e->getMessage());
@@ -143,7 +149,8 @@ function rt_sumarUsuarios(array $porUsuario): void {
    llama de vez en cuando (ajz_tick). */
 function rt_limpiarPartidas(int $dias = 3): void {
     $limite = time() - $dias * 86400;
-    foreach (glob(rt_dir() . '/p/*.json') ?: [] as $f) {
+    /* (y los de sus chats: rt/c/p<id>.json) */
+    foreach (array_merge(glob(rt_dir() . '/p/*.json') ?: [], glob(rt_dir() . '/c/p*.json') ?: []) as $f) {
         if (@filemtime($f) < $limite) @unlink($f);
     }
 }

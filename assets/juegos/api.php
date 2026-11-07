@@ -29,7 +29,10 @@
      POST ?action=ajz-tablas           {id, tipo: ofrecer|aceptar|rechazar}
      GET  ?action=ajz-torneo&id=N      → torneo con su cuadro
      POST ?action=ajz-torneo-crear     {nombre, plazas, min, inc, empieza, entrada, premio1..3}
+     POST ?action=ajz-torneo-editar    {id, nombre, min, inc, empieza, premio1..3} (solo el anfitrión, antes de empezar)
      POST ?action=ajz-torneo-apuntarse | ajz-torneo-salir | ajz-torneo-cancelar {id}
+     GET  ?action=ajz-chat&tipo=t|p&id=N&desde=M → mensajes después del M (ajedrez-chat.php)
+     POST ?action=ajz-chat-enviar      {tipo, id, texto, desde} → igual que ajz-chat
      GET  ?action=ajz-torneo-discord&id=N → reintenta el anuncio y dice qué contestó
    `dia` es el día que tenía cargado la ventana: si ya ha cambiado (se
    dejó abierta pasada la medianoche) no se apunta el intento al día
@@ -42,7 +45,7 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
    torneo, aviso del haro): si la BD está saturada, un solo reintento
    corto (melon_pdo en assets/config.php). Esperar dormido ocupa un
    proceso PHP más y empeora el atasco; la ventana ya volverá a pedir. */
-if (in_array($_GET['action'] ?? '', ['ajz-estado', 'ajz-avisos', 'ajz-partida', 'ajz-torneo'], true)) {
+if (in_array($_GET['action'] ?? '', ['ajz-estado', 'ajz-avisos', 'ajz-partida', 'ajz-torneo', 'ajz-chat'], true)) {
     define('MELON_DB_RAPIDO', true);
 }
 
@@ -175,6 +178,11 @@ try {
             catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
             jsonResponse(['ok' => true, 'torneo' => $t, 'autismo' => ajz_saldo($pdo, $uid)]);
 
+        case 'ajz-chat':
+            try { $c = ajz_chatVer($pdo, $uid, (string)($_GET['tipo'] ?? ''), (int)($_GET['id'] ?? 0), (int)($_GET['desde'] ?? 0)); }
+            catch (InvalidArgumentException $e) { jsonResponse(['ok' => false, 'error' => $e->getMessage()]); }
+            jsonResponse(['ok' => true] + $c);
+
         /* Se abre a mano (con sesión) si el anuncio no sale en Discord. */
         case 'ajz-torneo-discord':
             jsonResponse(ajz_torDiscord($pdo, (int)($_GET['id'] ?? 0)));
@@ -186,6 +194,8 @@ try {
         case 'ajz-rendirse':
         case 'ajz-tablas':
         case 'ajz-torneo-crear':
+        case 'ajz-torneo-editar':
+        case 'ajz-chat-enviar':
         case 'ajz-torneo-apuntarse':
         case 'ajz-torneo-salir':
         case 'ajz-torneo-cancelar': {
@@ -199,6 +209,8 @@ try {
                     case 'ajz-reto-responder': $r = ajz_responder($pdo, $uid, $id, !empty($b['aceptar'])); break;
                     case 'ajz-reto-cancelar':  ajz_cancelarReto($pdo, $uid, $id); break;
                     case 'ajz-torneo-crear':   $r = ajz_torCrear($pdo, $uid, $b); break;
+                    case 'ajz-torneo-editar':  ajz_torEditar($pdo, $uid, $id, $b); break;
+                    case 'ajz-chat-enviar':    $r = ajz_chatEnviar($pdo, $uid, (string)($b['tipo'] ?? ''), $id, (string)($b['texto'] ?? ''), (int)($b['desde'] ?? 0)); break;
                     case 'ajz-torneo-apuntarse': ajz_torApuntarse($pdo, $uid, $id); break;
                     case 'ajz-torneo-salir':   ajz_torSalir($pdo, $uid, $id); break;
                     case 'ajz-torneo-cancelar': ajz_torCancelar($pdo, $uid, $id); break;

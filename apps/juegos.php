@@ -403,7 +403,14 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .az-acc { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
         .az-err { color: #c00000; font-weight: bold; }
         body.jg-oscuro .az-err { color: #ff6b6b; }
-        #jg-ajz input, #jg-ajz-crear input, .az-modal input { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        #jg-ajz input, #jg-ajz-crear input, .az-modal input, #azt-chat input, #azp-chat input { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        /* Editar torneo: entrada y jugadores no se cambian (98.css los pone
+           plateados fijos; con el tema). */
+        #jg-ajz-crear input:disabled { background-color: var(--win-bg, silver); color: var(--text-muted, grey); }
+        /* 98.css pone gris la etiqueta que va justo detrás de un campo
+           desactivado (:disabled + label): al editar, "Ritmo" (detrás de
+           Jugadores) parecía bloqueado. */
+        #jg-ajz-crear .az-form label { color: inherit; text-shadow: none; }
         .az-retar-btn { min-width: 96px; font-weight: bold; }
 
         /* Listas: partidas, retos y torneos */
@@ -567,6 +574,31 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         .az-fin { display: none; padding: 6px; text-align: center; line-height: 1.5; }
         .az-fin.on { display: block; }
 
+        /* Chat (sala de espera del torneo y partida; ajedrez.js, chatAbrir).
+           En la partida va debajo de Jugadas y se reparten la altura; en el
+           torneo, sección al final con alto fijo. */
+        .az-chat-lista { overflow: auto; min-height: 0; padding: 2px 0; overflow-wrap: anywhere; }
+        #azp-chat .az-chat-lista { flex: 1; margin-top: 3px; }
+        #azt-chat { flex-shrink: 0; }
+        #azt-chat[hidden] { display: none; }
+        #azt-chat .az-chat-lista { height: 180px; }
+        .az-msg { display: flex; align-items: flex-start; gap: 5px; padding: 2px 6px; line-height: 1.4; }
+        .az-msg .bm-av { --av: 16px; flex-shrink: 0; margin-top: 1px; }
+        .az-msg-t { min-width: 0; }
+        .az-msg.yo b { color: var(--accent, navy); }
+        body.jg-oscuro .az-msg.yo b { color: color-mix(in srgb, var(--accent, navy) 55%, #fff); }
+        .az-chat-form { display: flex; gap: 4px; margin-top: 3px; }
+        /* line-height: 98.css pone 2 (con los 17 px de Kawaii, una caja muy alta). */
+        #azt-chat .az-chat-form input, #azp-chat .az-chat-form input { flex: 1; min-width: 0; height: auto; min-height: 21px; line-height: normal; }
+        .az-chat-form button { min-width: 0; padding: 0 8px; }
+        .az-chat-nota { color: var(--text-muted, #444); padding: 2px 2px 0; }
+        .az-chat-nota:empty { display: none; }
+        .az-chat-nota.err { color: #c00000; font-weight: bold; }
+        body.jg-oscuro .az-chat-nota.err { color: #ff6b6b; }
+        /* La caja del torneo se repinta entera; sus secciones siguen en la
+           columna de azt-body, como antes. */
+        .az-contenido { display: contents; }
+
         /* Torneo */
         .az-tor-body { width: 100%; overflow: auto; flex: 1; min-height: 0; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
         .az-tor-cab { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
@@ -717,7 +749,7 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
 <div class="jg-view" id="jg-ajz-crear">
     <div class="wd-top">
         <button type="button" id="azc-back">&lt; Ajedrez</button>
-        <div class="wd-head"><div class="wd-title">Crear torneo</div><div class="wd-date az-saldo" id="azc-saldo"></div></div>
+        <div class="wd-head"><div class="wd-title" id="azc-title">Crear torneo</div><div class="wd-date az-saldo" id="azc-saldo"></div></div>
         <div class="wd-top-right"></div>
     </div>
     <div class="az-menu">
@@ -777,7 +809,19 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         <div class="wd-head"><div class="wd-title" id="azt-title">Torneo</div><div class="wd-date" id="azt-sub"></div></div>
         <div class="wd-top-right"></div>
     </div>
-    <div class="az-tor-body" id="azt-body"></div>
+    <div class="az-tor-body" id="azt-body">
+        <div id="azt-info" class="az-contenido"></div>
+        <!-- Chat: fuera de azt-info (que se repinta entero) para no perder
+             lo que se está escribiendo. Lo rellena ajedrez.js (chatAbrir). -->
+        <section class="bm-win" id="azt-chat" hidden>
+            <div class="bm-win-bar"><span>Chat</span></div>
+            <div class="bm-win-body">
+                <div class="az-chat-lista az-hundido"></div>
+                <div class="az-chat-form"><input type="text" class="az-chat-txt" maxlength="300" placeholder="Escribe un mensaje…" aria-label="Mensaje"><button type="button" class="az-chat-env">Enviar</button></div>
+                <div class="az-chat-nota"></div>
+            </div>
+        </section>
+    </div>
 </div>
 
 <!-- AJEDREZ: partida -->
@@ -794,6 +838,12 @@ if ($activeTheme !== '' && isset(((array)$_ut['themes'])[$activeTheme])) {
         <div class="az-side">
             <div class="az-jug az-relieve" id="azp-rival"></div>
             <section class="az-jugadas-win az-hundido"><div class="az-jugadas-tit">Jugadas</div><div class="az-jugadas" id="azp-jugadas"></div></section>
+            <section class="az-jugadas-win az-hundido" id="azp-chat">
+                <div class="az-jugadas-tit">Chat</div>
+                <div class="az-chat-lista"></div>
+                <div class="az-chat-form"><input type="text" class="az-chat-txt" maxlength="300" placeholder="Escribe un mensaje…" aria-label="Mensaje"><button type="button" class="az-chat-env">Enviar</button></div>
+                <div class="az-chat-nota"></div>
+            </section>
             <div class="az-jug az-relieve" id="azp-yo"></div>
             <div class="az-estado" id="azp-estado"></div>
             <div id="azp-aviso"></div>

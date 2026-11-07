@@ -10,6 +10,7 @@
        los 5 min (AJZ_RETO_MS) y se devuelve lo apostado. Aviso del haro
        (desktop-base.php, ajz-avisos) y en Juegos > Ajedrez.
      - Torneos (assets/juegos/ajedrez-torneos.php).
+   Chat del torneo y de la partida: assets/juegos/ajedrez-chat.php.
    Colores al azar. La partida empieza "esperando" a que los dos la abran;
    el reloj de las blancas corre cuando están los dos. Si en 2 min
    (AJZ_PRESENTARSE_MS) falta alguien: en un reto se anula y se devuelve
@@ -37,6 +38,7 @@ require_once dirname(__DIR__) . '/php/esquema.php';  /* melon_esquema */
 require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_* */
 require_once dirname(__DIR__) . '/social-helpers.php'; /* isMutualFollow, mutualFollowerIds */
 require_once __DIR__ . '/ajedrez-torneos.php';
+require_once __DIR__ . '/ajedrez-chat.php';
 
 const AJZ_RETO_MS        = 300000;
 const AJZ_PRESENTARSE_MS = 120000;
@@ -101,6 +103,7 @@ function ajz_ensure(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     });
     ajz_torEnsure($pdo);
+    ajz_chatEnsure($pdo);
 }
 
 /* ── Utilidades ── */

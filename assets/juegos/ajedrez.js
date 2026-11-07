@@ -2,7 +2,8 @@
    Ajedrez de la app Juegos (apps/juegos.php; servidor y reglas en
    assets/juegos/ajedrez.php, ajedrez-torneos.php y ajedrez-reglas.php).
    Vistas: menú (retar a un amigo, partidas y retos, torneos), crear
-   torneo, torneo (apuntados y cuadro) y partida.
+   torneo (y editarlo: la misma vista, ver formTorneo), torneo (apuntados,
+   cuadro y chat) y partida (con su chat debajo de Jugadas).
    El navegador no sabe de reglas: el servidor le manda las jugadas que
    valen (legales, en UCI) cuando le toca, y cada jugada va al servidor
    (ajz-mover). Mientras llega la respuesta, la pieza se ve ya movida
@@ -202,6 +203,100 @@
     $('az-conf-si').addEventListener('click', function () { var f = confFn; cerrarConf(); if (f) f(); });
     $('az-conf-no').addEventListener('click', cerrarConf);
     $('az-conf-x').addEventListener('click', cerrarConf);
+
+    /* ── Chat (sala de espera del torneo y partida; servidor en
+       assets/juegos/ajedrez-chat.php) ──
+       Mira su archivo del timbre (rt/c/<t|p><id>.json) cada 2 s y solo
+       cuando cambia pide los mensajes nuevos (desde el último que tiene);
+       de respaldo, cada 30 s (3 s si el timbre no va). Las cajas (#azt-chat
+       y #azp-chat) están fijas en juegos.php: repintar el torneo no borra
+       lo que se está escribiendo. Los bucles son de la vista: se paran
+       solos al cambiar (ciclo). */
+    var chats = {};
+    function chatMontar(cajaId) {
+        var caja = $(cajaId);
+        var c = { lista: caja.querySelector('.az-chat-lista'), txt: caja.querySelector('.az-chat-txt'), env: caja.querySelector('.az-chat-env'),
+                  form: caja.querySelector('.az-chat-form'), nota: caja.querySelector('.az-chat-nota'),
+                  tipo: '', id: 0, ultimo: 0, pintado: false, enviando: false };
+        c.env.addEventListener('click', function () { chatEnviar(c); });
+        c.txt.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); chatEnviar(c); } });
+        chats[cajaId] = c;
+        return c;
+    }
+    function chatAbrir(cajaId, tipo, id) {
+        var c = chats[cajaId] || chatMontar(cajaId);
+        if (c.tipo !== tipo || c.id !== id) c.txt.value = '';
+        c.tipo = tipo; c.id = id; c.ultimo = 0; c.pintado = false;
+        c.lista.innerHTML = '<div class="az-vacio">Cargando…</div>';
+        c.form.style.display = 'none';
+        chatNota(c, '');
+        var cargar = unaALaVez(function () { return chatPedir(c, tipo, id); });
+        var k = ciclo;
+        var tC = mirarTimbre('rt/c/' + tipo + id + '.json', MIRAR_OTROS, ['v'], cargar);
+        tC.listo.then(function () {
+            if (k !== ciclo) return;
+            bucle(function () { return tC.ok ? RESPALDO_MS : SIN_TIMBRE_OTROS; }, cargar);
+        });
+    }
+    function chatNota(c, txt, error) {
+        c.nota.textContent = txt || '';
+        c.nota.className = 'az-chat-nota' + (error ? ' err' : '');
+    }
+    /* Quién puede escribir: en el torneo, los apuntados y el anfitrión
+       (lo dice el servidor con cada lote de mensajes y el torneo al
+       repintarse, por si alguien se apunta o se borra). */
+    function chatPermiso(c, puede) {
+        c.form.style.display = puede ? '' : 'none';
+        if (!puede) chatNota(c, 'Solo pueden escribir los apuntados y quien lo organiza.');
+        else if (!c.nota.classList.contains('err')) chatNota(c, '');
+    }
+    function chatPedir(c, tipo, id) {
+        return JG.api('ajz-chat&tipo=' + tipo + '&id=' + id + '&desde=' + c.ultimo).then(function (r) {
+            if (c.tipo !== tipo || c.id !== id) return true;
+            if (!r || !r.ok) {
+                if (!c.pintado) c.lista.innerHTML = '<div class="az-vacio">' + esc((r && r.error) || 'No se ha podido cargar') + '</div>';
+                return false;
+            }
+            chatPintar(c, r, false);
+            return true;
+        });
+    }
+    /* Añade los que no tiene (por id: la respuesta de enviar y la del
+       timbre pueden traer los mismos). Baja del todo si ya estaba abajo o
+       si el mensaje es suyo. */
+    function chatPintar(c, r, mio) {
+        chatPermiso(c, r.puede);
+        var l = c.lista;
+        var abajo = !c.pintado || mio || l.scrollHeight - l.scrollTop - l.clientHeight < 30;
+        if (!c.pintado) { l.innerHTML = ''; c.pintado = true; }
+        var nuevos = (r.mensajes || []).filter(function (m) { return m.id > c.ultimo; });
+        if (nuevos.length) { var v = l.querySelector('.az-vacio'); if (v) v.remove(); }
+        nuevos.forEach(function (m) {
+            var d = document.createElement('div');
+            d.className = 'az-msg' + (m.mio ? ' yo' : '');
+            d.title = fechaCorta(m.hora);
+            d.innerHTML = avatar(m.de, 16) + '<div class="az-msg-t"><b>' + esc(m.de ? m.de.nombre : '?') + ':</b> ' + esc(m.texto) + '</div>';
+            l.appendChild(d);
+            c.ultimo = m.id;
+        });
+        if (!l.children.length) l.innerHTML = '<div class="az-vacio">Todavía no hay mensajes.</div>';
+        if (abajo) l.scrollTop = l.scrollHeight;
+    }
+    function chatEnviar(c) {
+        var t = c.txt.value.trim();
+        if (!t || c.enviando || !c.id) return;
+        var tipo = c.tipo, id = c.id;
+        c.enviando = true; c.env.disabled = true;
+        var fin = function () { c.enviando = false; c.env.disabled = false; };
+        JG.api('ajz-chat-enviar', { tipo: tipo, id: id, texto: t, desde: c.ultimo }).then(function (r) {
+            fin();
+            if (c.tipo !== tipo || c.id !== id) return;
+            if (!r || !r.ok) { chatNota(c, (r && r.error) || 'No se ha podido enviar', true); return; }
+            c.txt.value = '';
+            chatNota(c, '');
+            chatPintar(c, r, true);
+        }).catch(function () { fin(); chatNota(c, 'Sin conexión', true); });
+    }
 
     /* ── Piezas (SVG, 100×100) ── */
     var BASE = '<path class="c" d="M28 73h44v7H28z"/><rect class="c" x="22" y="80" width="56" height="8" rx="3"/>';
@@ -431,17 +526,42 @@
             }).catch(function () { b.disabled = false; msg.textContent = 'Sin conexión'; });
     });
 
-    /* ── Crear torneo ── */
-    function abrirCrear() {
+    /* ── Crear torneo (y editarlo) ── */
+    /* Editar usa la misma vista: el botón "Editar" del torneo (solo el
+       anfitrión, antes de empezar) la abre con sus datos; la entrada y los
+       jugadores salen bloqueados (no se cambian una vez creado). El
+       resumen enseña la diferencia de premios: lo que se cobra o se
+       devuelve al guardar. editando = id del torneo (0 = crear). */
+    var editando = 0, editPremios = 0, formDe = 0;
+    function abrirCrear() { formTorneo(null); }
+    function abrirEditar(t) { formTorneo(t); }
+    function valorFecha(ms) { var o = madrid(ms); return o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute; }
+    function formTorneo(t) {
         pararTodo();
         vista = 'crear';
+        editando = t ? t.id : 0;
         JG.show('jg-ajz-crear');
         $('azc-msg').textContent = '';
-        if (!$('azc-empieza').value) {
-            /* Por defecto, dentro de una hora (redondeado al cuarto). */
-            var ms = Math.ceil((Date.now() + 3600000) / 900000) * 900000, o = madrid(ms);
-            $('azc-empieza').value = o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute;
+        /* Editar: siempre con lo que tiene el torneo ahora. Crear después de
+           haber editado: el formulario vacío otra vez. */
+        if (t || formDe) {
+            var v = t || { nombre: '', plazas: 8, min: 5, inc: 3, entrada: 0, premios: [0, 0, 0], empieza: 0 };
+            $('azc-nombre').value = v.nombre;
+            $('azc-plazas').value = String(v.plazas);
+            $('azc-min').value = v.min; $('azc-inc').value = v.inc;
+            $('azc-entrada').value = v.entrada;
+            $('azc-p1').value = v.premios[0]; $('azc-p2').value = v.premios[1]; $('azc-p3').value = v.premios[2];
+            $('azc-empieza').value = v.empieza ? valorFecha(v.empieza) : '';
+            formDe = editando;
         }
+        editPremios = t ? t.premios[0] + t.premios[1] + t.premios[2] : 0;
+        $('azc-plazas').disabled = !!t;
+        $('azc-entrada').disabled = !!t;
+        $('azc-title').textContent = t ? 'Editar torneo' : 'Crear torneo';
+        $('azc-crear').textContent = t ? 'Guardar cambios' : 'Crear torneo';
+        $('azc-back').textContent = t ? '< Torneo' : '< Ajedrez';
+        /* Por defecto, dentro de una hora (redondeado al cuarto). */
+        if (!$('azc-empieza').value) $('azc-empieza').value = valorFecha(Math.ceil((Date.now() + 3600000) / 900000) * 900000);
         if (estado) pintaSaldo(estado.autismo);
         resumen();
     }
@@ -474,7 +594,9 @@
             fila('Rondas', rondas + ' (' + nombreRonda(1, rondas) + (rondas > 1 ? ' → Final' : '') + ')') +
             fila('Entradas', entrada > 0 ? 'hasta ' + (entrada * plazas) + ' ' + JG.PT : 'gratis') +
             '</div>' +
-            '<div class="az-res-total az-hundido">Te cuesta ahora<br><b>' + coste + '</b> ' + JG.PT + '</div>';
+            (editando && coste < editPremios
+                ? '<div class="az-res-total az-hundido">Se te devuelven<br><b>' + (editPremios - coste) + '</b> ' + JG.PT + '</div>'
+                : '<div class="az-res-total az-hundido">Te cuesta ahora<br><b>' + (editando ? coste - editPremios : coste) + '</b> ' + JG.PT + '</div>');
     }
     ['azc-p1', 'azc-p2', 'azc-p3', 'azc-entrada', 'azc-min', 'azc-inc', 'azc-empieza', 'azc-plazas'].forEach(function (id) {
         $(id).addEventListener('input', resumen);
@@ -484,6 +606,19 @@
         var b = $('azc-crear'), msg = $('azc-msg');
         msg.textContent = '';
         b.disabled = true;
+        if (editando) {
+            var id = editando;
+            JG.api('ajz-torneo-editar', {
+                id: id, nombre: $('azc-nombre').value, min: +$('azc-min').value, inc: +$('azc-inc').value, empieza: $('azc-empieza').value,
+                premio1: +$('azc-p1').value || 0, premio2: +$('azc-p2').value || 0, premio3: +$('azc-p3').value || 0
+            }).then(function (r) {
+                b.disabled = false;
+                if (!r || !r.ok) { msg.textContent = (r && r.error) || 'No se han podido guardar los cambios'; return; }
+                if (estado) estado.autismo = r.autismo;
+                abrirTorneo(id);
+            }).catch(function () { b.disabled = false; msg.textContent = 'Sin conexión'; });
+            return;
+        }
         JG.api('ajz-torneo-crear', {
             nombre: $('azc-nombre').value, plazas: +$('azc-plazas').value, min: +$('azc-min').value, inc: +$('azc-inc').value,
             empieza: $('azc-empieza').value, entrada: +$('azc-entrada').value || 0,
@@ -502,7 +637,9 @@
         vista = 'torneo';
         torneoId = id;
         JG.show('jg-ajz-torneo');
-        $('azt-body').innerHTML = '<div class="az-vacio">Cargando…</div>';
+        $('azt-info').innerHTML = '<div class="az-vacio">Cargando…</div>';
+        $('azt-chat').hidden = true;
+        chatAbrir('azt-chat', 't', id);
         /* El archivo del torneo; el torneo, en cuanto se ha leído, y de
            respaldo cada 30 s (3 s si el timbre no va). */
         var c = ciclo;
@@ -516,7 +653,11 @@
         var id = torneoId;
         return JG.api('ajz-torneo&id=' + id).then(function (r) {
             if (vista !== 'torneo' || torneoId !== id) return true;
-            if (!r || !r.ok) { $('azt-body').innerHTML = '<div class="az-vacio">' + esc((r && r.error) || 'No se ha podido cargar') + '</div>'; return false; }
+            if (!r || !r.ok) {
+                $('azt-info').innerHTML = '<div class="az-vacio">' + esc((r && r.error) || 'No se ha podido cargar') + '</div>';
+                $('azt-chat').hidden = true;
+                return false;
+            }
             torneo = r.torneo;
             if (estado) estado.autismo = r.autismo;
             pintaTorneo(r.autismo);
@@ -560,7 +701,9 @@
             '<div class="bm-win-body"><div class="az-apuntados">' + (chips.length ? chips.join('') : '<span class="az-vacio">Todavía no hay nadie.</span>') + '</div></div></section>';
         var prevMsg = $('azt-msg') ? $('azt-msg').textContent : '';
         var body = $('azt-body'), top = body.scrollTop, cq = body.querySelector('.az-cuadro-scroll'), izq = cq ? cq.scrollLeft : 0;
-        body.innerHTML = h;
+        $('azt-info').innerHTML = h;
+        $('azt-chat').hidden = false;
+        if (chats['azt-chat'] && chats['azt-chat'].pintado) chatPermiso(chats['azt-chat'], t.apuntado || t.soyHost);
         body.scrollTop = top;
         if (body.querySelector('.az-cuadro-scroll')) body.querySelector('.az-cuadro-scroll').scrollLeft = izq;
         $('azt-msg').textContent = prevMsg;
@@ -579,6 +722,7 @@
                 acc.appendChild(boton(precio, function (b) { hacer('ajz-torneo-apuntarse', b); }, 'az-retar-btn'));
             }
             if (t.apuntado) acc.appendChild(boton('Borrarme', function (b) { hacer('ajz-torneo-salir', b); }));
+            if (t.soyHost) acc.appendChild(boton('Editar', function () { abrirEditar(t); }));
             if (t.soyHost) acc.appendChild(boton('Cancelar torneo', function (b) {
                 confirmar('Cancelar torneo', '¿Cancelar <b>' + esc(t.nombre) + '</b>? Se devuelven las entradas y los premios.', 'Cancelar torneo',
                           function () { hacer('ajz-torneo-cancelar', b); });
@@ -663,6 +807,7 @@
             });
         });
         relojTimer = setInterval(pintaRelojes, 100);
+        chatAbrir('azp-chat', 'p', id);
     }
     /* Nunca dos a la vez: si se pide mientras va otra, se repite al acabar
        (con la partida que se pidió la última). */
@@ -1101,7 +1246,7 @@
     $('jg-open-ajz').addEventListener('click', abrirMenu);
     $('jg-open-ajz').addEventListener('keydown', function (e) { if (e.key === 'Enter') abrirMenu(); });
     $('az-back').addEventListener('click', function () { pararTodo(); vista = null; JG.show('jg-home'); });
-    $('azc-back').addEventListener('click', abrirMenu);
+    $('azc-back').addEventListener('click', function () { if (editando) abrirTorneo(editando); else abrirMenu(); });
     $('azt-back').addEventListener('click', abrirMenu);
     $('az-crear-btn').addEventListener('click', function (e) { e.stopPropagation(); abrirCrear(); });
     $('az-help').addEventListener('click', function () { $('az-modal').classList.add('on'); });
