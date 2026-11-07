@@ -4,7 +4,7 @@
 
    Devuelve TODOS los invites pendientes del usuario actual desde las
    fuentes (listen-together, partner, playlist colab, item colab,
-   amigos: solicitud / aceptada, e invitación cumplida) en
+   amigos: solicitud / aceptada, invitación cumplida y regalos) en
    un solo JSON. Usado por la shell móvil para mostrar los pendientes
    al abrir la app y vía polling cada 15s.
 
@@ -169,5 +169,18 @@ try {
         $invites[] = ['source' => 'invita', 'id' => $x['id'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre'], 'puntos' => $x['puntos']];
     }
 } catch (Throwable $e) { }
+
+/* ── REGALOS DE LA TIENDA (assets/tienda/api.php) ────────────────
+   'regalo' = te han regalado algo y está sin abrir ("Abrir" lleva a la
+   tienda con ?regalo=ID). En el PC es el aviso del haro (pollGifts). */
+try {
+    $st = $pdo->prepare("SELECT r.id, u.user_key, COALESCE(NULLIF(u.label, ''), u.username, u.user_key) AS label
+                           FROM tienda_regalos r JOIN usuarios u ON u.id = r.from_user_id
+                          WHERE r.to_user_id = ? AND r.estado = 'pendiente' ORDER BY r.id");
+    $st->execute([(int)$userId]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $invites[] = ['source' => 'regalo', 'id' => (int)$r['id'], 'fromKey' => $r['user_key'], 'fromLabel' => $r['label']];
+    }
+} catch (Throwable $e) { /* sin tabla de regalos todavía */ }
 
 echo json_encode(['ok' => true, 'invites' => $invites], JSON_UNESCAPED_UNICODE);

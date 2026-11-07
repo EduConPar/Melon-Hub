@@ -467,6 +467,9 @@ $interfacePacks = listInterfacesForUser($pdo, userIdByKey($userKey));
             border-radius: 6px; letter-spacing: 1px;
         }
         .pers-item.active .pers-item-badge { background: rgba(255,255,255,0.3); }
+        /* Fuentes: "Aa" y el nombre con su fuente (como el PC). */
+        .pers-fuente .pers-item-icon { font-size: 30px; white-space: nowrap; }
+        .pers-fuente .pers-item-name { font-size: 12px; }
 
         /* ── Biblioteca de temas ──
            Cada item es un card Win98 raised con:
@@ -720,6 +723,10 @@ $interfacePacks = listInterfacesForUser($pdo, userIdByKey($userKey));
         <section class="tm-section">
             <h3 class="tm-section-title"><img src="../../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Interfaces</h3>
             <div class="pers-grid" id="pers-themes-grid"></div>
+        </section>
+        <section class="tm-section">
+            <h3 class="tm-section-title"><img src="../../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Fuentes</h3>
+            <div class="pers-grid" id="pers-fonts-grid"></div>
         </section>
         <section class="tm-section">
             <h3 class="tm-section-title"><img src="../../assets/img/appIcons/temasIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Iconos</h3>
@@ -1737,11 +1744,13 @@ function loadPersonalize() {
             renderPersInventory('pers-haros-grid',   d.haros,      d.activeHaro,      'haro');
             /* Mascotas: placeholder "Coming soon..." — no se llena. */
             renderInterfacePacks();
+            renderFontPacks();
             renderIconPacks();
         })
         .catch(function(){
             document.getElementById('pers-haros-grid').innerHTML   = '';
             renderInterfacePacks();
+            renderFontPacks();
         });
 }
 
@@ -1799,6 +1808,61 @@ function renderInterfacePacks() {
             });
         });
     });
+}
+
+/* Fuentes que tienes (como renderFontPacks de apps/temas.php): las de
+   serie, las compradas en la tienda y las que vienen con una interfaz
+   tuya; cada tarjeta con su fuente (mh-fuente-muestra la libra de la
+   puesta en la página). Tocar → set-font para la interfaz activa y
+   recarga, como las interfaces (mobile.php vuelve a Personalización). */
+function renderFontPacks() {
+    var grid = document.getElementById('pers-fonts-grid');
+    if (!grid) return;
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    fetch('../../assets/personalize/api.php?action=fonts', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (!d || !d.ok) throw new Error(d && d.error || 'error');
+            var mias = (d.fuentes || []).filter(function(f){ return f.tiene; });
+            mias.forEach(function(f){
+                if (!f.url || document.querySelector('link[data-fuente="' + f.slug + '"]')) return;
+                var l = document.createElement('link');
+                l.rel = 'stylesheet'; l.href = f.url; l.dataset.fuente = f.slug;
+                document.head.appendChild(l);
+            });
+            grid.innerHTML = mias.map(function(f){
+                var on = f.slug === d.activa;
+                var fam = 'font-family:&quot;' + esc(f.familia) + '&quot;, sans-serif;';
+                return '<div class="pers-item pers-fuente' + (on ? ' active' : '') + '" data-fuente="' + esc(f.slug) + '">' +
+                    '<div class="pers-item-icon mh-fuente-muestra" style="' + fam + '">Aa</div>' +
+                    '<div class="pers-item-name mh-fuente-muestra" style="' + fam + '">' + esc(f.nombre) + '</div>' +
+                    (on ? '<div class="pers-item-badge">ACTIVA</div>' : '') +
+                '</div>';
+            }).join('');
+            grid.querySelectorAll('[data-fuente]').forEach(function(card){
+                card.addEventListener('click', function(){
+                    if (card.classList.contains('active')) return;
+                    try {
+                        var topStorage = (window.top && window.top.sessionStorage) || sessionStorage;
+                        topStorage.setItem('temas-restore-tab', 'personalize');
+                    } catch (_) {}
+                    fetch('../../assets/personalize/api.php?action=set-font', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slug: card.dataset.fuente, interface: d.interfaz })
+                    }).catch(function(){}).finally(function() {
+                        try { window.top.location.reload(); }
+                        catch (_) { location.reload(); }
+                    });
+                });
+            });
+        })
+        .catch(function(){ grid.innerHTML = ''; });
 }
 
 /* Iconos: packs detectados desde el filesystem por PHP. Click selecciona

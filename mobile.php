@@ -231,6 +231,20 @@ require_once __DIR__ . '/assets/php/timbre.php';
     }
 })();
 
+/* FUENTE POR USUARIO/INTERFAZ (assets/php/fuentes.php; como
+   desktop-base.php): la de la interfaz activa pasa de la BD a la cookie
+   melonFuente, que lee emitInterfaceCss() aquí y en las apps del móvil
+   (iframes). La de serie = sin cookie. */
+(function() use (&$pdo, $userKey) {
+    require_once __DIR__ . '/assets/php/fuentes.php';
+    $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $stmt->execute([$userKey]);
+    $uid = (int)($stmt->fetchColumn() ?: 0);
+    $iface = getActiveInterface();
+    $slug = melonFuenteActiva($pdo, $uid, $iface);
+    melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
+})();
+
 /* Tema por interfaz: lee cookie themeFor_<interface>, retrocompat con
    el global. Si no hay tema activo para esta interfaz, $activeTheme = ''
    y el browser cae a los tokens default del :root de la interfaz. */
@@ -1989,6 +2003,8 @@ if ('serviceWorker' in navigator) {
         }
     }
     window.mOpenLink = mOpenLink;
+    /* Para los avisos (mNotifSystem): "Abrir" un regalo → la tienda. */
+    window.mOpenApp = openApp;
 
     /* "Escuchar conmigo": como melonJoinListen del escritorio. Pide unirse
        (aunque no seáis amigos) y acepta sola la invitación del anfitrión. */
@@ -5222,6 +5238,22 @@ window.MuShell = (function(){
                 message: 'Ahora sois amigos',
             });
         },
+        /* Regalo de la tienda sin abrir: "Abrir" → la tienda con ese regalo
+           (?regalo=ID, tienda-mobile.php). Sale hasta que se abre. */
+        'regalo': function(inv, asSheet){
+            mToast({
+                id:    'regalo-' + inv.id,
+                sheet: asSheet,
+                title: 'Regalo',
+                message: esc(inv.fromLabel || '?') + ' te ha enviado un regalo',
+                actions: [
+                    { label: 'Cerrar', fn: function(){} },
+                    { label: 'Abrir',  fn: function(){
+                        if (window.mOpenApp) window.mOpenApp('apps/mobile/tienda-mobile.php?regalo=' + encodeURIComponent(inv.id), 'Tienda');
+                    } },
+                ],
+            });
+        },
         /* Invitación cumplida (racha.php): en el PC sale en la campana. */
         'invita': function(inv, asSheet){
             mToast({
@@ -5261,15 +5293,17 @@ window.MuShell = (function(){
                 if (isDeep) deepShown = true;
                 HANDLERS[src](inv, isDeep);
             });
-            /* Solicitud de amistad que ya no está (aceptada o rechazada
-               desde el PC, cancelada): fuera su aviso. */
-            var siguen = {};
-            d.invites.forEach(function(inv){ if (inv.source === 'amigo') siguen[inv.id] = true; });
-            Object.keys(SHOWN.amigo || {}).forEach(function(id){
-                if (siguen[id]) return;
-                var t = document.getElementById('m-toast-amigo-' + id);
-                if (t) t.remove();
-                delete SHOWN.amigo[id];
+            /* Solicitud de amistad o regalo que ya no está (aceptada o
+               rechazada desde el PC o la tienda, cancelada): fuera su aviso. */
+            ['amigo', 'regalo'].forEach(function(src){
+                var siguen = {};
+                d.invites.forEach(function(inv){ if (inv.source === src) siguen[inv.id] = true; });
+                Object.keys(SHOWN[src] || {}).forEach(function(id){
+                    if (siguen[id]) return;
+                    var t = document.getElementById('m-toast-' + src + '-' + id);
+                    if (t) t.remove();
+                    delete SHOWN[src][id];
+                });
             });
         });
     }
@@ -5304,7 +5338,7 @@ window.MuShell = (function(){
             pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
         };
         window.melonTimbre.on('lt', pedir, 15000);
-        ['musica', 'items', 'pareja', 'amigos', 'invita'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        ['musica', 'items', 'pareja', 'amigos', 'invita', 'regalo'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
         document.addEventListener('visibilitychange', function(){
             if (document.visibilityState === 'visible') pedir();
         });

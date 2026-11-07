@@ -1,6 +1,6 @@
 <?php
 /* ──────────────────────────────────────────────────────────────────────
-   fuentes.php — FUENTES de la interfaz (decidido así; solo escritorio)
+   fuentes.php — FUENTES de la interfaz (decidido así; escritorio y móvil)
    ──────────────────────────────────────────────────────────────────────
    - Se venden en la pestaña Interfaces de la tienda (sección FUENTES) y
      se eligen en Temas → Personalización → Fuentes.
@@ -13,7 +13,8 @@
      user_settings `fuente:<interfaz>` = slug en JSON. Sin elegir, la de
      serie de la interfaz (campo "fuente" de su meta.json).
    - La de la interfaz activa viaja en la cookie `melonFuente` (la pone
-     desktop-base.php desde la BD en cada carga y set-font al cambiarla) y
+     desktop-base.php / mobile.php desde la BD en cada carga y set-font al
+     cambiarla) y
      emitInterfaceCss() la pinta en todas las páginas que cargan la
      interfaz, iframes incluidos. Si es la de serie, no se pinta nada.
    ────────────────────────────────────────────────────────────────────── */
