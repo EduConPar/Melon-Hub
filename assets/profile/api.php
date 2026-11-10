@@ -2281,6 +2281,30 @@ case 'save-fcm-token': {
     jsonResponse(['ok' => true]);
 }
 
+/* Prueba de los avisos de la app: manda uno a MIS tokens de FCM y
+   devuelve lo que contesta Google (o por qué no se pudo). Para depurar
+   desde el navegador con la sesión iniciada:
+   assets/profile/api.php?action=test-push */
+case 'test-push': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    require_once dirname(__DIR__) . '/push/send-push.php';
+    $st = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND tipo = 'fcm'");
+    $st->execute([$uid]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $s) {
+        $GLOBALS['melonFcmUltimo'] = '';
+        $r = melonFcmEnviar((string)$s['endpoint'], [
+            'type' => 'test', 'title' => 'Melon Hub', 'body' => 'Aviso de prueba',
+            'url'  => pushNotifBaseUrl() . 'mobile.php',
+        ]);
+        $out[] = ['token' => substr((string)$s['endpoint'], 0, 12) . '…',
+                  'resultado' => $r, 'detalle' => $GLOBALS['melonFcmUltimo']];
+    }
+    jsonResponse(['ok' => true, 'clave' => (bool)melonFcmCuenta(),
+                  'curl' => function_exists('curl_init'), 'tokens' => $out]);
+}
+
 case 'delete-push-subscription': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);

@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:718738272493:android:7045fb0932e9fa0ffd9ce4",
+        "mobilesdk_app_id": "1:718738272493:android:9e18a2f926c053cdfd9ce4",
         "android_client_info": {
-          "package_name": "es.melonhub.Melonhub"
+          "package_name": "es.melonhub.MelonHub"
         }
       },
       "oauth_client": [],

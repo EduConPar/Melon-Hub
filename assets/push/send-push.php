@@ -165,7 +165,10 @@ if (!function_exists('melonFcmAccessToken')) {
             'iat'   => $now,
             'exp'   => $now + 3600,
         ]));
-        if (!openssl_sign($jwt, $sig, $sa['private_key'], 'sha256WithRSAEncryption')) return '';
+        if (!openssl_sign($jwt, $sig, $sa['private_key'], 'sha256WithRSAEncryption')) {
+            $GLOBALS['melonFcmUltimo'] = 'openssl_sign falló: ' . openssl_error_string();
+            return '';
+        }
         $ch = curl_init('https://oauth2.googleapis.com/token');
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -176,11 +179,16 @@ if (!function_exists('melonFcmAccessToken')) {
                 'assertion'  => $jwt . '.' . $b64($sig),
             ]),
         ]);
-        $resp = json_decode((string)curl_exec($ch), true);
+        $raw  = curl_exec($ch);
+        if ($raw === false) $GLOBALS['melonFcmUltimo'] = 'curl token: ' . curl_error($ch);
+        $resp = json_decode((string)$raw, true);
         curl_close($ch);
         $tok = (string)($resp['access_token'] ?? '');
         if ($tok !== '') @file_put_contents($cache, $tok, LOCK_EX);
-        else error_log('[fcm] sin access token: ' . json_encode($resp));
+        else {
+            error_log('[fcm] sin access token: ' . json_encode($resp));
+            if ($raw !== false) $GLOBALS['melonFcmUltimo'] = 'token OAuth: ' . substr((string)$raw, 0, 300);
+        }
         return $tok;
     }
 }
@@ -191,7 +199,8 @@ if (!function_exists('melonFcmAccessToken')) {
 if (!function_exists('melonFcmEnviar')) {
     function melonFcmEnviar(string $token, array $p): string {
         $sa = melonFcmCuenta();
-        if (!$sa || $token === '') return 'error';
+        if (!$sa) { $GLOBALS['melonFcmUltimo'] = 'no hay clave *firebase-adminsdk*.json en assets/push/'; return 'error'; }
+        if ($token === '') return 'error';
         $access = melonFcmAccessToken($sa);
         if ($access === '') return 'error';
 
@@ -214,7 +223,7 @@ if (!function_exists('melonFcmEnviar')) {
             ],
             /* En data todo tiene que ser string. */
             'data'    => ['url' => $url, 'type' => (string)($p['type'] ?? '')],
-            'android' => ['priority' => 'high', 'notification' => $notif],
+            'android' => ['priority' => 'HIGH', 'notification' => $notif],
         ]];
 
         $ch = curl_init('https://fcm.googleapis.com/v1/projects/' . rawurlencode($sa['project_id']) . '/messages:send');
@@ -227,6 +236,8 @@ if (!function_exists('melonFcmEnviar')) {
         ]);
         $resp = (string)curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        /* Para la acción test-push (assets/profile/api.php). */
+        $GLOBALS['melonFcmUltimo'] = $code . ' ' . ($resp !== '' ? substr($resp, 0, 500) : curl_error($ch));
         curl_close($ch);
         if ($code === 200) return 'ok';
         /* 401: el access token guardado ya no vale → se pedirá otro. */
