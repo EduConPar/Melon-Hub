@@ -158,6 +158,11 @@ melon_esquema($pdo, 'perfil', __FILE__, function (PDO $pdo) {
        anual en el calendario (assets/couple/api.php, cumplesDeAmigos). */
     try { $pdo->exec("ALTER TABLE profile ADD COLUMN birthday DATE NULL DEFAULT NULL"); }
     catch (Throwable $e) { /* ya existe */ }
+    /* Avisos push: 'web' = PWA/navegador (VAPID); 'fcm' = app de Android
+       (token de Firebase en `endpoint`, p256dh y auth vacíos). Ver
+       assets/push/send-push.php. */
+    try { $pdo->exec("ALTER TABLE push_subscriptions ADD COLUMN tipo VARCHAR(8) NOT NULL DEFAULT 'web'"); }
+    catch (Throwable $e) { /* ya existe */ }
     /* Capítulos de series — COMPARTIDOS por título (series_key = título en
        minúsculas). Cualquier usuario añade/quita capítulos. La duración va
        en minutos. El estado (visto + reseña) es POR USUARIO. */
@@ -577,10 +582,6 @@ function pf_userHasMuteFlag(PDO $pdo, int $uid, string $key): bool {
    fallo se silencia — el mensaje ya está persistido. */
 function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): void {
     global $loginUsers;
-    $libPath = dirname(__DIR__) . '/push/webpush.php';
-    if (!file_exists($libPath)) return;     /* no instalado todavía */
-    $keysPath = dirname(__DIR__) . '/push/vapid-keys.php';
-    if (!file_exists($keysPath)) return;    /* corre generate-vapid.php primero */
 
     /* Modo "no molestar": el destinatario desactivó la categoría
        Mensajes en sus prefs → no enviamos push (la conversación
@@ -599,16 +600,15 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
         if ($st->fetchColumn()) return;
     }
 
-    $stmt = $pdo->prepare("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?");
+    /* SELECT *: incluye `tipo` (web / fcm de la app de Android). */
+    $stmt = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ?");
     $stmt->execute([$toUid]);
     $subs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$subs) return;
 
-    require_once $libPath;
-    /* Helper pushNotifBaseUrl() para construir URLs portables (localhost
-       y producción usan bases distintas). Vive en send-push.php. */
+    /* pushNotifBaseUrl() y melonPushEnviar() (Web Push + FCM) viven en
+       send-push.php. */
     require_once dirname(__DIR__) . '/push/send-push.php';
-    try { $wp = new WebPush(); } catch (Throwable $e) { return; }
 
     $fromLabel = $loginUsers[$fromKey]['label'] ?? $fromKey;
     /* Avatar del remitente como icono de la notificación. Si no hay
@@ -616,7 +616,7 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
     $fromAvatarRel = getUserImage($fromLabel);
     $base = pushNotifBaseUrl();
     $iconUrl = $fromAvatarRel !== '' ? ($base . $fromAvatarRel) : null;
-    $payload = json_encode([
+    $payload = [
         'type'  => 'chat',
         'title' => '💬 ' . $fromLabel,
         'body'  => mb_substr($text, 0, 120),
@@ -630,21 +630,12 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
            openWindow() abre una pestaña del navegador en vez del
            contenedor standalone. La base es dinámica (localhost vs prod). */
         'url'   => $base . 'mobile.php?pwa=1#chat=' . $fromKey,
-    ], JSON_UNESCAPED_UNICODE);
+        /* En la app de Android, avisos del mismo chat se sustituyen. */
+        'tag'   => 'chat:' . $fromKey,
+    ];
 
-    foreach ($subs as $s) {
-        try {
-            list($code, $_resp) = $wp->send([
-                'endpoint' => $s['endpoint'],
-                'p256dh'   => $s['p256dh'],
-                'auth'     => $s['auth'],
-            ], $payload, 60);
-            /* 201/202/204 = OK; 404/410 = sub muerta. */
-            if ($code === 404 || $code === 410) {
-                $pdo->prepare("DELETE FROM push_subscriptions WHERE id = ?")->execute([$s['id']]);
-            }
-        } catch (Throwable $e) { /* silencio */ }
-    }
+    /* Borra solas las suscripciones muertas (404/410, token caducado). */
+    melonPushEnviar($pdo, $subs, $payload);
 }
 
 switch ($action) {
@@ -2272,6 +2263,21 @@ case 'save-push-subscription': {
                    VALUES (?, ?, ?, ?)
                    ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), p256dh=VALUES(p256dh), auth=VALUES(auth)")
         ->execute([$uid, $ep, $p2, $au]);
+    jsonResponse(['ok' => true]);
+}
+
+/* Token de FCM de la app de Android (mobile.php, setupNativePush). Va
+   en la misma tabla que las suscripciones Web Push, con tipo 'fcm'. Si
+   otro usuario inicia sesión en ese móvil, el token pasa a ser suyo. */
+case 'save-fcm-token': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $tk = trim(jsonBody()['token'] ?? '');
+    if (!preg_match('#^[A-Za-z0-9_:\-]{20,400}$#', $tk)) jsonError('Token inválido');
+    $pdo->prepare("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, tipo)
+                   VALUES (?, ?, '', '', 'fcm')
+                   ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), tipo='fcm'")
+        ->execute([$uid, $tk]);
     jsonResponse(['ok' => true]);
 }
 

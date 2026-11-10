@@ -113,3 +113,9 @@ CLAUDE.local.md
 
 # Marcas de las migraciones hechas (assets/php/esquema.php).
 /uploads/esquema/
+
+# Avisos push de la app de Android (FCM): clave de la cuenta de servicio
+# de Firebase (da acceso a todo el proyecto: NUNCA al repo, que es
+# público; se sube a mano al servidor) y el access token que se guarda.
+/assets/push/*firebase-adminsdk*.json
+/assets/push/fcm-token.cache

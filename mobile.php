@@ -4794,6 +4794,66 @@ window.MuShell = (function(){
         return out;
     }
 })();
+
+/* ─── Avisos push de la app de Android (FCM) ──────────────────────────
+   El WebView de la app no tiene PushManager (setupPush de arriba no hace
+   nada ahí): la APK lleva @capacitor/push-notifications. Al abrir la app
+   se pide el permiso de Android (13+, una vez; si se niega no se insiste)
+   y el token de Firebase se guarda en push_subscriptions con tipo 'fcm'
+   (assets/profile/api.php, save-fcm-token). El servidor manda a la vez a
+   la PWA y a la app (assets/push/send-push.php, melonPushEnviar).
+   Con la app en segundo plano o cerrada, Android pinta el aviso solo
+   (icono y canal "avisos" del AndroidManifest). Tocarlo abre la app y
+   llega aquí con la URL del aviso: se trata igual que el sw:deep-link de
+   la PWA (si solo cambia el hash, hashchange; si no, se navega). */
+(function setupNativePush(){
+    var cap = window.Capacitor;
+    if (!/MelonHubApp/.test(navigator.userAgent)) return;
+    if (!cap || typeof cap.nativePromise !== 'function' || typeof cap.addListener !== 'function') return;
+    var P = 'PushNotifications';
+
+    function abrirUrl(url) {
+        try {
+            var u = new URL(url, location.href);
+            if (u.origin === location.origin && u.pathname === location.pathname && u.hash) {
+                if (location.hash !== u.hash) location.hash = u.hash;
+                else window.dispatchEvent(new HashChangeEvent('hashchange', {
+                    oldURL: location.href, newURL: location.href
+                }));
+            } else {
+                location.href = u.href;
+            }
+        } catch (_) {}
+    }
+
+    try {
+        cap.addListener(P, 'registration', function(t){
+            if (!t || !t.value) return;
+            fetch('assets/profile/api.php?action=save-fcm-token', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: t.value })
+            }).catch(function(){});
+        });
+        cap.addListener(P, 'pushNotificationActionPerformed', function(a){
+            var d = a && a.notification && a.notification.data;
+            if (d && d.url) abrirUrl(d.url);
+        });
+    } catch (_) { return; }
+
+    cap.nativePromise(P, 'createChannel', {
+        id: 'avisos', name: 'Avisos', description: 'Mensajes, invitaciones y avisos de Melon Hub',
+        importance: 4, visibility: 1
+    }).catch(function(){}).then(function(){
+        return cap.nativePromise(P, 'checkPermissions', {});
+    }).then(function(p){
+        if (p && p.receive === 'granted') return p;
+        if (p && p.receive === 'denied') return null;
+        return cap.nativePromise(P, 'requestPermissions', {});
+    }).then(function(p){
+        if (p && p.receive === 'granted') return cap.nativePromise(P, 'register', {});
+    }).catch(function(){});
+})();
 </script>
 
 <script>

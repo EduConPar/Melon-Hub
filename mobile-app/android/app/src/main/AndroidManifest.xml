@@ -120,6 +120,17 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Avisos push (FCM): icono pequeño y canal que usa Android cuando
+             pinta él la notificación (app en segundo plano o cerrada). El
+             canal "avisos" lo crea la web con PushNotifications.createChannel.
+             El icono es la silueta blanca del melón (Android lo tiñe). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_melon" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="avisos" />
     </application>
 
     <!-- Permissions -->
