@@ -13,8 +13,9 @@
        +30 / +15); se reparten la primera vez que alguien abre el
        Buscaminas otro día (bm_premiar), no hay cron.
      - Infinito: rondas BM_RONDAS; primero sube la dificultad y, ya en
-       Experto, baja el tiempo. Al pasar una ronda se elige: continuar o
-       retirarse con los puntos acumulados; si se pierde (mina o tiempo),
+       Experto, baja el tiempo. La ronda 1 da 1 punto y cada ronda superada
+       después duplica lo acumulado (1, 2, 4, 8…). Al pasar una ronda se
+       elige: continuar o retirarse con lo acumulado; si se pierde (mina o tiempo),
        se pierde todo lo acumulado. Récord = la ronda más alta superada
        (de siempre).
      - Libre: se juega solo en el navegador (apps/juegos.php), no da
@@ -39,24 +40,29 @@ const BM_NIVELES = [
     3 => ['nombre' => 'Experto',      'w' => 30, 'h' => 16, 'm' => 99, 'base' => 200],
 ];
 const BM_PREMIOS = [50, 30, 15];
-/* Ronda => [ancho, alto, minas, segundos, puntos]. De la 10 en adelante:
-   Experto, 30 s menos cada ronda (mínimo 120) y 10 puntos (bm_ronda). */
+/* Ronda => [ancho, alto, minas, segundos]. De la 10 en adelante: Experto
+   y 30 s menos cada ronda (mínimo 120) (bm_ronda). */
 const BM_RONDAS = [
-    1 => [8, 8, 8, 90, 1],
-    2 => [9, 9, 10, 90, 1],
-    3 => [10, 10, 14, 120, 2],
-    4 => [12, 12, 20, 150, 2],
-    5 => [14, 14, 28, 180, 3],
-    6 => [16, 16, 40, 240, 4],
-    7 => [20, 16, 55, 300, 5],
-    8 => [24, 16, 70, 360, 6],
-    9 => [30, 16, 99, 420, 8],
+    1 => [8, 8, 8, 150],
+    2 => [9, 9, 10, 150],
+    3 => [10, 10, 14, 180],
+    4 => [12, 12, 20, 210],
+    5 => [14, 14, 28, 240],
+    6 => [16, 16, 40, 240],
+    7 => [20, 16, 55, 300],
+    8 => [24, 16, 70, 360],
+    9 => [30, 16, 99, 420],
 ];
+/* Lo acumulado se duplica sin tope de juego; esto solo evita desbordar las
+   columnas INT (pendientes y el saldo), cosa que pasaría hacia la ronda 32. */
+const BM_INF_MAX = 1000000000;
 
+/* 'puntos' es lo que suma superar la ronda: como lo acumulado se duplica,
+   1 en la primera y, después, tanto como se lleve (1, 1, 2, 4, 8…). */
 function bm_ronda(int $r): array {
-    if (isset(BM_RONDAS[$r])) [$w, $h, $m, $s, $p] = BM_RONDAS[$r];
-    else { $w = 30; $h = 16; $m = 99; $s = max(120, 420 - 30 * ($r - 9)); $p = 10; }
-    return ['w' => $w, 'h' => $h, 'm' => $m, 'seg' => $s, 'puntos' => $p];
+    if (isset(BM_RONDAS[$r])) [$w, $h, $m, $s] = BM_RONDAS[$r];
+    else { $w = 30; $h = 16; $m = 99; $s = max(120, 420 - 30 * ($r - 9)); }
+    return ['w' => $w, 'h' => $h, 'm' => $m, 'seg' => $s, 'puntos' => 1 << min(30, max(0, $r - 2))];
 }
 
 function bm_hoy(): string {
@@ -385,10 +391,10 @@ function bm_jugar(PDO $pdo, int $uid, int $id, string $tipo, int $celda): array 
                 $r = bm_ronda((int)$p['ronda']);
                 $pdo->prepare("UPDATE bm_partidas SET estado = 'ganada', fin_ms = ?, ms = ?, puntos = ? WHERE id = ?")
                     ->execute([$fin, $ms, $r['puntos'], $id]);
-                $pdo->prepare("UPDATE bm_infinito SET estado = 'superada', pendientes = pendientes + ?,
+                $pdo->prepare("UPDATE bm_infinito SET estado = 'superada', pendientes = LEAST(pendientes + ?, ?),
                                       mejor = GREATEST(mejor, ?), mejor_en = IF(? > mejor, NOW(), mejor_en)
                                 WHERE user_id = ?")
-                    ->execute([$r['puntos'], (int)$p['ronda'], (int)$p['ronda'], $uid]);
+                    ->execute([$r['puntos'], BM_INF_MAX, (int)$p['ronda'], (int)$p['ronda'], $uid]);
             }
         }
         $pdo->commit();

@@ -693,7 +693,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             Destapa todas las casillas sin mina. Cada número dice cuántas minas hay en las 8 casillas de alrededor.
             Toca para destapar. Para poner o quitar una bandera, mantén pulsada la casilla o cambia a 🚩 con el botón de arriba. Toca un número con todas sus banderas puestas para destapar las de alrededor.
             <div style="margin-top:6px"><b>Tablero del día</b>: hay tres (iguales para todos) y eliges uno al día, con un intento. Empiezan con una zona abierta y se pueden resolver sin adivinar. Despejarlos da 50, 100 y 200 puntos de Autismo; si pisas una mina, la parte de las minas que tuvieras bien marcadas con bandera. Al acabar el día, los 3 más rápidos de cada tablero se llevan +50, +30 y +15.</div>
-            <div style="margin-top:6px"><b>Infinito</b>: rondas cada vez más difíciles y, al llegar a Experto, con menos tiempo. Al pasar una ronda eliges: seguir o retirarte con lo ganado. Si pierdes (mina o tiempo), lo pierdes todo.</div>
+            <div style="margin-top:6px"><b>Infinito</b>: rondas cada vez más difíciles y, al llegar a Experto, con menos tiempo. Cada ronda superada duplica lo que llevas. Al pasar una ronda eliges: seguir o retirarte con lo ganado. Si pierdes (mina o tiempo), lo pierdes todo.</div>
             <div style="margin-top:6px"><b>Libre</b>: eliges la dificultad; no da puntos.</div>
             <div class="wd-modal-btns"><button type="button" id="bm-modal-ok">Aceptar</button></div>
         </div>
