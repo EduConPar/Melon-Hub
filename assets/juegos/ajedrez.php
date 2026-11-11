@@ -127,7 +127,7 @@ function ajz_tx(PDO $pdo, callable $fn) {
     if ($pdo->inTransaction()) return $fn();
     $pdo->beginTransaction();
     try { $r = $fn(); $pdo->commit(); }
-    catch (Throwable $e) { $pdo->rollBack(); rt_descartar(); throw $e; }
+    catch (Throwable $e) { $pdo->rollBack(); rt_descartar(); ajz_pushDescartar(); throw $e; }
     rt_vaciar();
     return $r;
 }
@@ -164,6 +164,49 @@ function ajz_ritmo($min, $inc): array {
 }
 function ajz_ritmoTexto(int $baseMs, int $incMs): string {
     return intdiv($baseMs, 60000) . '+' . intdiv($incMs, 1000);
+}
+
+/* ── Avisos push (móvil y PWA) ──
+   Reto que te llega (Rechazar / Aceptar), partida que te espera (reto
+   aceptado, ronda de torneo: Jugar) y torneos en los que estás apuntado
+   (cancelado, cambio de hora). Van en cola (melonPushLuego): se generan
+   dentro de ajz_tx y salen cuando la respuesta ya se ha mandado; si la
+   transacción falla, se descartan. Al tocarlos, mobile.php abre
+   #abrir=… (partida:N, torneo:N, ajedrez, reto-aceptar:N). Los botones
+   los pone la app de Android (MelonNotifs, tipos ajz-*). */
+function ajz_push(PDO $pdo, int $toUid, array $p): void {
+    try {
+        require_once dirname(__DIR__) . '/push/send-push.php';
+        $abrir = $p['abrir'] ?? 'ajedrez';
+        unset($p['abrir']);
+        melonPushLuego($pdo, $toUid, $p + ['url' => pushNotifBaseUrl() . 'mobile.php?pwa=1#abrir=' . $abrir]);
+    } catch (Throwable $e) { /* el aviso nunca rompe la jugada */ }
+}
+function ajz_pushDescartar(): void {
+    if (function_exists('melonPushDescartar')) melonPushDescartar();
+}
+/* Quién manda el aviso: clave, nombre y foto (para la app). */
+function ajz_pushDe(PDO $pdo, int $uid): array {
+    try {
+        $st = $pdo->prepare("SELECT user_key, label FROM usuarios WHERE id = ?");
+        $st->execute([$uid]);
+        $u = $st->fetch(PDO::FETCH_ASSOC) ?: ['user_key' => '', 'label' => ''];
+        $nombre = (string)($u['label'] ?: $u['user_key']);
+        require_once dirname(__DIR__) . '/push/send-push.php';
+        return ['from' => (string)$u['user_key'], 'fromName' => $nombre, 'icon' => melonPushFoto($nombre)];
+    } catch (Throwable $e) {
+        return ['from' => '', 'fromName' => 'Alguien', 'icon' => null];
+    }
+}
+/* "Partida lista": reto aceptado o ronda de torneo. */
+function ajz_pushPartida(PDO $pdo, int $toUid, int $rivalId, int $pid, string $titulo, string $texto): void {
+    ajz_push($pdo, $toUid, [
+        'type'  => 'ajz-partida',
+        'title' => '♟️ ' . $titulo,
+        'body'  => $texto,
+        'tag'   => 'ajz-partida-' . $pid,
+        'abrir' => 'partida:' . $pid,
+    ] + ajz_pushDe($pdo, $rivalId));
 }
 
 /* ── Partidas ── */
@@ -526,9 +569,20 @@ function ajz_retar(PDO $pdo, int $uid, string $amigoKey, $min, $inc, $apuesta): 
         if (!ajz_cobrar($pdo, $uid, $apuesta)) throw new InvalidArgumentException('No tienes puntos suficientes para esa apuesta');
         $pdo->prepare("INSERT INTO ajz_retos (de_id, a_id, base_ms, inc_ms, apuesta, creado) VALUES (?,?,?,?,?,?)")
             ->execute([$uid, $aid, $base, $incMs, $apuesta, $ahora]);
+        $retoId = (int)$pdo->lastInsertId();
         rt_usuario($aid, 'ajz', 'aviso');
         rt_usuario($uid, 'ajz');
-        return ['reto' => (int)$pdo->lastInsertId()];
+        $de = ajz_pushDe($pdo, $uid);
+        ajz_push($pdo, $aid, [
+            'type'     => 'ajz-reto',
+            'title'    => '♟️ ' . $de['fromName'] . ' te reta al ajedrez',
+            'body'     => 'Partida de ' . ajz_ritmoTexto($base, $incMs)
+                        . ($apuesta > 0 ? ' con apuesta de ' . $apuesta . ' puntos' : '')
+                        . '. Caduca en ' . intdiv(AJZ_RETO_MS, 60000) . ' minutos.',
+            'tag'      => 'ajz-reto-' . $retoId,
+            'inviteId' => $retoId,
+        ] + $de);
+        return ['reto' => $retoId];
     });
 }
 
@@ -556,6 +610,9 @@ function ajz_responder(PDO $pdo, int $uid, int $id, bool $aceptar): array {
         if (random_int(0, 1)) $jug = array_reverse($jug);
         $pid = ajz_crearPartida($pdo, $jug[0], $jug[1], (int)$r['base_ms'], (int)$r['inc_ms'], (int)$r['apuesta']);
         $pdo->prepare("UPDATE ajz_retos SET estado = 'aceptado', partida_id = ?, resuelto = ? WHERE id = ?")->execute([$pid, $ahora, $id]);
+        $de = ajz_pushDe($pdo, $uid);
+        ajz_pushPartida($pdo, (int)$r['de_id'], $uid, $pid, $de['fromName'] . ' ha aceptado tu reto',
+            'Entra ya: si no llegas en 2 minutos, la partida se anula.');
         return ['partida' => $pid];
     });
 }
@@ -635,6 +692,9 @@ function ajz_retoEnlaceAceptar(PDO $pdo, int $uid, string $codigo): array {
         $pid = ajz_crearPartida($pdo, $jug[0], $jug[1], (int)$r['base_ms'], (int)$r['inc_ms'], (int)$r['apuesta']);
         $pdo->prepare("UPDATE ajz_retos SET a_id = ?, estado = 'aceptado', partida_id = ?, resuelto = ? WHERE id = ?")
             ->execute([$uid, $pid, $ahora, (int)$r['id']]);
+        $de = ajz_pushDe($pdo, $uid);
+        ajz_pushPartida($pdo, (int)$r['de_id'], $uid, $pid, $de['fromName'] . ' ha aceptado tu reto',
+            'Entra ya: si no llegas en 2 minutos, la partida se anula.');
         rt_usuario((int)$r['de_id'], 'ajz', 'aviso');
         rt_usuario($uid, 'ajz');
         return ['partida' => $pid];

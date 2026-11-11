@@ -220,7 +220,21 @@ function ajz_torEditar(PDO $pdo, int $uid, int $id, array $d): void {
         $pdo->prepare("UPDATE ajz_torneos SET nombre = ?, base_ms = ?, inc_ms = ?, empieza = ?, premio1 = ?, premio2 = ?, premio3 = ? WHERE id = ?")
             ->execute([$nombre, $base, $inc, $empieza, $n['premio1'], $n['premio2'], $n['premio3'], $id]);
         rt_torneo($id);
-        if ($cambiaHora) foreach (ajz_torInscritos($pdo, $id) as $i) rt_usuario((int)$i['user_id'], 'ajz', 'aviso');
+        if ($cambiaHora) foreach (ajz_torInscritos($pdo, $id) as $i) {
+            rt_usuario((int)$i['user_id'], 'ajz', 'aviso');
+            /* Aviso push (quien lo edita ya lo sabe). */
+            if ((int)$i['user_id'] === $uid) continue;
+            $h = (new DateTime('@' . intdiv($empieza, 1000)))->setTimezone(new DateTimeZone('Europe/Madrid'));
+            static $mes = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+            ajz_push($pdo, (int)$i['user_id'], [
+                'type'  => 'ajz-torneo',
+                'title' => '♟️ Cambio de hora en «' . $nombre . '»',
+                'body'  => 'Ahora empieza el ' . (int)$h->format('j') . ' de ' . $mes[(int)$h->format('n') - 1]
+                         . ' a las ' . $h->format('H:i') . '.',
+                'tag'   => 'ajz-torneo-' . $id,
+                'abrir' => 'torneo:' . $id,
+            ]);
+        }
     });
     ajz_torDiscordLuego($pdo, $id);
 }
@@ -233,6 +247,14 @@ function ajz_torCancelarDentro(PDO $pdo, array $t, string $motivo): void {
         /* Aviso a cada apuntado; quien lo cancela a mano ya lo sabe. */
         if (!($motivo === 'anfitrion' && (int)$i['user_id'] === $t['host_id'])) {
             $aviso->execute([(int)$i['user_id'], $t['id'], (int)$i['pagado'], bm_ms()]);
+            ajz_push($pdo, (int)$i['user_id'], [
+                'type'  => 'ajz-torneo',
+                'title' => '♟️ Torneo cancelado: «' . $t['nombre'] . '»',
+                'body'  => ($motivo === 'vacio' ? 'No se llenó a tiempo.' : 'Lo ha cancelado quien lo organizaba.')
+                         . ((int)$i['pagado'] > 0 ? ' Se te han devuelto los ' . (int)$i['pagado'] . ' puntos de la entrada.' : ''),
+                'tag'   => 'ajz-torneo-' . $t['id'],
+                'abrir' => 'torneo:' . $t['id'],
+            ]);
         }
         rt_usuario((int)$i['user_id'], 'ajz', 'aviso');
     }
@@ -266,6 +288,14 @@ function ajz_torPartidaCruce(PDO $pdo, array $t, int $cruceId): void {
     $pid = ajz_crearPartida($pdo, $par ? (int)$c['a_id'] : (int)$c['b_id'], $par ? (int)$c['b_id'] : (int)$c['a_id'],
                             $t['base_ms'], $t['inc_ms'], 0, $t['id']);
     $pdo->prepare("UPDATE ajz_cruces SET partida_id = ?, juegos = juegos + 1 WHERE id = ?")->execute([$pid, $cruceId]);
+    /* Aviso push a los dos: si no entran en 2 minutos, pierden. */
+    $a = (int)$c['a_id']; $b = (int)$c['b_id'];
+    $ronda = (int)$c['juegos'] > 0 ? 'Desempate' : ajz_torNombreRonda((int)$c['ronda'], ajz_torRondas($t['plazas']), (int)$c['slot']);
+    foreach ([[$a, $b], [$b, $a]] as [$yo, $rival]) {
+        $r = ajz_pushDe($pdo, $rival);
+        ajz_pushPartida($pdo, $yo, $rival, $pid, 'Te toca jugar en «' . $t['nombre'] . '»',
+            $ronda . ' contra ' . $r['fromName'] . '. Entra ya: si no llegas en 2 minutos, pierdes la partida.');
+    }
 }
 
 /* A su hora: si está lleno empieza (las entradas pasan al anfitrión y se

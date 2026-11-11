@@ -549,6 +549,8 @@ case 'invite-partner': {
         'partner',
         $fromLabel . ' te ha invitado a compartir calendario',
         'Acepta para vincular vuestros calendarios',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel],
     ));
     jsonResponse(['ok' => true]);
 }
@@ -580,6 +582,9 @@ case 'respond-partner-invite': {
         /* B12: notifica al inviter que su invitación fue rechazada. */
         require_once dirname(__DIR__) . '/push/send-push.php';
         sendPushToUser($pdo, (int)$fromId, [
+            /* type/tag: la app de Android le pone el icono del calendario. */
+            'type'  => 'partner',
+            'tag'   => 'partner-resp',
             'title' => 'Invitación rechazada',
             'body'  => ucfirst($respLabel) . ' ha rechazado tu invitación al calendario.',
             /* URL portable construida con pushNotifBaseUrl() — usa la
@@ -604,6 +609,8 @@ case 'respond-partner-invite': {
     /* B12: notifica al inviter que la invitación fue ACEPTADA. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     sendPushToUser($pdo, (int)$fromId, [
+        'type'  => 'partner',
+        'tag'   => 'partner-resp',
         'title' => '💕 ¡Sois pareja!',
         'body'  => ucfirst($respLabel) . ' ha aceptado tu invitación. Abrid el calendario juntos.',
         /* Misma corrección que el reject — URL portable con

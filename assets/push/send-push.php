@@ -92,8 +92,9 @@ if (!function_exists('melonPushEnviar')) {
         foreach ($subs as $s) {
             $muerta = false;
             try {
-                if (($s['tipo'] ?? 'web') === 'fcm') {
-                    $muerta = melonFcmEnviar((string)$s['endpoint'], $payload) === 'muerto';
+                $tipo = $s['tipo'] ?? 'web';
+                if ($tipo === 'fcm' || $tipo === 'fcm2') {
+                    $muerta = melonFcmEnviar((string)$s['endpoint'], $payload, $tipo === 'fcm2') === 'muerto';
                 } else {
                     if ($wp === null) {
                         $wp = false;
@@ -193,11 +194,25 @@ if (!function_exists('melonFcmAccessToken')) {
     }
 }
 
+/* URL absoluta del sitio que manda el aviso (dev o producción): la app
+   carga la web remota, así que las rutas relativas no le valen. */
+if (!function_exists('melonPushUrlAbs')) {
+    function melonPushUrlAbs(string $url): string {
+        if ($url === '' || preg_match('#^https?://#i', $url)) return $url;
+        $host = (string)($_SERVER['HTTP_HOST'] ?? 'melonhub.es');
+        if ($url[0] !== '/') $url = pushNotifBaseUrl() . $url;
+        return 'https://' . $host . $url;
+    }
+}
+
 /* Manda un aviso a un token de la app. Devuelve 'ok', 'muerto' (token
    que ya no vale: app desinstalada o datos borrados → borrarlo) o
-   'error' (otra cosa: se deja el token). */
+   'error' (otra cosa: se deja el token).
+   $datos (tokens 'fcm2', APK 1.10+): mensaje solo de datos, que monta la
+   app con su estilo (AvisosService / MelonNotifs: foto, conversación,
+   botones). Si no, el aviso ya hecho (título y texto) que pinta Android. */
 if (!function_exists('melonFcmEnviar')) {
-    function melonFcmEnviar(string $token, array $p): string {
+    function melonFcmEnviar(string $token, array $p, bool $datos = false): string {
         $sa = melonFcmCuenta();
         if (!$sa) { $GLOBALS['melonFcmUltimo'] = 'no hay clave *firebase-adminsdk*.json en assets/push/'; return 'error'; }
         if ($token === '') return 'error';
@@ -206,25 +221,37 @@ if (!function_exists('melonFcmEnviar')) {
 
         /* La app carga la web remota: la URL del aviso tiene que ser
            absoluta y del mismo sitio que la mandó (dev o producción). */
-        $url = (string)($p['url'] ?? '');
-        if ($url === '' || $url[0] === '/') {
-            $host = (string)($_SERVER['HTTP_HOST'] ?? 'melonhub.es');
-            $url  = 'https://' . $host . ($url === '' ? pushNotifBaseUrl() . 'mobile.php' : $url);
+        $url = melonPushUrlAbs((string)($p['url'] ?? '') ?: pushNotifBaseUrl() . 'mobile.php');
+        if ($datos) {
+            /* En data todo tiene que ser string. "mh" lo distingue de
+               otros mensajes de FCM. */
+            $data = ['mh' => '1', 'url' => $url];
+            foreach (['type', 'title', 'body', 'tag', 'from', 'fromName', 'source', 'inviteId'] as $k) {
+                if (isset($p[$k]) && $p[$k] !== '' && $p[$k] !== null) $data[$k] = (string)$p[$k];
+            }
+            if (!isset($data['title'])) $data['title'] = 'Melon Hub';
+            if (!empty($p['icon'])) $data['icon'] = melonPushUrlAbs((string)$p['icon']);
+            $msg = ['message' => [
+                'token'   => $token,
+                'data'    => $data,
+                'android' => ['priority' => 'HIGH'],
+            ]];
+        } else {
+            $notif = ['channel_id' => 'avisos'];
+            if (!empty($p['tag'])) $notif['tag'] = (string)$p['tag'];
+            $msg = ['message' => [
+                'token'        => $token,
+                /* Con "notification" Android la pinta él si la app está en
+                   segundo plano o cerrada (icono y canal del manifest). */
+                'notification' => [
+                    'title' => (string)($p['title'] ?? 'Melon Hub'),
+                    'body'  => (string)($p['body'] ?? ''),
+                ],
+                /* En data todo tiene que ser string. */
+                'data'    => ['url' => $url, 'type' => (string)($p['type'] ?? '')],
+                'android' => ['priority' => 'HIGH', 'notification' => $notif],
+            ]];
         }
-        $notif = ['channel_id' => 'avisos'];
-        if (!empty($p['tag'])) $notif['tag'] = (string)$p['tag'];
-        $msg = ['message' => [
-            'token'        => $token,
-            /* Con "notification" Android la pinta él si la app está en
-               segundo plano o cerrada (icono y canal del manifest). */
-            'notification' => [
-                'title' => (string)($p['title'] ?? 'Melon Hub'),
-                'body'  => (string)($p['body'] ?? ''),
-            ],
-            /* En data todo tiene que ser string. */
-            'data'    => ['url' => $url, 'type' => (string)($p['type'] ?? '')],
-            'android' => ['priority' => 'HIGH', 'notification' => $notif],
-        ]];
 
         $ch = curl_init('https://fcm.googleapis.com/v1/projects/' . rawurlencode($sa['project_id']) . '/messages:send');
         curl_setopt_array($ch, [
@@ -253,8 +280,12 @@ if (!function_exists('melonFcmEnviar')) {
 /* Helper de conveniencia: construye un payload de tipo 'invite' con los
    campos comunes y la URL de deep-link al shell móvil (?pwa=1#...). */
 if (!function_exists('buildInvitePushPayload')) {
-    function buildInvitePushPayload(string $source, string $title, string $body, ?string $iconUrl = null): array {
-        return [
+    /* $extra: from (clave), fromName, icon (foto de quien invita) e
+       inviteId; los usa la app de Android para la foto y el botón Aceptar
+       (MelonNotifs). La PWA usa icon como icono del aviso. */
+    function buildInvitePushPayload(string $source, string $title, string $body, ?string $iconUrl = null, array $extra = []): array {
+        return $extra + [
+            'source' => $source,
             'type'  => 'invite',
             'title' => $title,
             'body'  => $body,
@@ -266,5 +297,45 @@ if (!function_exists('buildInvitePushPayload')) {
                hardcodeado y rompía las notifs en producción. */
             'url'   => pushNotifBaseUrl() . 'mobile.php?pwa=1#notif=' . $source,
         ];
+    }
+}
+
+/* Foto de perfil de un usuario (por su label) como URL para los avisos;
+   null si no tiene. getUserImage vive en assets/config.php. */
+if (!function_exists('melonPushFoto')) {
+    function melonPushFoto(string $label): ?string {
+        if ($label === '' || !function_exists('getUserImage')) return null;
+        $rel = (string)getUserImage($label);
+        return $rel !== '' ? pushNotifBaseUrl() . $rel : null;
+    }
+}
+
+/* ─── Avisos en cola: se mandan cuando la respuesta ya ha salido ───────
+   Para los que se generan dentro de una transacción (ajedrez: ajz_tx):
+   mandarlos ahí la dejaría abierta (y las filas bloqueadas) lo que tarde
+   Google. Como el timbre (rt_vaciar / rt_descartar): si la transacción
+   falla, melonPushDescartar() los quita. */
+if (!function_exists('melonPushLuego')) {
+    function melonPushLuego(PDO $pdo, int $toUid, array $payload): void {
+        $GLOBALS['melonPushCola'][] = [$toUid, $payload];
+        static $puesto = false;
+        if ($puesto) return;
+        $puesto = true;
+        register_shutdown_function(function () use ($pdo) {
+            $cola = $GLOBALS['melonPushCola'] ?? [];
+            $GLOBALS['melonPushCola'] = [];
+            if (!$cola) return;
+            if (PHP_SAPI !== 'cli') {
+                ignore_user_abort(true);
+                if (function_exists('litespeed_finish_request')) litespeed_finish_request();
+                elseif (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+            }
+            foreach ($cola as [$uid, $p]) {
+                try { sendPushToUser($pdo, (int)$uid, $p); } catch (Throwable $e) {}
+            }
+        });
+    }
+    function melonPushDescartar(): void {
+        $GLOBALS['melonPushCola'] = [];
     }
 }

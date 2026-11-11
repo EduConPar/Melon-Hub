@@ -27,6 +27,14 @@ public class MainActivity extends BridgeActivity {
        ("AAAA-MM-DD"; "" = sin día). */
     static final String EXTRA_OPEN_DAY = "openDay";
 
+    /* La abrió un aviso push (MelonNotifs): URL a abrir y clave del aviso
+       (si es un chat, se olvidan sus mensajes apilados). */
+    static final String EXTRA_AVISO_URL = "avisoUrl";
+    static final String EXTRA_AVISO_KEY = "avisoKey";
+
+    /* La app está delante: los avisos push no se enseñan (AvisosService). */
+    static volatile boolean enPrimerPlano = false;
+
     /* Último color de barras de la página (null hasta que cargue). */
     private Integer barsColor = null;
 
@@ -41,6 +49,7 @@ public class MainActivity extends BridgeActivity {
         sendToBack = getIntent().getBooleanExtra(EXTRA_FROM_WIDGET, false);
         openDayFromWidget(getIntent());
         openLink(getIntent());
+        openAviso(getIntent());
         super.onCreate(savedInstanceState);
         fitInsideSystemBars();
     }
@@ -51,6 +60,28 @@ public class MainActivity extends BridgeActivity {
         if (intent.getBooleanExtra(EXTRA_FROM_WIDGET, false)) sendToBack = true;
         openDayFromWidget(intent);
         openLink(intent);
+        openAviso(intent);
+    }
+
+    /* Tocar un aviso push: la web abre su URL ("open-push" en mobile.php,
+       igual que el sw:deep-link de la PWA). */
+    private void openAviso(Intent intent) {
+        String url = intent.getStringExtra(EXTRA_AVISO_URL);
+        if (url == null) return;
+        String key = intent.getStringExtra(EXTRA_AVISO_KEY);
+        intent.removeExtra(EXTRA_AVISO_URL);
+        if (key != null) MelonNotifs.olvidarChat(key);
+        if (url.isEmpty()) return;
+        JSObject cmd = new JSObject();
+        cmd.put("action", "open-push");
+        cmd.put("url", url);
+        if (!MelonMusicPlugin.sendWidgetCommand(cmd)) MelonMusicPlugin.pendingWidgetCommand = cmd;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        enPrimerPlano = true;
     }
 
     /* Enlaces compartidos: melonhub://<tipo>/<valor> o
@@ -132,6 +163,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
+        enPrimerPlano = false;
         PlayerWidget.refresh(this);
         CalendarWidget.refreshFromApp(this);
     }

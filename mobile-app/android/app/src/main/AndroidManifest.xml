@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -120,6 +121,25 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Avisos push: AvisosService recibe los mensajes de FCM y monta los
+             avisos con su estilo (MelonNotifs); sustituye al servicio del
+             plugin de Capacitor (lo que no es nuestro se lo pasa a él). -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".AvisosService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Botones de los avisos push (Responder, Marcar como leído, Aceptar). -->
+        <receiver
+            android:name=".NotifAccionReceiver"
+            android:exported="false" />
 
         <!-- Avisos push (FCM): icono pequeño y canal que usa Android cuando
              pinta él la notificación (app en segundo plano o cerrada). El

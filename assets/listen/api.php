@@ -396,6 +396,8 @@ if ($action === 'invite') {
         'listen',
         '🎧 ' . ($fromLabel ?: 'Alguien') . ' te invita',
         'Escuchar juntos en directo',
+        melonPushFoto($fromLabel),
+        ['fromName' => $fromLabel],
     ));
 
     echo json_encode(['ok' => true, 'invite_id' => $newInviteId]);

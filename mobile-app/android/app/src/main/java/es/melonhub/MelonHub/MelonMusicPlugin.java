@@ -165,4 +165,14 @@ public class MelonMusicPlugin extends Plugin {
         PlayerWidget.refresh(getContext());
         call.resolve();
     }
+
+    /* La web lo pregunta al guardar el token de FCM (setupNativePush en
+       mobile.php): esta APK monta los avisos ella (AvisosService), así
+       que el servidor le manda mensajes de datos (token tipo 'fcm2'). */
+    @PluginMethod
+    public void avisosConEstilo(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("ok", true);
+        call.resolve(r);
+    }
 }

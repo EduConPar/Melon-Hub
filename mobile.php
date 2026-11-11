@@ -2144,6 +2144,27 @@ if ('serviceWorker' in navigator) {
     dispatchChatHash();
     window.addEventListener('hashchange', dispatchChatHash);
 
+    /* #abrir=<que> (avisos push de juegos y racha; assets/juegos/ajedrez.php
+       ajz_push, assets/push/cron.php): partida:N / torneo:N / ajedrez /
+       wordelon → Juegos; reto-aceptar:N → acepta el reto (botón Aceptar
+       del aviso de la app) y abre la partida; perfil → mi perfil (racha).
+       mOpenJuegos y mAjzAceptarReto se definen más abajo (mAjedrez): se
+       espera a que la página acabe de cargar. */
+    function dispatchAbrirHash(){
+        var m = /#abrir=([a-z-]+(?::[0-9]{1,10})?)/i.exec(location.hash);
+        if (!m) return;
+        var que = m[1];
+        try { history.replaceState(null, '', location.pathname); } catch (_) {}
+        setTimeout(function(){
+            var r = /^reto-aceptar:(\d+)$/.exec(que);
+            if (r) { if (window.mAjzAceptarReto) window.mAjzAceptarReto(+r[1]); return; }
+            if (que === 'perfil') { openApp('apps/mobile/perfil-mobile.php', 'Perfil'); return; }
+            if (/^(partida|torneo):\d+$|^ajedrez$|^wordelon$/.test(que) && window.mOpenJuegos) window.mOpenJuegos(que);
+        }, document.readyState === 'complete' ? 0 : 600);
+    }
+    dispatchAbrirHash();
+    window.addEventListener('hashchange', dispatchAbrirHash);
+
     /* Deep-link directo desde el SW (tap en notificación push).
        El SW envía postMessage({type:'sw:deep-link', url:'/scrapbookOnline/mobile.php?pwa=1#chat=user1'}).
        Lo procesamos siempre, incluso si el hash actual ya coincide:
@@ -2442,6 +2463,11 @@ window.MuShell = (function(){
                 else if (cmd.action === 'shuffle') setShuffle(!SHUFFLE_ON);
                 else if (cmd.action === 'set-shuffle') setShuffle(!!cmd.on);
                 else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
+                else if (cmd.action === 'open-push') {
+                    /* Aviso push tocado (MelonNotifs → MainActivity). */
+                    if (typeof window.mhAbrirAviso === 'function') window.mhAbrirAviso(cmd.url);
+                    else window.mhAvisoPendiente = cmd.url;   /* lo abre setupNativePush */
+                }
                 else if (cmd.action === 'seek') {
                     /* Barra de la notificación de música (MusicService). */
                     if (TV.on) { tvSaltar(Math.max(0, Number(cmd.position) || 0)); return; }
@@ -4826,13 +4852,26 @@ window.MuShell = (function(){
         } catch (_) {}
     }
 
+    /* También lo usa la orden "open-push" (aviso tocado con la app de
+       estilo nuevo, MainActivity.openAviso → setupNativeWidget). */
+    window.mhAbrirAviso = abrirUrl;
+    if (window.mhAvisoPendiente) { abrirUrl(window.mhAvisoPendiente); window.mhAvisoPendiente = null; }
+
     try {
         cap.addListener(P, 'registration', function(t){
             if (!t || !t.value) return;
-            fetch('assets/profile/api.php?action=save-fcm-token', {
-                method: 'POST', credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: t.value })
+            /* v: 2 si la app monta los avisos ella (AvisosService, APK
+               1.10+; lo dice MelonMusic.avisosConEstilo): el servidor le
+               manda mensajes de datos. Las APK anteriores no tienen ese
+               método y reciben el aviso ya hecho. */
+            cap.nativePromise('MelonMusic', 'avisosConEstilo', {}).then(function(r){
+                return !!(r && r.ok);
+            }).catch(function(){ return false; }).then(function(conEstilo){
+                return fetch('assets/profile/api.php?action=save-fcm-token', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: t.value, v: conEstilo ? 2 : 1 })
+                });
             }).catch(function(){});
         });
         cap.addListener(P, 'pushNotificationActionPerformed', function(a){
@@ -5778,6 +5817,17 @@ window.MuShell = (function(){
     window.mOpenJuegos = abrir;
     function toast(o){ if (window.mToast) window.mToast(o); }
     function error(msg){ toast({ id: 'ajz-err', title: 'Ajedrez', message: esc(msg) }); }
+    /* Aceptar un reto: el aviso de aquí y el botón Aceptar del aviso push
+       de la app (#abrir=reto-aceptar:N). */
+    function aceptarReto(id){
+        post('ajz-reto-responder', { id: id, aceptar: true }).then(function(r){
+            var t = document.getElementById('m-toast-ajz-reto-' + id);
+            if (t) t.remove();
+            if (r && r.ok && r.partida) abrir('partida:' + r.partida);
+            else error((r && r.error) || 'No se ha podido aceptar el reto');
+        }).catch(function(){ error('Sin conexión'); });
+    }
+    window.mAjzAceptarReto = aceptarReto;
     /* ¿Juegos (abierto y a la vista) está en el ajedrez? */
     function viendo(){
         var shell = document.getElementById('shell-app'), f = document.getElementById('app-frame');
@@ -5812,12 +5862,7 @@ window.MuShell = (function(){
                         message: esc(u.nombre || 'Alguien') + ' te reta a una partida (' + esc(x.ritmo) + (x.apuesta > 0 ? ', apuesta ' + (x.apuesta | 0) + ' puntos' : '') + ')',
                         actions: [
                             { label: 'Rechazar', fn: function(){ post('ajz-reto-responder', { id: x.id, aceptar: false }).catch(function(){}); } },
-                            { label: 'Aceptar', fn: function(){
-                                post('ajz-reto-responder', { id: x.id, aceptar: true }).then(function(r){
-                                    if (r && r.ok && r.partida) abrir('partida:' + r.partida);
-                                    else error((r && r.error) || 'No se ha podido aceptar el reto');
-                                }).catch(function(){ error('Sin conexión'); });
-                            } },
+                            { label: 'Aceptar', fn: function(){ aceptarReto(x.id); } },
                         ],
                     });
                 });

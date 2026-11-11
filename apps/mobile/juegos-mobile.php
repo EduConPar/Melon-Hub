@@ -972,6 +972,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     $('st-reload').addEventListener('click', cargarStats);
 
     $('jg-open-wordelon').addEventListener('click', abrirWordelon);
+    /* ?abrir=wordelon (aviso push de la palabra nueva): ver más abajo. */
+    window.jgAbrirWordelon = abrirWordelon;
     $('jg-open-wordelon').addEventListener('keydown', function (e) { if (e.key === 'Enter') abrirWordelon(); });
     $('wd-back').addEventListener('click', function () { show('jg-home'); paintHomeState(); });
     $('wd-help').addEventListener('click', function () { $('wd-modal').classList.add('on'); });
@@ -991,7 +993,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 /* ?abrir=partida:N | torneo:N (aviso del ajedrez de la carcasa o enlace
    del anuncio de Discord), como apps/juegos.php. */
 $_jgAbrir = (string)($_GET['abrir'] ?? '');
-if (!preg_match('/^((partida|torneo):[0-9]{1,10}|reto:[a-z0-9]{10})$/', $_jgAbrir)) $_jgAbrir = '';
+/* wordelon / ajedrez: avisos push (mobile.php #abrir=…). */
+if (!preg_match('/^((partida|torneo):[0-9]{1,10}|reto:[a-z0-9]{10}|wordelon|ajedrez)$/', $_jgAbrir)) $_jgAbrir = '';
 /* Archivo del timbre del usuario: el menú del ajedrez lo mira. */
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__, 2) . '/assets/php/timbre.php';
@@ -1000,7 +1003,12 @@ $_jgSt->execute([$userKey]);
 $_jgUid = (int)$_jgSt->fetchColumn();
 rt_asegurarUsuario($_jgUid);
 ?>
-<script>window.JG_ABRIR = <?= json_encode($_jgAbrir) ?>; window.JG_TIMBRE = <?= json_encode($_jgUid > 0 ? rt_urlUsuario($_jgUid) : '') ?>;</script>
+<script>window.JG_ABRIR = <?= json_encode($_jgAbrir) ?>; window.JG_TIMBRE = <?= json_encode($_jgUid > 0 ? rt_urlUsuario($_jgUid) : '') ?>;
+if (window.JG_ABRIR === 'wordelon' && window.jgAbrirWordelon) window.jgAbrirWordelon();
+else if (window.JG_ABRIR === 'ajedrez') {
+    /* El menú del ajedrez (ajedrez.js lo abre con su tarjeta). */
+    window.addEventListener('load', function () { var c = document.getElementById('jg-open-ajz'); if (c) c.click(); });
+}</script>
 <script>
 /* Pestañas Jugadas / Chat de la partida (solo en el móvil). Al volver al
    chat, abajo del todo (lo nuevo). */

@@ -630,6 +630,9 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
            openWindow() abre una pestaña del navegador en vez del
            contenedor standalone. La base es dinámica (localhost vs prod). */
         'url'   => $base . 'mobile.php?pwa=1#chat=' . $fromKey,
+        /* Nombre de quien escribe: la app de Android lo pone en el
+           estilo conversación (MelonNotifs). */
+        'fromName' => $fromLabel,
         /* En la app de Android, avisos del mismo chat se sustituyen. */
         'tag'   => 'chat:' . $fromKey,
     ];
@@ -1485,6 +1488,7 @@ case 'send-item-invite': {
             $category === 'music' ? ($item['music_type'] ?: 'song') : null,
             $category === 'music' ? ($item['artist'] ?? '') : null,
         ]);
+    $newInviteId = (int)$pdo->lastInsertId();
     rt_usuario($toUid, 'items');
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
@@ -1493,6 +1497,8 @@ case 'send-item-invite': {
         'item',
         '➕ ' . $fromLabel . ' te invita',
         'Colaborar en "' . ($item['title'] ?? '') . '"',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel, 'inviteId' => $newInviteId],
     ));
     jsonResponse(['ok' => true]);
 }
@@ -2272,12 +2278,17 @@ case 'save-push-subscription': {
 case 'save-fcm-token': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
-    $tk = trim(jsonBody()['token'] ?? '');
+    $b  = jsonBody();
+    $tk = trim($b['token'] ?? '');
     if (!preg_match('#^[A-Za-z0-9_:\-]{20,400}$#', $tk)) jsonError('Token inválido');
+    /* v 2: la APK monta los avisos ella con su estilo (AvisosService,
+       1.10+) y recibe mensajes de datos ('fcm2'); las anteriores, el
+       aviso ya hecho ('fcm'). Ver melonFcmEnviar en send-push.php. */
+    $tipo = ((int)($b['v'] ?? 1) >= 2) ? 'fcm2' : 'fcm';
     $pdo->prepare("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, tipo)
-                   VALUES (?, ?, '', '', 'fcm')
-                   ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), tipo='fcm'")
-        ->execute([$uid, $tk]);
+                   VALUES (?, ?, '', '', ?)
+                   ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), tipo=VALUES(tipo)")
+        ->execute([$uid, $tk, $tipo]);
     jsonResponse(['ok' => true]);
 }
 
@@ -2289,7 +2300,7 @@ case 'test-push': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     require_once dirname(__DIR__) . '/push/send-push.php';
-    $st = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND tipo = 'fcm'");
+    $st = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND tipo IN ('fcm', 'fcm2')");
     $st->execute([$uid]);
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $s) {
@@ -2297,7 +2308,7 @@ case 'test-push': {
         $r = melonFcmEnviar((string)$s['endpoint'], [
             'type' => 'test', 'title' => 'Melon Hub', 'body' => 'Aviso de prueba',
             'url'  => pushNotifBaseUrl() . 'mobile.php',
-        ]);
+        ], $s['tipo'] === 'fcm2');
         $out[] = ['token' => substr((string)$s['endpoint'], 0, 12) . '…',
                   'resultado' => $r, 'detalle' => $GLOBALS['melonFcmUltimo']];
     }

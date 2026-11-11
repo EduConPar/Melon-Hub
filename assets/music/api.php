@@ -557,6 +557,7 @@ case 'invite-collaborator': {
     $pdo->prepare("INSERT INTO playlist_invites (to_user_id, from_user_id, playlist_id, type)
                    VALUES (?, ?, ?, 'invite')")
         ->execute([$toUid, $uid, $playlistId]);
+    $newInviteId = (int)$pdo->lastInsertId();
     /* Timbre 'musica' (assets/php/timbre.php): su escritorio pide
        playlist-invites al verlo. */
     rt_usuario((int)$toUid, 'musica');
@@ -568,6 +569,8 @@ case 'invite-collaborator': {
         'playlist',
         '📋 ' . $fromLabel . ' te invita',
         'Colaborar en "' . $plName . '"',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel, 'inviteId' => $newInviteId],
     ));
     jsonResponse(['ok' => true]);
 }
