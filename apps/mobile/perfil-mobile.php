@@ -1069,6 +1069,12 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-mrow + .pf2m-mrow { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
         .pf2m-mrow svg { width: 34px; height: 40px; flex-shrink: 0; }
         .pf2m-mrow.locked svg { opacity: .35; filter: grayscale(1); }
+        /* Medallas con sprite (PNG pixel, cuadrado): a la altura del SVG de cada sitio. */
+        .pf2m-medal-img { display: block; flex-shrink: 0; image-rendering: pixelated; }
+        .pf2m-best .pf2m-medal-img { width: 52px; height: 52px; }
+        .pf2m-icons .pf2m-medal-img { width: 36px; height: 36px; }
+        .pf2m-mrow .pf2m-medal-img { width: 40px; height: 40px; }
+        .pf2m-mrow.locked .pf2m-medal-img { opacity: .35; filter: grayscale(1); }
         .pf2m-mtxt { flex: 1; min-width: 0; }
         .pf2m-bar { height: 6px; margin-top: 3px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
         .pf2m-bar i { display: block; height: 100%; background: var(--accent, navy); }
@@ -4730,6 +4736,7 @@ function pf2Ruta(u) {
 }
 /* La misma medalla que el PC (perfil-v2.js, medalSvg). */
 function pf2Medalla(m) {
+    if (m.sprite) return '<img class="pf2m-medal-img" src="' + esc(pf2Ruta(m.sprite)) + '" alt="">';
     var t = m.unique ? ['var(--accent)', 'color-mix(in srgb, var(--accent) 30%, #fff)'] : (PF2_TIERS[m.tier] || PF2_TIERS[1]);
     return '<svg viewBox="0 0 34 40"><path d="M9 0h6l2 10-6 0z" fill="var(--accent)"/><path d="M19 0h6l-5 10h-3z" fill="var(--accent-deep, var(--accent))"/>' +
         '<circle cx="17" cy="25" r="13" style="fill:' + t[1] + ';stroke:' + t[0] + '" stroke-width="3"/>' +

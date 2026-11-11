@@ -64,6 +64,13 @@ const PF2_MEDALS = [
     ['streak',   'En racha',        '🔥', 'días de racha (la mejor)', RACHA_HITOS],
 ];
 const PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* XP acumulada por nivel de medalla */
+/* Medallas con dibujo propio (assets/img/Medallas/<base><nivel>.png, 64×64,
+   un PNG por nivel: 1 bronce, 2 plata, 3 oro). Sin ganar se enseña la del
+   nivel 1 en gris. Las que no están aquí siguen con el dibujo SVG + emoji. */
+const PF2_MEDAL_SPRITES = [
+    'listen'  => 'MedallaMusica',
+    'reviews' => 'MedallaResenas',
+];
 /* Medalla única "Tester" (🖥️, color de acento): la lista se lleva a mano.
    Nombres de usuario de iniciar sesión, en minúsculas (usuarios.username).
    No da XP ni puntos y a quien no está en la lista no le sale. */
@@ -271,6 +278,8 @@ function pf2_stats(PDO $pdo, int $uid): array {
             'tier'     => $tier,                 /* 0 = aún sin medalla */
             'next'     => $next,                 /* siguiente umbral (null = el último nivel) */
             'progress' => $next === null ? 100 : (int)floor(100 * max(0, $v - $prev) / max(1, $next - $prev)),
+            'sprite'   => isset(PF2_MEDAL_SPRITES[$key])
+                ? 'assets/img/Medallas/' . PF2_MEDAL_SPRITES[$key] . max(1, $tier) . '.png' : null,
         ];
     }
     $user = strtolower((string)pf2_one($pdo, "SELECT username FROM usuarios WHERE id = ?", [$uid]));

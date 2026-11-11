@@ -555,6 +555,8 @@
 
     /* ── Columna lateral ── */
     function medalSvg(m) {
+        /* Con dibujo propio (sprite de perfil2.php): la imagen tal cual. */
+        if (m.sprite) return '<img class="pf2-medal-img" src="' + esc(m.sprite) + '" alt="">';
         /* Medallas únicas (Tester): sin niveles, en el color de acento. El
            relleno va aclarado: con acentos oscuros (el azul de Win98) el
            emoji no se veía. */
