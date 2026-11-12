@@ -27,6 +27,7 @@ $userId = (int)$user['id'];
 /* Compras que se gastan (Protector de racha): consumido_en. */
 require_once __DIR__ . '/catalogo.php';
 tiendaEnsureConsumibles($pdo);
+tiendaEnsureGastos($pdo);
 require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_saldo, rt_usuario: avisos al escritorio */
 
 $action = $_GET['action'] ?? '';
@@ -218,6 +219,12 @@ case 'buy': {
         $pdo->prepare('INSERT INTO tienda_compras (user_id, item_id, precio) VALUES (?, ?, ?)
                        ON DUPLICATE KEY UPDATE precio = VALUES(precio), creado_en = NOW(), consumido_en = NULL')
             ->execute([$userId, $itemId, $precio]);
+        /* Lo gastado (medalla "Derrochador"): una fila por compra. Va en la
+           misma transacción: si Discord falla y se deshace, tampoco cuenta. */
+        if ($precio > 0) {
+            $pdo->prepare('INSERT INTO tienda_gastos (user_id, item_id, precio) VALUES (?, ?, ?)')
+                ->execute([$userId, $itemId, $precio]);
+        }
 
         /* Si el item lleva rol asignado Y el usuario tiene Discord vinculado,
            intentamos asignárselo ANTES del commit. Si Discord rechaza la

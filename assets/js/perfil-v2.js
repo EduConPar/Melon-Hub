@@ -92,7 +92,7 @@
         ['#b06a2c', '#e6a46a', 'Bronce'],
         ['#8c8c8c', '#e8e8e8', 'Plata'],
         ['#b8860b', '#ffe066', 'Oro'],
-        ['#3a9bd5', '#bfe9ff', 'Diamante'],   /* solo "En racha" (1000 días) */
+        ['#3a9bd5', '#bfe9ff', 'Diamante'],   /* ninguna medalla lo usa ahora (era "En racha") */
     ];
 
     var S = {
@@ -571,20 +571,24 @@
         if (!box || !S.v2) return;
         var st = S.v2.stats || {}, c = st.counts || {};
         var html = '';
+        /* Solo las medallas ganadas: las que no tienes no salen (ni en gris). */
+        var ganadas = (st.medals || []).filter(function (m) { return m.tier > 0; });
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Nivel</div><div class="pf2-panel-body">' +
             '<div class="pf2-lvl"><span class="pf2-level">' + (st.level || 1) + '</span> Nivel ' + (st.level || 1) + '</div>' +
-            '<div class="pf2-bar" style="margin-top:6px;"><i style="width:' + (st.xpInto || 0) + '%"></i></div>' +
-            '<div class="pf2-xp">' + (st.xpInto || 0) + ' / 100 XP para el nivel ' + ((st.level || 1) + 1) + '</div></div></div>';
-        html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Medallas</div><div class="pf2-panel-body pf2-medals">' +
-            (st.medals || []).map(function (m) {
+            /* Cada nivel cuesta 100 XP más que el anterior (xpNeed, pf2_nivel). */
+            '<div class="pf2-bar" style="margin-top:6px;"><i style="width:' + Math.floor(100 * (st.xpInto || 0) / (st.xpNeed || 100)) + '%"></i></div>' +
+            '<div class="pf2-xp">' + (st.xpInto || 0) + ' / ' + (st.xpNeed || 100) + ' XP para el nivel ' + ((st.level || 1) + 1) + '</div></div></div>';
+        html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Medallas</div><div class="pf2-panel-body' + (ganadas.length ? ' pf2-medals' : '') + '">' +
+            (ganadas.length ? '' : '<div class="pf2-empty">Sin medallas todavía.</div>') +
+            ganadas.map(function (m) {
                 if (m.unique) {
                     return '<div class="pf2-medal">' + medalSvg(m) +
                         '<div class="pf2-mtip"><b>' + esc(m.name) + '</b><br>' + esc(m.desc || '') + '</div></div>';
                 }
-                var tierName = m.tier ? TIERS[m.tier][2] : 'Sin medalla';
+                var tierName = TIERS[m.tier][2];
                 var nextTxt = m.next == null ? 'Nivel máximo'
                     : (TIERS[m.tier + 1][2] + ' con ' + m.next.toLocaleString('es') + ' ' + m.unit.split(' ')[0]);
-                return '<div class="pf2-medal' + (m.tier ? '' : ' locked') + '">' + medalSvg(m) +
+                return '<div class="pf2-medal">' + medalSvg(m) +
                     '<div class="pf2-mtip"><b>' + esc(m.name) + ' · ' + tierName + '</b><br>' +
                     m.value.toLocaleString('es') + ' ' + esc(m.unit) + '<br>' + esc(nextTxt) +
                     '<div class="pf2-bar"><i style="width:' + m.progress + '%"></i></div></div></div>';

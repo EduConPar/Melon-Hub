@@ -1068,13 +1068,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-mrow { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 11px; line-height: 1.4; }
         .pf2m-mrow + .pf2m-mrow { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
         .pf2m-mrow svg { width: 34px; height: 40px; flex-shrink: 0; }
-        .pf2m-mrow.locked svg { opacity: .35; filter: grayscale(1); }
         /* Medallas con sprite (PNG pixel, cuadrado): a la altura del SVG de cada sitio. */
         .pf2m-medal-img { display: block; flex-shrink: 0; image-rendering: pixelated; }
         .pf2m-best .pf2m-medal-img { width: 52px; height: 52px; }
         .pf2m-icons .pf2m-medal-img { width: 36px; height: 36px; }
         .pf2m-mrow .pf2m-medal-img { width: 40px; height: 40px; }
-        .pf2m-mrow.locked .pf2m-medal-img { opacity: .35; filter: grayscale(1); }
         .pf2m-mtxt { flex: 1; min-width: 0; }
         .pf2m-bar { height: 6px; margin-top: 3px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
         .pf2m-bar i { display: block; height: 100%; background: var(--accent, navy); }
@@ -4728,7 +4726,7 @@ function relTime(ts) {
    ../../ delante (pf2Ruta). */
 var PF2_TIERS = [null, ['#b06a2c', '#e6a46a', 'Bronce'], ['#8c8c8c', '#e8e8e8', 'Plata'],
                  ['#b8860b', '#ffe066', 'Oro'], ['#3a9bd5', '#bfe9ff', 'Diamante']];
-var PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* = PF2_TIER_XP de perfil2.php */
+var PF2_TIER_XP = [0, 100, 300, 600];   /* = PF2_TIER_XP de perfil2.php */
 function pf2v() { return (STATE.profile && STATE.profile.v2) || null; }
 function pf2Ruta(u) {
     if (!u) return '';
@@ -4819,7 +4817,8 @@ function pf2Estado() {
 function pf2AbrirMedallas() {
     var v2 = pf2v();
     if (!v2) return;
-    var filas = ((v2.stats || {}).medals || []).map(function(m) {
+    /* Solo las ganadas: las que no tienes no salen (ni en gris). */
+    var filas = ((v2.stats || {}).medals || []).filter(function(m) { return m.tier > 0; }).map(function(m) {
         var ficha;
         if (m.unique) ficha = esc(m.desc || '');
         else {
@@ -4828,9 +4827,9 @@ function pf2AbrirMedallas() {
             ficha = m.value.toLocaleString('es') + ' ' + esc(m.unit) + ' · ' + esc(sig) +
                 '<div class="pf2m-bar"><i style="width:' + (m.progress || 0) + '%"></i></div>';
         }
-        return '<div class="pf2m-mrow' + (m.tier ? '' : ' locked') + '">' + pf2Medalla(m) + '<div class="pf2m-mtxt"><b>' + esc(m.name) + ' · ' +
-            (m.unique ? 'Única' : (m.tier ? PF2_TIERS[m.tier][2] : 'Sin medalla')) + '</b><br>' + ficha + '</div></div>';
-    }).join('');
+        return '<div class="pf2m-mrow">' + pf2Medalla(m) + '<div class="pf2m-mtxt"><b>' + esc(m.name) + ' · ' +
+            (m.unique ? 'Única' : PF2_TIERS[m.tier][2]) + '</b><br>' + ficha + '</div></div>';
+    }).join('') || '<div class="mh-empty">Sin medallas todavía.</div>';
     var bd = document.createElement('div');
     bd.className = 'pf-modal-backdrop';
     bd.innerHTML = '<div class="window pf-modal"><div class="title-bar"><div class="title-bar-text">Medallas</div>' +

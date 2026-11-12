@@ -9,8 +9,8 @@
        día de racha (RACHA_PUNTOS_DIA).
      - Hitos con la MEJOR racha (no baja al perderla): 100 / 365 / 500 /
        1000 días → +100 / +250 / +500 / +1000, una sola vez cada uno
-       (columna hitos = cuántos se han cobrado). Es también la medalla
-       "En racha" (bronce / plata / oro / diamante, PF2_MEDALS).
+       (columna hitos = cuántos se han cobrado). Ya no hay medalla de
+       racha (se quitó el 12/11): solo estos puntos.
      - Fallar un día la rompe: al pulsar vuelve a 1. Si se tiene un
        "Protector de racha" (tienda, pestaña Perfil, slug protector-racha)
        salva UN día sin pulsar: se gasta al pulsar el día siguiente

@@ -26,10 +26,9 @@
      uploads/screenshots/ con copia en la BD); screenshot.php sigue
      sirviendo esas.
    - Medallas (bronce / plata / oro) y nivel con lo que ya se guarda:
-     nivel = 1 + XP/100; bronce 100 XP, plata +200, oro +300. "En racha"
-     (mejor racha del fueguito, racha.php) tiene un cuarto nivel,
-     diamante (+400): cada medalla lleva sus umbrales, no hace falta que
-     sean tres.
+     bronce 100 XP, plata +200, oro +300. El nivel sube cada vez más
+     despacio: del 1 al 2 hacen falta 100 XP, del 2 al 3 otros 200, del
+     3 al 4 otros 300… (pf2_nivel). Las medallas no dan puntos de autismo.
    ────────────────────────────────────────────────────────────────────── */
 
 require_once dirname(__DIR__) . '/cache-helpers.php';   /* portadas de álbum en caché (find-album) */
@@ -53,24 +52,30 @@ const PF2_MAX_TEXT     = 1000;
 const PF2_PLAYLIST_TRACKS = 5;
 const PF2_MAX_SHOTS    = 3;
 
-/* Medallas: [clave, nombre, emoji, unidad, umbrales bronce/plata/oro(/diamante)]. */
+/* Medallas: [clave, nombre, emoji, unidad, umbrales bronce/plata/oro].
+   De dónde sale cada número: pf2_stats. "Veterano" va por años (365,
+   730, 1095 días). Las no ganadas no se enseñan en el perfil. */
 const PF2_MEDALS = [
-    ['listen',   'Melómano',        '🎧', 'h escuchadas',         [100, 500, 1000]],
-    ['reviews',  'Crítico',         '⭐', 'reseñas',              [10, 50, 100]],
-    ['art',      'Artista',         '🎨', 'obras publicadas',     [5, 25, 100]],
-    ['together', 'Escuchar juntos', '🎤', 'sesiones',             [10, 50, 100]],
-    ['days',     'Veterano',        '📅', 'días en Melon Hub',    [30, 180, 365]],
-    ['chat',     'Charlatán',       '💬', 'mensajes',             [500, 2000, 10000]],
-    ['streak',   'En racha',        '🔥', 'días de racha (la mejor)', RACHA_HITOS],
+    ['listen',  'Melómano',    '🎧', 'h escuchadas',           [100, 500, 1000]],
+    ['reviews', 'Crítico',     '⭐', 'reseñas',                [10, 50, 100]],
+    ['art',     'Artista',     '🎨', 'obras publicadas',       [5, 25, 100]],
+    ['days',    'Veterano',    '📅', 'días en Melon Hub',      [365, 730, 1095]],
+    ['games',   'Jugador',     '🎮', 'partidas ganadas',       [50, 250, 500]],
+    ['spent',   'Derrochador', '💸', 'puntos de autismo gastados', [1000, 5000, 20000]],
 ];
-const PF2_TIER_XP = [0, 100, 300, 600, 1000];   /* XP acumulada por nivel de medalla */
-/* Medallas con dibujo propio (assets/img/Medallas/<base><nivel>.png, 64×64,
-   un PNG por nivel: 1 bronce, 2 plata, 3 oro). Sin ganar se enseña la del
-   nivel 1 en gris. Las que no están aquí siguen con el dibujo SVG + emoji. */
+const PF2_TIER_XP = [0, 100, 300, 600];   /* XP acumulada por nivel de medalla */
+/* Dibujo de cada medalla (assets/img/Medallas/<base><nivel>.png, 64×64,
+   un PNG por nivel: 1 bronce, 2 plata, 3 oro). Sin entrada aquí, el
+   dibujo SVG + emoji de siempre. La de Tester es una sola imagen. */
 const PF2_MEDAL_SPRITES = [
     'listen'  => 'MedallaMusica',
     'reviews' => 'MedallaResenas',
+    'art'     => 'MedallaArte',
+    'days'    => 'MedallaTiempo',
+    'games'   => 'MedallaJuegos',
+    'spent'   => 'MedallaPuntos',
 ];
+const PF2_TESTER_SPRITE = 'assets/img/Medallas/MedallaTester.png';
 /* Medalla única "Tester" (🖥️, color de acento): la lista se lleva a mano.
    Nombres de usuario de iniciar sesión, en minúsculas (usuarios.username).
    No da XP ni puntos y a quien no está en la lista no le sale. */
@@ -131,6 +136,69 @@ function pf2_ensure(PDO $pdo): void {
             }
         } catch (Throwable $e) { /* ya estaba */ }
     });
+    /* Fecha de alta (medalla Veterano y "En Melon Hub N días"). La tabla
+       usuarios no tenía created_at y la consulta fallaba en silencio (0
+       días). Se añade y a las cuentas de antes se les pone lo más viejo
+       que se sabe de ellas (primera canción, mensaje, reseña, compra…);
+       solo toca filas sin fecha, así que repetirlo no cambia nada. Las
+       cuentas nuevas la llevan sola (DEFAULT CURRENT_TIMESTAMP). */
+    melon_esquema($pdo, 'usuarios-alta', __FILE__, function (PDO $pdo) {
+        $pdo->exec("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS created_at DATETIME NULL DEFAULT NULL");
+        $fuentes = [
+            "SELECT user_id u, MIN(played_at) f FROM music_plays GROUP BY user_id",
+            "SELECT from_user_id u, MIN(sent_at) f FROM messages GROUP BY from_user_id",
+            "SELECT user_id u, MIN(reviewed_at) f FROM list_item_reviews GROUP BY user_id",
+            "SELECT user_id u, MIN(created_at) f FROM posts GROUP BY user_id",
+            "SELECT follower_id u, MIN(created_at) f FROM follows GROUP BY follower_id",
+            "SELECT user_id u, MIN(created_at) f FROM notifications GROUP BY user_id",
+            "SELECT user_id u, MIN(creado_en) f FROM tienda_compras GROUP BY user_id",
+            "SELECT author_id u, MIN(created_at) f FROM profile_comments GROUP BY author_id",
+            "SELECT user_id u, MIN(created_at) f FROM profile_screenshots GROUP BY user_id",
+            "SELECT user_id u, MIN(dia) f FROM wordelon_partidas GROUP BY user_id",
+            "SELECT user_id u, MIN(dia) f FROM bm_partidas WHERE dia IS NOT NULL GROUP BY user_id",
+            "SELECT user_id u, MIN(updated_at) f FROM user_settings GROUP BY user_id",
+        ];
+        $primero = [];
+        foreach ($fuentes as $sql) {
+            try {
+                foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $u = (int)$r['u']; $f = (string)$r['f'];
+                    if ($u > 0 && $f !== '' && $f > '2000' && (!isset($primero[$u]) || $f < $primero[$u])) $primero[$u] = $f;
+                }
+            } catch (Throwable $e) { /* esa tabla o columna no está en este entorno */ }
+        }
+        /* La mejor pista: desktops/<usuario>-desktop.php se escribe solo al
+           registrarse (register-user.php) y el deploy no lo toca (está en
+           .gitignore), así que su fecha es la del alta. Las de capi/angie
+           van en git (fecha del deploy, más nueva): por eso se coge la más
+           vieja de todas las pistas. */
+        $raiz = dirname(__DIR__, 2) . '/desktops/';
+        foreach ($pdo->query("SELECT id, username, label FROM usuarios WHERE created_at IS NULL")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            foreach (array_unique([strtolower((string)$r['username']), strtolower((string)$r['label'])]) as $nom) {
+                $t = $nom !== '' ? @filemtime($raiz . $nom . '-desktop.php') : false;
+                if (!$t) continue;
+                $f = date('Y-m-d H:i:s', $t);
+                $u = (int)$r['id'];
+                if (!isset($primero[$u]) || $f < $primero[$u]) $primero[$u] = $f;
+            }
+        }
+        $st = $pdo->prepare("UPDATE usuarios SET created_at = ? WHERE id = ? AND created_at IS NULL");
+        foreach ($primero as $u => $f) $st->execute([$f, $u]);
+        $pdo->exec("UPDATE usuarios SET created_at = NOW() WHERE created_at IS NULL");
+        $pdo->exec("ALTER TABLE usuarios MODIFY created_at DATETIME NULL DEFAULT CURRENT_TIMESTAMP");
+    });
+    /* Obras publicadas en Discord (medalla Artista): api.php
+       (publish-discord) las apunta aquí, pero la tabla no la creaba nadie. */
+    melon_esquema($pdo, 'webhook-posts', __FILE__, function (PDO $pdo) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS webhook_posts (
+            message_id VARCHAR(40) PRIMARY KEY,
+            user_id    INT NOT NULL,
+            kind       VARCHAR(20) NOT NULL DEFAULT 'discord',
+            channel_id VARCHAR(40) NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user (user_id, kind)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    });
     /* El catálogo de la tienda, siempre (tiene su propia huella). */
     pf2_ensureStoreItems($pdo);
 }
@@ -140,6 +208,7 @@ function pf2_ensure(PDO $pdo): void {
 function pf2_ensureStoreItems(PDO $pdo): void {
     require_once dirname(__DIR__) . '/tienda/catalogo.php';
     tiendaSyncCatalogo($pdo);
+    tiendaEnsureGastos($pdo);   /* lo gastado, para la medalla Derrochador */
 }
 
 /* ── Posts → comentarios del muro (por usuario, idempotente) ──────── */
@@ -248,17 +317,39 @@ function pf2_comments(PDO $pdo, int $profileUid, int $viewerUid): array {
 }
 
 /* ── Medallas, nivel y actividad ─────────────────────────────────── */
+/* Nivel con la XP total: del 1 al 2 cuestan 100, del 2 al 3 otros 200,
+   del N al N+1 otros N×100. Devuelve [nivel, XP dentro de ese nivel]. */
+function pf2_nivel(int $xp): array {
+    $nivel = 1;
+    while ($xp >= 100 * $nivel) { $xp -= 100 * $nivel; $nivel++; }
+    return [$nivel, $xp];
+}
+
 function pf2_stats(PDO $pdo, int $uid): array {
     $secs = (int)pf2_one($pdo, "SELECT COALESCE(SUM(IF(duration_s > 0, duration_s, 180)), 0) FROM music_plays WHERE user_id = ?", [$uid]);
+    /* Cada parte va por separado (pf2_one da 0 si falla): si un juego o
+       una tabla no está, el resto se sigue contando. */
+    $n = fn(string $sql, array $a) => (int)pf2_one($pdo, $sql, $a);
     $vals = [
-        'listen'   => intdiv($secs, 3600),
-        'reviews'  => (int)pf2_one($pdo, "SELECT COUNT(*) FROM list_item_reviews WHERE user_id = ?", [$uid]),
-        'art'      => (int)pf2_one($pdo, "SELECT COUNT(*) FROM webhook_posts WHERE user_id = ? AND kind = 'discord'", [$uid]),
-        'together' => (int)pf2_one($pdo, "SELECT (SELECT COUNT(*) FROM listening_participants WHERE user_id = ?)
-                                               + (SELECT COUNT(*) FROM listening_sessions WHERE host_user_id = ?)", [$uid, $uid]),
-        'days'     => (int)pf2_one($pdo, "SELECT GREATEST(0, DATEDIFF(NOW(), created_at)) FROM usuarios WHERE id = ?", [$uid]),
-        'chat'     => (int)pf2_one($pdo, "SELECT COUNT(*) FROM messages WHERE from_user_id = ?", [$uid]),
-        'streak'   => racha_estado($pdo, $uid, false)['best'],
+        /* Lo escuchado de verdad (el reproductor manda los segundos). */
+        'listen'  => intdiv($secs, 3600),
+        /* Reseñas con estrellas que siguen en una lista (no las de cosas borradas). */
+        'reviews' => $n("SELECT COUNT(*) FROM list_item_reviews r JOIN list_items i ON i.id = r.item_id WHERE r.user_id = ?", [$uid]),
+        'art'     => $n("SELECT COUNT(*) FROM webhook_posts WHERE user_id = ? AND kind = 'discord'", [$uid]),
+        'days'    => $n("SELECT GREATEST(0, DATEDIFF(NOW(), created_at)) FROM usuarios WHERE id = ?", [$uid]),
+        /* Ganadas: Wordelon acertado, Buscaminas ganada (diaria o ronda
+           del infinito) y Ajedrez ganado (retos y torneos). */
+        'games'   => $n("SELECT COUNT(*) FROM wordelon_partidas WHERE user_id = ? AND acertado = 1", [$uid])
+                   + $n("SELECT COUNT(*) FROM bm_partidas WHERE user_id = ? AND estado = 'ganada'", [$uid])
+                   + $n("SELECT COUNT(*) FROM ajz_partidas WHERE estado = 'terminada'
+                           AND ((blanco_id = ? AND resultado = '1-0') OR (negro_id = ? AND resultado = '0-1'))", [$uid, $uid]),
+        /* Gastados: compras de la tienda (tienda_gastos, una fila por
+           compra), regalos enviados que no se devolvieron y apuestas de
+           ajedrez perdidas. */
+        'spent'   => $n("SELECT COALESCE(SUM(precio), 0) FROM tienda_gastos WHERE user_id = ?", [$uid])
+                   + $n("SELECT COALESCE(SUM(precio), 0) FROM tienda_regalos WHERE from_user_id = ? AND estado NOT IN ('rechazado', 'devuelto')", [$uid])
+                   + $n("SELECT COALESCE(SUM(apuesta), 0) FROM ajz_partidas WHERE estado = 'terminada' AND apuesta > 0
+                           AND ((blanco_id = ? AND resultado = '0-1') OR (negro_id = ? AND resultado = '1-0'))", [$uid, $uid]),
     ];
     $medals = [];
     $xp = 0;
@@ -278,20 +369,22 @@ function pf2_stats(PDO $pdo, int $uid): array {
             'tier'     => $tier,                 /* 0 = aún sin medalla */
             'next'     => $next,                 /* siguiente umbral (null = el último nivel) */
             'progress' => $next === null ? 100 : (int)floor(100 * max(0, $v - $prev) / max(1, $next - $prev)),
-            'sprite'   => isset(PF2_MEDAL_SPRITES[$key])
-                ? 'assets/img/Medallas/' . PF2_MEDAL_SPRITES[$key] . max(1, $tier) . '.png' : null,
+            'sprite'   => isset(PF2_MEDAL_SPRITES[$key]) && $tier > 0
+                ? 'assets/img/Medallas/' . PF2_MEDAL_SPRITES[$key] . $tier . '.png' : null,
         ];
     }
     $user = strtolower((string)pf2_one($pdo, "SELECT username FROM usuarios WHERE id = ?", [$uid]));
     if ($user !== '' && in_array($user, array_map('strtolower', PF2_TESTERS), true)) {
         $medals[] = ['key' => 'tester', 'name' => 'Tester', 'emoji' => '🖥️', 'unit' => '', 'value' => 0,
                      'tier' => 1, 'next' => null, 'progress' => 100, 'unique' => true,
-                     'desc' => 'Ayudó a probar Melon Hub'];
+                     'desc' => 'Ayudó a probar Melon Hub', 'sprite' => PF2_TESTER_SPRITE];
     }
+    [$level, $into] = pf2_nivel($xp);
     return [
-        'level'   => 1 + intdiv($xp, 100),
+        'level'   => $level,
         'xp'      => $xp,
-        'xpInto'  => $xp % 100,
+        'xpInto'  => $into,              /* XP dentro del nivel actual */
+        'xpNeed'  => 100 * $level,       /* XP que hace falta para el siguiente */
         'medals'  => $medals,
         'counts'  => [
             'reviews' => $vals['reviews'],
