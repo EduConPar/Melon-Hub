@@ -16,13 +16,24 @@
      iconos / % global de cada logro 7 días.
    - Hace falta que el perfil de Steam y "Detalles del juego" sean
      públicos; si no, Steam devuelve la biblioteca vacía (`private`).
-   STEAM_API_BASE / STEAM_OPENID_URL (.env) solo para las pruebas.
+   - Juegos que NO están en su biblioteca (devueltos, de la familia de
+     Steam) pero de los que tiene logros (12/11, decidido así): la Web API
+     no da esa lista, pero sí deja leer sus logros de cualquier juego si
+     se sabe cuál es. Se sacan de: los jugados las 2 últimas semanas
+     (GetRecentlyPlayedGames, incluye los de la familia), los juegos de su
+     lista de Melon Hub (se buscan en la tienda de Steam) y lo que busque a
+     mano al elegir logros (steam-search-games). Solo salen si tiene algún
+     logro. Van con owned = false; las horas solo se saben si lo ha jugado
+     hace poco (si no, null).
+   STEAM_API_BASE / STEAM_STORE_BASE / STEAM_OPENID_URL (.env) solo para
+   las pruebas.
    ────────────────────────────────────────────────────────────────────── */
 require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/cache-helpers.php';
 
 function steam_key(): string { return trim((string)env('STEAM_API_KEY', '')); }
 function steam_api_base(): string { return rtrim((string)env('STEAM_API_BASE', 'https://api.steampowered.com'), '/'); }
+function steam_store_base(): string { return rtrim((string)env('STEAM_STORE_BASE', 'https://store.steampowered.com'), '/'); }
 function steam_openid_url(): string { return (string)env('STEAM_OPENID_URL', 'https://steamcommunity.com/openid/login'); }
 
 function steam_ensure(PDO $pdo): void {
@@ -99,17 +110,49 @@ function steam_idOf(PDO $pdo, int $uid): string {
 /* GET a la Web API (JSON) con caché. null si falla (también se guarda
    un rato, para no machacar a Steam con un perfil privado o caído). */
 function steam_get(string $path, array $args, string $cacheKey, int $ttl): ?array {
-    $hit = cacheGet($cacheKey);
-    if ($hit !== null) { $d = json_decode($hit, true); return (is_array($d) && empty($d['_null'])) ? $d : null; }
-    $key = steam_key();
-    if ($key === '') return null;
-    $url = steam_api_base() . $path . '?' . http_build_query(['key' => $key, 'format' => 'json'] + $args);
-    $ctx = stream_context_create(['http' => ['timeout' => 8, 'ignore_errors' => true, 'header' => "User-Agent: MelonHub\r\n"]]);
-    $raw = @file_get_contents($url, false, $ctx);
-    $d = $raw ? json_decode($raw, true) : null;
-    if (!is_array($d)) { cacheSet($cacheKey, json_encode(['_null' => true]), 600); return null; }
-    cacheSet($cacheKey, json_encode($d, JSON_UNESCAPED_UNICODE), $ttl);
-    return $d;
+    if (steam_key() === '') return null;
+    return steam_getMany(['x' => [steam_apiUrl($path, $args), $cacheKey, $ttl]])['x'];
+}
+function steam_apiUrl(string $path, array $args): string {
+    return steam_api_base() . $path . '?' . http_build_query(['key' => steam_key(), 'format' => 'json'] + $args);
+}
+
+/* Varias a la vez: [clave => [url, cacheKey, ttl]] → [clave => array|null].
+   Lo que no está en caché se pide en paralelo (curl_multi): buscar en la
+   tienda los juegos de una lista larga, uno detrás de otro, tardaría
+   demasiado la primera vez. Sin curl, una detrás de otra. */
+function steam_getMany(array $reqs): array {
+    $out = []; $pend = [];
+    foreach ($reqs as $k => [$url, $cacheKey, $ttl]) {
+        $hit = cacheGet($cacheKey);
+        if ($hit !== null) { $d = json_decode($hit, true); $out[$k] = (is_array($d) && empty($d['_null'])) ? $d : null; }
+        else $pend[$k] = $reqs[$k];
+    }
+    $raws = [];
+    if ($pend && function_exists('curl_multi_init')) {
+        foreach (array_chunk($pend, 10, true) as $lote) {
+            $mh = curl_multi_init(); $hs = [];
+            foreach ($lote as $k => [$url]) {
+                $h = curl_init($url);
+                curl_setopt_array($h, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5,
+                                       CURLOPT_FOLLOWLOCATION => true, CURLOPT_USERAGENT => 'MelonHub']);
+                curl_multi_add_handle($mh, $h); $hs[$k] = $h;
+            }
+            do { $st = curl_multi_exec($mh, $vivos); if ($vivos) curl_multi_select($mh, 1.0); } while ($vivos && $st === CURLM_OK);
+            foreach ($hs as $k => $h) { $raws[$k] = curl_multi_getcontent($h); curl_multi_remove_handle($mh, $h); curl_close($h); }
+            curl_multi_close($mh);
+        }
+    } else {
+        $ctx = stream_context_create(['http' => ['timeout' => 8, 'ignore_errors' => true, 'header' => "User-Agent: MelonHub\r\n"]]);
+        foreach ($pend as $k => [$url]) $raws[$k] = @file_get_contents($url, false, $ctx);
+    }
+    foreach ($pend as $k => [$url, $cacheKey, $ttl]) {
+        $d = !empty($raws[$k]) ? json_decode($raws[$k], true) : null;
+        if (!is_array($d)) { cacheSet($cacheKey, json_encode(['_null' => true]), 600); $out[$k] = null; continue; }
+        cacheSet($cacheKey, json_encode($d, JSON_UNESCAPED_UNICODE), $ttl);
+        $out[$k] = $d;
+    }
+    return $out;
 }
 
 /* Perfil público: nombre, avatar, enlace. */
@@ -132,9 +175,112 @@ function steam_owned(string $sid): ?array {
     if (!$d || !isset($d['response']['games'])) return null;
     $out = [];
     foreach ($d['response']['games'] as $g) {
+        $out[(int)$g['appid']] = ['appid' => (int)$g['appid'], 'name' => (string)($g['name'] ?? ''), 'minutes' => (int)($g['playtime_forever'] ?? 0), 'owned' => true];
+    }
+    return $out;
+}
+
+/* ── Juegos fuera de su biblioteca (ver cabecera) ── */
+
+/* Jugados las 2 últimas semanas (también los de la familia de Steam). */
+function steam_recent(string $sid): array {
+    $d = steam_get('/IPlayerService/GetRecentlyPlayedGames/v1/', ['steamid' => $sid], 'steam_recent_' . $sid, 3600);
+    $out = [];
+    foreach (($d['response']['games'] ?? []) as $g) {
         $out[(int)$g['appid']] = ['appid' => (int)$g['appid'], 'name' => (string)($g['name'] ?? ''), 'minutes' => (int)($g['playtime_forever'] ?? 0)];
     }
     return $out;
+}
+
+/* Logros conseguidos de varios juegos: [appid => n] (0 si no lo ha jugado).
+   Misma caché que steam_achievements. */
+function steam_myAchCounts(string $sid, array $appids): array {
+    if (steam_key() === '') return [];
+    $reqs = [];
+    foreach (array_unique(array_map('intval', $appids)) as $app) {
+        if ($app > 0) $reqs[$app] = [steam_apiUrl('/ISteamUserStats/GetPlayerAchievements/v1/', ['steamid' => $sid, 'appid' => $app]), 'steam_ach_' . $sid . '_' . $app, 12 * 3600];
+    }
+    $out = [];
+    foreach (steam_getMany($reqs) as $app => $d) {
+        $out[$app] = count(array_filter($d['playerstats']['achievements'] ?? [], fn($a) => !empty($a['achieved'])));
+    }
+    return $out;
+}
+
+/* Buscar en la tienda de Steam: [término => [appid => ['appid','name']]]. */
+function steam_storeSearch(array $terms): array {
+    $reqs = [];
+    foreach ($terms as $t) {
+        $t = trim((string)$t);
+        if ($t === '') continue;
+        $reqs[$t] = [steam_store_base() . '/api/storesearch/?' . http_build_query(['term' => $t, 'l' => 'spanish', 'cc' => 'ES']),
+                     'steam_store_' . md5(mb_strtolower($t)), 7 * 86400];
+    }
+    $out = [];
+    foreach (steam_getMany($reqs) as $t => $d) {
+        $out[$t] = [];
+        foreach (($d['items'] ?? []) as $it) {
+            if (($it['type'] ?? 'app') !== 'app' || empty($it['id'])) continue;
+            $out[$t][(int)$it['id']] = ['appid' => (int)$it['id'], 'name' => (string)($it['name'] ?? '')];
+        }
+    }
+    return $out;
+}
+
+/* Títulos ("a mano", de su lista) → juegos de Steam que no tiene pero de
+   los que tiene logros: [título => juego con owned false] (los que no
+   se encuentran no salen). Las horas, de los jugados hace poco. */
+function steam_resolveExtra(string $sid, ?array $owned, array $titles): array {
+    $owned = $owned ?? [];
+    $buscar = [];
+    foreach ($titles as $t) if (trim((string)$t) !== '' && !steam_match($owned, (string)$t)) $buscar[] = (string)$t;
+    if (!$buscar) return [];
+    $cand = [];
+    foreach (steam_storeSearch($buscar) as $t => $items) {
+        $g = steam_match($items, $t);
+        if ($g && !isset($owned[$g['appid']])) $cand[$t] = $g;
+    }
+    if (!$cand) return [];
+    $n = steam_myAchCounts($sid, array_column($cand, 'appid'));
+    $recent = steam_recent($sid);
+    $out = [];
+    foreach ($cand as $t => $g) {
+        if (empty($n[$g['appid']])) continue;
+        $out[$t] = ['appid' => $g['appid'], 'name' => $g['name'], 'minutes' => $recent[$g['appid']]['minutes'] ?? null, 'owned' => false];
+    }
+    return $out;
+}
+
+/* Para elegir logros: los de la familia / devueltos que se conocen
+   (jugados hace poco + los de su lista de juegos de Melon Hub). */
+function steam_extraGames(PDO $pdo, int $uid, string $sid, ?array $owned): array {
+    $owned = $owned ?? [];
+    $out = [];
+    $recent = array_diff_key(steam_recent($sid), $owned);
+    if ($recent) {
+        $n = steam_myAchCounts($sid, array_keys($recent));
+        foreach ($recent as $app => $g) if (!empty($n[$app])) $out[$app] = $g + ['owned' => false];
+    }
+    try {
+        $st = $pdo->prepare("SELECT DISTINCT title FROM list_items WHERE owner_id = ? AND category = 'games' AND title <> '' LIMIT 300");
+        $st->execute([$uid]);
+        $titles = $st->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $e) { $titles = []; }
+    foreach (steam_resolveExtra($sid, $owned, $titles) as $g) if (!isset($out[$g['appid']])) $out[$g['appid']] = $g;
+    return $out;
+}
+
+/* Un juego de la lista: el de su biblioteca o, si no lo tiene, el de la
+   tienda del que tenga logros. null si ninguno. */
+function steam_resolve(string $sid, ?array $owned, string $title): ?array {
+    if ($owned !== null && ($g = steam_match($owned, $title))) return $g;
+    return steam_resolveExtra($sid, $owned, [$title])[$title] ?? null;
+}
+
+/* Horas de un juego para enseñar: null si no se saben (no lo tiene y no
+   lo ha jugado hace poco). */
+function steam_hours(array $g): ?float {
+    return $g['minutes'] === null ? null : round($g['minutes'] / 60, 1);
 }
 
 /* Logros de un juego: nombre, descripción, icono, % global y, si se pasa
@@ -225,11 +371,11 @@ function steam_match(array $owned, string $title): ?array {
 /* Datos de un juego favorito: horas y logros (conseguidos / total). */
 function steam_gameStats(string $sid, ?array $owned, string $title): ?array {
     if ($owned === null) return null;
-    $g = steam_match($owned, $title);
+    $g = steam_resolve($sid, $owned, $title);
     if (!$g) return ['inSteam' => false];
     $ach = steam_achievements($sid, $g['appid']);
     $got = count(array_filter($ach, fn($a) => $a['achieved']));
-    return ['inSteam' => true, 'appid' => $g['appid'], 'hours' => round($g['minutes'] / 60, 1),
+    return ['inSteam' => true, 'owned' => $g['owned'], 'appid' => $g['appid'], 'hours' => steam_hours($g),
             'achieved' => $got, 'total' => count($ach)];
 }
 
@@ -237,7 +383,7 @@ function steam_gameStats(string $sid, ?array $owned, string $title): ?array {
    elegidos a mano (por apiname, en ese orden; solo los que tiene). */
 function steam_featured(string $sid, ?array $owned, string $title, array $apinames): ?array {
     if ($owned === null) return null;
-    $g = steam_match($owned, $title);
+    $g = steam_resolve($sid, $owned, $title);
     if (!$g) return ['inSteam' => false];
     $ach = steam_achievements($sid, $g['appid']);
     $byApi = [];
@@ -246,7 +392,7 @@ function steam_featured(string $sid, ?array $owned, string $title, array $apinam
     foreach ($apinames as $api) {
         if (isset($byApi[$api]) && $byApi[$api]['achieved']) $items[] = $byApi[$api] + ['appid' => $g['appid'], 'game' => $g['name']];
     }
-    return ['inSteam' => true, 'appid' => $g['appid'], 'name' => $g['name'], 'hours' => round($g['minutes'] / 60, 1),
+    return ['inSteam' => true, 'owned' => $g['owned'], 'appid' => $g['appid'], 'name' => $g['name'], 'hours' => steam_hours($g),
             'achieved' => count(array_filter($ach, fn($a) => $a['achieved'])), 'total' => count($ach), 'items' => $items];
 }
 
@@ -260,7 +406,7 @@ function steam_totals(?array $owned): array {
 function steam_rarest(string $sid, ?array $owned, array $favTitles, int $n = 8): array {
     if ($owned === null) return [];
     $apps = [];
-    foreach ($favTitles as $t) { $g = steam_match($owned, $t); if ($g) $apps[$g['appid']] = $g; }
+    foreach ($favTitles as $t) { $g = steam_resolve($sid, $owned, $t); if ($g) $apps[$g['appid']] = $g; }
     $top = $owned;
     usort($top, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
     foreach (array_slice($top, 0, 10) as $g) if ($g['minutes'] > 0) $apps[$g['appid']] = $g;
@@ -275,7 +421,9 @@ function steam_rarest(string $sid, ?array $owned, array $favTitles, int $n = 8):
     return array_slice($all, 0, $n);
 }
 
-/* Logros elegidos a mano ([{appid, apiname}]), solo los que tiene. */
+/* Logros elegidos a mano ([{appid, apiname, game}]), solo los que tiene.
+   El nombre del juego viene guardado con el logro: si no lo tiene en la
+   biblioteca, Steam no lo da. */
 function steam_picked(string $sid, ?array $owned, array $items): array {
     $out = [];
     $byApp = [];
@@ -284,7 +432,7 @@ function steam_picked(string $sid, ?array $owned, array $items): array {
         if (!isset($byApp[$app])) $byApp[$app] = steam_achievements($sid, $app);
         foreach ($byApp[$app] as $a) {
             if ($a['apiname'] === $it['apiname'] && $a['achieved']) {
-                $out[] = $a + ['appid' => $app, 'game' => (string)($owned[$app]['name'] ?? '')];
+                $out[] = $a + ['appid' => $app, 'game' => (string)($owned[$app]['name'] ?? ($it['game'] ?? ''))];
             }
         }
     }
