@@ -227,7 +227,8 @@ final class WidgetStore {
     }
 
     /* server.url de capacitor.config.json: el widget habla con la misma web
-       que carga la app (melonhubdev en la build de dev). */
+       que carga la app (melonhubdev en la build dev, melonhub.es en la
+       prod: build.gradle saca su capacitor.config.json). */
     static synchronized String baseUrl(Context ctx) {
         if (baseUrl != null) return baseUrl;
         try (InputStream in = ctx.getAssets().open("capacitor.config.json")) {

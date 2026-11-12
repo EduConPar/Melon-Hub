@@ -35,9 +35,9 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "MelonUpdater")
 public class MelonUpdaterPlugin extends Plugin {
 
-    /* Build de dev (apunta a melonhubdev) → release movil-dev, igual que
-       assets/mobile-downloads.php. Producción aún sin configurar. */
-    private static final String RELEASE_URL = "https://github.com/EduConPar/Scrapbook-Online/releases/download/movil-dev/";
+    /* Cada build mira su release (build.gradle, productFlavors): dev →
+       movil-dev, prod → movil; igual que assets/mobile-downloads.php. */
+    private static final String RELEASE_URL = BuildConfig.RELEASE_URL;
 
     /* install() esperando a que el usuario vuelva de dar el permiso. */
     private PluginCall pendingInstall;

@@ -22,7 +22,49 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    /* Dos builds de la misma app (mismo applicationId y misma clave: una se
+       instala encima de la otra), cada una con su web y su release de
+       GitHub para las actualizaciones (MelonUpdaterPlugin):
+         dev  → melonhubdev.melonhub.es, release movil-dev
+         prod → melonhub.es,             release movil
+       En Android Studio: Build Variants → devRelease / prodRelease, o
+       "Generate Signed App Bundle or APK" eligiendo la variante. Salen en
+       app/dev/release/ y app/prod/release/. */
+    buildFeatures {
+        buildConfig = true
+    }
+    flavorDimensions = ["entorno"]
+    productFlavors {
+        dev {
+            dimension "entorno"
+            buildConfigField "String", "RELEASE_URL", '"https://github.com/EduConPar/Scrapbook-Online/releases/download/movil-dev/"'
+        }
+        prod {
+            dimension "entorno"
+            buildConfigField "String", "RELEASE_URL", '"https://github.com/EduConPar/Scrapbook-Online/releases/download/movil/"'
+        }
+    }
+    /* La web que abre la app es server.url de capacitor.config.json (lo
+       copia `npx cap sync` a src/main/assets, apuntando a dev). La de prod
+       se saca de esa misma cada vez que se construye, cambiando solo la
+       dirección, y va en sus assets (pisan a los de main): así no hay que
+       mantener dos copias. */
+    sourceSets {
+        prod {
+            assets.srcDirs += ["$buildDir/generated/assets-prod"]
+        }
+    }
 }
+
+def configDev = file('src/main/assets/capacitor.config.json')
+def configProd = file("$buildDir/generated/assets-prod/capacitor.config.json")
+def textoDev = configDev.getText('UTF-8')
+def textoProd = textoDev.replace('https://melonhubdev.melonhub.es/mobile.php', 'https://melonhub.es/mobile.php')
+if (textoProd == textoDev) {
+    throw new GradleException('capacitor.config.json no apunta a https://melonhubdev.melonhub.es/mobile.php: no se puede sacar la de prod')
+}
+configProd.parentFile.mkdirs()
+if (!configProd.exists() || configProd.getText('UTF-8') != textoProd) configProd.setText(textoProd, 'UTF-8')
 
 repositories {
     flatDir{

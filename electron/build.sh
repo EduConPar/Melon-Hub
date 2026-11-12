@@ -14,6 +14,15 @@
 #                                - instalables y latest*.yml → release de GitHub
 #   ./build.sh --publish-only  publica lo ya construido, sin reconstruir
 #
+# Dos entornos, cada uno con su web, su release y su rama Flatpak (el
+# repositorio Flatpak es el mismo y lleva las dos ramas):
+#   dev  (por defecto)  melonhubdev.melonhub.es  release escritorio-dev  rama dev
+#   --prod              melonhub.es              release escritorio      rama stable
+#   ./build.sh --prod --publish
+# La web y la dirección de las actualizaciones se meten en el package.json
+# durante la build (y se deja como estaba): el package.json del repo es el
+# de dev, el que usa `npm start`.
+#
 # Los nombres de los archivos no cambian entre versiones: así el enlace de
 # descarga de la web y las URLs de actualización son siempre las mismas.
 # ──────────────────────────────────────────────────────────────────────
@@ -21,8 +30,20 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.local/bin:$PATH"   # gh suele estar instalado aquí
 
-RELEASE_TAG=escritorio-dev
-FLATPAK_BRANCH=dev
+ENTORNO=dev
+if [[ "${1:-}" == "--prod" ]]; then ENTORNO=prod; shift; fi
+if [[ "$ENTORNO" == prod ]]; then
+    RELEASE_TAG=escritorio
+    FLATPAK_BRANCH=stable
+    APP_URL=https://melonhub.es/
+    GIT_TARGET=main
+else
+    RELEASE_TAG=escritorio-dev
+    FLATPAK_BRANCH=dev
+    APP_URL=https://melonhubdev.melonhub.es/
+    GIT_TARGET=dev
+fi
+UPDATE_FEED=https://github.com/EduConPar/Scrapbook-Online/releases/download/$RELEASE_TAG/
 PAGES_REPO=EduConPar/melonhub-flatpak
 FLATPAK_REPO_URL=https://educonpar.github.io/melonhub-flatpak/
 FLATHUB=https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -44,11 +65,25 @@ podman build -q -t "$FLATPAK_IMG"  -f build/Containerfile.flatpak  build
 rm -rf dist
 mkdir -p -m 700 "$GPG_HOME"
 
-echo "── Melon Hub $VERSION: Windows + AppImage (electron-builder)"
-podman run --rm -v "$PWD":/app:Z -w /app "$ELECTRON_IMG" bash -c '
+echo "── Melon Hub $VERSION ($ENTORNO → $APP_URL): Windows + AppImage (electron-builder)"
+# melonhub.url (la web que abre), melonhub.updateFeed (updater.js) y
+# build.publish (app-update.yml de electron-updater) según el entorno; al
+# terminar, aunque falle, el package.json vuelve a ser el de antes.
+podman run --rm -v "$PWD":/app:Z -w /app -e APP_URL="$APP_URL" -e UPDATE_FEED="$UPDATE_FEED" "$ELECTRON_IMG" bash -c '
     set -e
+    cp package.json /tmp/package.json.orig
+    trap "cp /tmp/package.json.orig package.json" EXIT
+    node -e "
+        const fs = require(\"fs\");
+        const p = JSON.parse(fs.readFileSync(\"package.json\", \"utf8\"));
+        p.melonhub.url = process.env.APP_URL;
+        p.melonhub.updateFeed = process.env.UPDATE_FEED;
+        p.build.publish = [{ provider: \"generic\", url: process.env.UPDATE_FEED }];
+        fs.writeFileSync(\"package.json\", JSON.stringify(p, null, 2) + \"\\n\");
+    "
     npm ci --omit=optional --no-audit --no-fund
     npx electron-builder --linux AppImage --win nsis --publish never
+    grep -q "\"url\": \"$APP_URL\"" dist/linux-unpacked/resources/app.asar || { echo "La build no lleva $APP_URL" >&2; exit 1; }
 '
 
 echo "── Flatpak"
@@ -125,9 +160,15 @@ if [[ "$MODE" == "--publish" || "$MODE" == "--publish-only" ]]; then
     # saltar el aviso de actualización, y para entonces todo debe estar subido.
     echo "── Release $RELEASE_TAG"
     if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-        gh release create "$RELEASE_TAG" --prerelease --target dev \
-            --title "Melon Hub escritorio (dev)" \
-            --notes "Instalables de la app de escritorio que apuntan a la web de dev (melonhubdev.melonhub.es). Se sustituyen en cada build."
+        if [[ "$ENTORNO" == prod ]]; then
+            gh release create "$RELEASE_TAG" --target "$GIT_TARGET" \
+                --title "Melon Hub escritorio" \
+                --notes "Instalables de la app de escritorio de Melon Hub (melonhub.es). Se sustituyen en cada build."
+        else
+            gh release create "$RELEASE_TAG" --prerelease --target "$GIT_TARGET" \
+                --title "Melon Hub escritorio (dev)" \
+                --notes "Instalables de la app de escritorio que apuntan a la web de dev (melonhubdev.melonhub.es). Se sustituyen en cada build."
+        fi
     fi
     gh release upload "$RELEASE_TAG" --clobber \
         dist/MelonHub-Setup.exe dist/MelonHub-Setup.exe.blockmap \
