@@ -51,6 +51,14 @@ if (isset($_GET['pwa']) || isset($_GET['t'])) {
     exit;
 }
 
+/* Sesión recordada (assets/remember-login.php): si el servidor borró la
+   sesión de PHP, se rehace con el token de la cookie. Así la app de
+   Android no pide entrar cada vez. */
+if (!isset($_SESSION['user']) && !empty($_COOKIE['melon_remember'])) {
+    require_once __DIR__ . '/db.php';
+    require_once __DIR__ . '/assets/remember-login.php';
+    restoreRememberedLogin($pdo);
+}
 if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
     /* Móvil sin sesión → al login manual. La landing PWA (pitch +
        guía de instalación + register) sigue disponible vía el link
@@ -72,30 +80,19 @@ if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
 $userKey   = $_SESSION['user'];
 $userLabel = $loginUsers[$userKey]['label'];
 
+/* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
+   lo abre mOpenLink al cargar. */
+require_once __DIR__ . '/assets/links.php';
+$melonPendingLink = melonTakePendingLink();
+if (isset($_GET['abrir'])) $melonPendingLink = melonParseLinkString((string)$_GET['abrir']) ?? $melonPendingLink;
+
 $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
 
-/* TV LAN URL — para Smart TVs que no soportan TLS 1.3/SNI moderno del
-   túnel cloudflared (Tizen <2018, webOS <4, Android TV 5). La TV está
-   en la misma WiFi → HTTP plano por IP local evita el handshake TLS y
-   carga instantáneo. Detección: override de .env > socket UDP > host. */
+/* Dirección de la TV en la red de casa (LAN_URL en .env), para Smart TVs
+   que no terminan el TLS moderno: HTTP plano por IP local. Sin ella, la
+   de esta misma web (antes se adivinaba la IP del servidor, que en el
+   hosting no es la de casa). */
 $tvLanUrl = trim((string) env('LAN_URL', ''));
-if ($tvLanUrl === '') {
-    $lanIp = '';
-    $sock = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    if ($sock) {
-        if (@socket_connect($sock, '8.8.8.8', 53)) {
-            @socket_getsockname($sock, $lanIp);
-        }
-        @socket_close($sock);
-    }
-    if (!$lanIp || $lanIp === '127.0.0.1') {
-        $alt = @gethostbyname(@gethostname());
-        if ($alt && $alt !== '127.0.0.1' && filter_var($alt, FILTER_VALIDATE_IP)) $lanIp = $alt;
-    }
-    if ($lanIp && $lanIp !== '127.0.0.1') {
-        $tvLanUrl = 'http://' . $lanIp . $projectBaseUrl . 'tv.php';
-    }
-}
 
 /* Token de dispositivo PARA EL MANIFEST. Si el usuario instala la PWA
    desde aquí (no desde la landing), también queremos que su start_url
@@ -126,6 +123,7 @@ $apps = [
     ['name' => 'D&D',          'url' => 'apps/mobile/dnd-mobile.php',                                           'emoji' => '⚔',  'icon' => 'assets/img/appIcons/dndIcon.png',          'external' => false, 'wip' => false],
     ['name' => 'Dibujo',       'url' => 'apps/mobile/dibujo-mobile.php',                                        'emoji' => '✏️', 'icon' => 'assets/img/appIcons/drawingIcon.png',      'external' => false, 'wip' => false],
     ['name' => 'Galería',      'url' => 'apps/mobile/galeria-mobile.php',                                       'emoji' => '🖼', 'icon' => 'assets/img/appIcons/galeriaIcon.png',     'external' => false, 'wip' => false],
+    ['name' => 'Juegos',       'url' => 'apps/mobile/juegos-mobile.php',                                        'emoji' => '🎮', 'icon' => 'assets/img/appIcons/juegosIcon.png',       'external' => false, 'wip' => false],
     ['name' => 'MelonArchive', 'url' => 'apps/mobile/melonarchive-mobile.php',                                  'emoji' => '📼', 'icon' => 'assets/img/appIcons/melonArchiveIcon.png', 'external' => false, 'wip' => false],
     ['name' => 'Música',       'url' => 'apps/mobile/musica-mobile.php',                                        'emoji' => '🎵', 'icon' => 'assets/img/appIcons/musicaIcon.png',       'external' => false, 'wip' => false],
     ['name' => 'Perfil',       'url' => 'apps/mobile/perfil-mobile.php',                                        'emoji' => '👤', 'icon' => 'assets/img/appIcons/profileIcon.png',      'external' => false, 'wip' => false],
@@ -167,6 +165,33 @@ require_once __DIR__ . '/assets/php/active-interface.php';
    de ?t= (token PWA) → en cargas normales $pdo era null → fatal. */
 require_once __DIR__ . '/db.php';
 
+/* Timbre (assets/php/timbre.php): archivo estático del usuario que mira
+   window.melonTimbre (assets/js/timbre.js) en vez de preguntar a cada API
+   cada pocos segundos. Se crea ya si no existe y se lee lo que tiene ahora:
+   es el punto de partida de la página. */
+require_once __DIR__ . '/assets/php/timbre.php';
+[$rtTimbre, $rtTimbreDatos] = (function () use ($pdo, $userKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$userKey]);
+    $uid = (int)$st->fetchColumn();
+    if ($uid <= 0) return ['', []];
+    rt_asegurarUsuario($uid);
+    $url = rt_urlUsuario($uid);
+    $datos = json_decode((string)@file_get_contents(__DIR__ . '/' . $url), true);
+    return [$url, is_array($datos) ? $datos : []];
+})();
+
+/* TV (reproductor → 📺, assets/music/tv-lib.php): archivos de rt/tv/ con
+   cómo va la TV y su cola, y la hora del servidor para calcular por dónde
+   va la canción. */
+require_once __DIR__ . '/assets/music/tv-lib.php';
+$tvRt = (function () use ($pdo, $userKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$userKey]);
+    $uid = (int)$st->fetchColumn();
+    return $uid > 0 ? ['estado' => tv_urlEstado($uid), 'cola' => tv_urlCola($uid)] : null;
+})();
+
 /* INTERFAZ POR USUARIO (mismo sync que desktop-base.php):
    SIEMPRE sincronizamos cookie ← BD. La slug vive directamente en
    user_settings.active_interface_slug (string JSON por CHECK constraint).
@@ -199,6 +224,20 @@ require_once __DIR__ . '/db.php';
         ]);
         $_COOKIE['activeInterface'] = $slug;
     }
+})();
+
+/* FUENTE POR USUARIO/INTERFAZ (assets/php/fuentes.php; como
+   desktop-base.php): la de la interfaz activa pasa de la BD a la cookie
+   melonFuente, que lee emitInterfaceCss() aquí y en las apps del móvil
+   (iframes). La de serie = sin cookie. */
+(function() use (&$pdo, $userKey) {
+    require_once __DIR__ . '/assets/php/fuentes.php';
+    $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $stmt->execute([$userKey]);
+    $uid = (int)($stmt->fetchColumn() ?: 0);
+    $iface = getActiveInterface();
+    $slug = melonFuenteActiva($pdo, $uid, $iface);
+    melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
 })();
 
 /* Tema por interfaz: lee cookie themeFor_<interface>, retrocompat con
@@ -257,9 +296,14 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         /* Marca cosmética: añade `is-standalone` al <html> para que el
            CSS pueda esconder elementos redundantes cuando estamos en
            PWA (por ejemplo, el banner "instala la app"). Sin redirect. */
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (sa) document.documentElement.classList.add('is-standalone');
+        /* `is-native-app`: solo la app de Android (ahí la música sigue
+           sonando fuera de la app y sobra la pantalla de bloqueo). */
+        if (/MelonHubApp/.test(navigator.userAgent)) document.documentElement.classList.add('is-native-app');
     })();
     /* --mh-vh: viewport height en px sincronizado con window.innerHeight.
        Sobrevive al bfcache (al volver de otra app, refrescamos en
@@ -282,6 +326,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <title>Melon Hub — <?= htmlspecialchars($userLabel) ?></title>
     <link rel="icon" href="assets/img/mobile/icon.png" type="image/png">
     <link rel="manifest" href="manifest.php<?= $tokenForManifest !== '' ? '?token=' . htmlspecialchars($tokenForManifest) : '' ?>">
+    <?php require_once __DIR__ . '/assets/mobile-downloads.php'; suppressPwaInstallPrompt(); ?>
     <link rel="apple-touch-icon" href="assets/img/mobile/icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -290,6 +335,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="assets/css/98.css">
     <link rel="stylesheet" href="assets/css/tokens.css">
     <link rel="stylesheet" href="assets/css/base.css?v=<?= filemtime(__DIR__ . '/assets/css/base.css') ?>">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?= @filemtime(__DIR__ . '/assets/css/marcos.css') ?>">
+    <script src="assets/js/melon-marcos.js?v=<?= @filemtime(__DIR__ . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <!-- Icon pack swap — debe cargar antes del primer render. -->
     <script src="assets/js/icon-pack.js"></script>
@@ -1032,13 +1080,32 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 inset  1px  1px var(--bezel-dark-1, #808080),
                 inset -1px -1px var(--bezel-light-1, #fff);
         }
-        .mu-tv-code {
+        /* El código de la TV se escribe aquí (sin el relieve del input de
+           98.css: va dentro del hueco de .mu-tv-code-wrap). */
+        .mu-tv-backdrop input.mu-tv-code {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            height: auto;
+            padding: 0;
+            border: 0;
+            box-shadow: none;
+            background: transparent;
+            text-align: center;
             font-family: 'VT323', Consolas, Monaco, monospace;
             font-size: 36px;
             font-weight: bold;
             letter-spacing: 8px;
             color: var(--accent, #000080);
             line-height: 1;
+            outline: none;
+        }
+        .mu-tv-backdrop input.mu-tv-code::placeholder { color: var(--text-faint, #999); opacity: 0.6; }
+        .mu-tv-pair {
+            display: block;
+            width: 100%;
+            min-height: 28px;
+            margin: 0 0 12px;
         }
         .mu-tv-code-meta {
             margin-top: 6px;
@@ -1148,6 +1215,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             contain: strict;
         }
         .mu-lock.visible { display: block; }
+        /* App de Android: sin pantalla de bloqueo ni su botón (la música
+           sigue con la pantalla apagada, ver mobile-app/). */
+        html.is-native-app .mu-lock,
+        html.is-native-app #mu-full-lock { display: none !important; }
         .mu-lock-stage,
         .mu-lock-vinyl-wrap,
         .mu-lock-title,
@@ -1206,7 +1277,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 
         <!-- Header: avatar + saludo + reloj -->
         <div class="mh-userbar">
-            <div class="mh-userbar-avatar">
+            <div class="mh-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil (melon-marcos.js) */ ?>
                 <?php if ($userImg): ?>
                     <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                 <?php else: ?>
@@ -1718,8 +1789,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <div class="mu-lock-hint" id="mu-lock-hint">↑ Desliza para desbloquear</div>
 </div>
 
-<!-- Modal "Conectar TV" — se abre desde el botón 📺 del fullscreen.
-     Win98 window con QR + URL del companion tv.php. -->
+<!-- Modal "Conectar TV" — el botón 📺 del fullscreen lo abre si no hay
+     ninguna TV encendida. La TV (tv.php) enseña un QR (lo abre la app con
+     la cámara) y un código, que se escribe aquí. -->
 <div class="mu-tv-backdrop" id="mu-tv-backdrop"
      data-lan-url="<?= htmlspecialchars($tvLanUrl, ENT_QUOTES) ?>" hidden>
     <div class="window mu-tv-window">
@@ -1731,18 +1803,19 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         </div>
         <div class="window-body">
             <p class="mu-tv-intro">
-                En el navegador de tu TV abre <strong id="mu-tv-url-inline"></strong>
-                e introduce el código de abajo.
+                En el navegador de tu TV abre <strong id="mu-tv-url-inline"></strong>.
+                Escanea su QR con la cámara del móvil o escribe aquí el código que sale:
             </p>
             <div class="mu-tv-code-wrap">
-                <div class="mu-tv-code" id="mu-tv-code">— — — — — —</div>
-                <div class="mu-tv-code-meta" id="mu-tv-code-meta">Generando…</div>
+                <input class="mu-tv-code" id="mu-tv-code" type="text" inputmode="numeric"
+                       maxlength="7" placeholder="000 000" autocomplete="off" aria-label="Código de la TV">
+                <div class="mu-tv-code-meta" id="mu-tv-code-meta"></div>
             </div>
+            <button class="button default mu-tv-pair" id="mu-tv-pair" type="button">Conectar</button>
             <ol class="mu-tv-steps">
-                <li>Abre el navegador de tu Smart TV.</li>
-                <li>Ve a la URL de arriba.</li>
-                <li>Teclea el código de 6 dígitos con el mando.</li>
-                <li>Listo — la TV queda emparejada 30 días.</li>
+                <li>Abre la dirección de abajo en el navegador de la TV.</li>
+                <li>Escanea el QR o escribe el código.</li>
+                <li>Listo: la TV se queda recordada. Pulsa 📺 para que suene en ella.</li>
             </ol>
             <div class="mu-tv-url-row">
                 <input type="text" id="mu-tv-url" readonly>
@@ -1754,6 +1827,13 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 
 <!-- Host del YouTube IFrame Player (off-screen). -->
 <div id="yt-host"><div id="yt-iframe"></div></div>
+
+<script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
+<script>
+/* Timbre del móvil (assets/js/timbre.js). Con la app en segundo plano se
+   mira cada 15 s (los avisos antes iban cada 60 s en segundo plano). */
+window.melonTimbre = window.melonCrearTimbre(<?= json_encode($rtTimbre) ?>, <?= json_encode((object)$rtTimbreDatos) ?>, 15000);
+</script>
 
 <script>
 /* ─── Reloj y fecha del header ─────────────────────────────────── */
@@ -1892,6 +1972,94 @@ if ('serviceWorker' in navigator) {
         } catch(_){}
     })();
 
+    /* Widgets de calendario de la app de Android (CalendarWidget): tocar un
+       día o algo de "Próximos" abre el calendario en ese día. Con una app
+       vieja el evento no llega nunca. */
+    (function() {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.addListener !== 'function') return;
+        try {
+            /* También los enlaces ("open-link", mOpenLink abajo): con la app
+               abriéndose, Capacitor entrega la orden guardada solo al
+               primer oyente, que es este. */
+            cap.addListener('MelonMusic', 'widgetCommand', function(cmd){
+                if (cmd && cmd.action === 'open-link') { mOpenLink(cmd.link); return; }
+                if (!cmd || cmd.action !== 'open-calendar') return;
+                var dia = /^\d{4}-\d{2}-\d{2}$/.test(cmd.day || '') ? cmd.day : '';
+                openApp('apps/mobile/calendario-mobile.php' + (dia ? '?dia=' + dia : ''), 'Calendario', false);
+            });
+        } catch (_) {}
+    })();
+
+    /* ── Enlaces compartidos (assets/links.php) ──
+       "<tipo>:<valor>" de index.php?abrir=… (pendiente al entrar) o de la
+       app de Android (melonhub://… o enlace.php abierto con la app), que
+       lo manda como la orden "open-link" del widget. */
+    function mOpenLink(link) {
+        var m = /^([a-z]+):(.+)$/.exec(String(link || ''));
+        if (!m) return;
+        var tipo = m[1], valor = m[2];
+        if (tipo === 'perfil') {
+            openApp('apps/mobile/perfil-mobile.php' + (valor === <?= json_encode($userKey) ?> ? '' : '?as=' + encodeURIComponent(valor)), 'Perfil');
+        } else if (tipo === 'album' || tipo === 'playlist') {
+            openApp('apps/mobile/musica-mobile.php?' + tipo + '=' + encodeURIComponent(valor), 'Música');
+        } else if (tipo === 'cancion') {
+            /* Como se ve en Melon Hub (song-info), no el título de YouTube. */
+            fetch('assets/music/api.php?action=song-info&id=' + encodeURIComponent(valor), { credentials: 'same-origin' })
+                .then(function(r){ return r.json(); })
+                .catch(function(){ return {}; })
+                .then(function(d){
+                    d = d || {};
+                    if (!window.MuShell) return;
+                    MuShell.loadQueue([{ videoId: d.videoId || valor, title: d.title || '', artist: d.artist || '', duration: d.duration || 0 }], 0, '');
+                    if (MuShell.openFullscreen) MuShell.openFullscreen();
+                });
+        } else if (tipo === 'escuchar') {
+            mJoinListen(valor);
+        } else if (tipo === 'torneo' || tipo === 'reto') {
+            /* Torneo de ajedrez o reto por enlace (ajedrez.js, abrirDesde). */
+            openApp('apps/mobile/juegos-mobile.php?abrir=' + encodeURIComponent(tipo + ':' + valor), 'Juegos');
+        } else if (tipo === 'tv') {
+            /* QR de la TV (tv.php): queda emparejada con esta cuenta. */
+            if (window.MuShell && MuShell.tvEmparejar) MuShell.tvEmparejar({ token: valor });
+        }
+    }
+    window.mOpenLink = mOpenLink;
+    /* Para los avisos (mNotifSystem): "Abrir" un regalo → la tienda. */
+    window.mOpenApp = openApp;
+
+    /* "Escuchar conmigo": como melonJoinListen del escritorio. Pide unirse
+       (aunque no seáis amigos) y acepta sola la invitación del anfitrión. */
+    function mJoinListen(host) {
+        var ltF = window.ltFetchFromNotif, join = window.ltJoinAsGuestFromNotif;
+        if (!host || host === <?= json_encode($userKey) ?> || !ltF || !join) return;
+        ltF('request-join', { body: { host: host } }).then(function(r){
+            if (!r || !r.ok) return;
+            var until = Date.now() + 120000;
+            var t = setInterval(function(){
+                if (Date.now() > until) { clearInterval(t); return; }
+                ltF('invites').then(function(inv){
+                    var mine = inv && inv.ok && (inv.invites || []).filter(function(i){ return i.from_user_key === host; })[0];
+                    if (!mine) return;
+                    clearInterval(t);
+                    join(mine.id);
+                });
+            }, 2000);
+        });
+    }
+
+    (function() {
+        var pending = <?= json_encode($melonPendingLink) ?>;
+        /* Que recargar no lo vuelva a abrir. */
+        if (/[?&]abrir=/.test(location.search)) {
+            try {
+                var qs = location.search.replace(/([?&])abrir=[^&]*&?/, '$1').replace(/[?&]$/, '');
+                history.replaceState(history.state, '', location.pathname + qs + location.hash);
+            } catch (_) {}
+        }
+        if (pending) setTimeout(function(){ mOpenLink(pending); }, 600);
+    })();
+
     /* Apps embebidas → postMessage para volver atrás o lanzar otra. */
     window.addEventListener('message', function(ev){
         var d = ev.data || {};
@@ -1976,6 +2144,27 @@ if ('serviceWorker' in navigator) {
     dispatchChatHash();
     window.addEventListener('hashchange', dispatchChatHash);
 
+    /* #abrir=<que> (avisos push de juegos y racha; assets/juegos/ajedrez.php
+       ajz_push, assets/push/cron.php): partida:N / torneo:N / ajedrez /
+       wordelon → Juegos; reto-aceptar:N → acepta el reto (botón Aceptar
+       del aviso de la app) y abre la partida; perfil → mi perfil (racha).
+       mOpenJuegos y mAjzAceptarReto se definen más abajo (mAjedrez): se
+       espera a que la página acabe de cargar. */
+    function dispatchAbrirHash(){
+        var m = /#abrir=([a-z-]+(?::[0-9]{1,10})?)/i.exec(location.hash);
+        if (!m) return;
+        var que = m[1];
+        try { history.replaceState(null, '', location.pathname); } catch (_) {}
+        setTimeout(function(){
+            var r = /^reto-aceptar:(\d+)$/.exec(que);
+            if (r) { if (window.mAjzAceptarReto) window.mAjzAceptarReto(+r[1]); return; }
+            if (que === 'perfil') { openApp('apps/mobile/perfil-mobile.php', 'Perfil'); return; }
+            if (/^(partida|torneo):\d+$|^ajedrez$|^wordelon$/.test(que) && window.mOpenJuegos) window.mOpenJuegos(que);
+        }, document.readyState === 'complete' ? 0 : 600);
+    }
+    dispatchAbrirHash();
+    window.addEventListener('hashchange', dispatchAbrirHash);
+
     /* Deep-link directo desde el SW (tap en notificación push).
        El SW envía postMessage({type:'sw:deep-link', url:'/scrapbookOnline/mobile.php?pwa=1#chat=user1'}).
        Lo procesamos siempre, incluso si el hash actual ya coincide:
@@ -2028,8 +2217,23 @@ window.MuShell = (function(){
     var YT_PLAYER = null;
     var YT_READY  = false;
     var pendingLoadId = null;
+    /* Última canción (solo la app de Android): al abrirla queda preparada
+       en pausa donde iba (pendingCue/restorePos) y el widget la enseña. */
+    var IS_ANDROID_APP = /MelonHubApp/.test(navigator.userAgent);
+    var LAST_QUEUE_KEY = 'melonApp:lastQueue';
+    var LAST_POS_KEY   = 'melonApp:lastPos';
+    var LAST_SHUFFLE_KEY = 'melonApp:shuffle';
+    var pendingCue = null;
+    var restorePos = 0;
+    var playWhenReady = false;
+    /* Hasta cuándo una parada de YouTube tras cambiar de canción no cuenta
+       como pausa (ver onYTState). 0 = nada pendiente. */
+    var autoPlayUntil = 0;
     var subscribers = [];
     var progressTimer = null;
+    /* Modo TV (botón 📺, ver tvEntrar): la TV suena y el móvil manda.
+       pendientes = órdenes sin contestar; ultimaN = número de la última. */
+    var TV = { on: false, st: null, ultimaN: 0, pendientes: 0, mostrado: '', timer: null };
     /* Label del usuario actual — usado al añadir tracks a playlists
        para el campo addedBy. */
     var ME_LABEL = <?= json_encode($userLabel ?? '') ?>;
@@ -2072,6 +2276,13 @@ window.MuShell = (function(){
                        en cada video cargado. Best-effort, errores callados. */
                     try { YT_PLAYER.setPlaybackQuality && YT_PLAYER.setPlaybackQuality('small'); } catch (_) {}
                     if (pendingLoadId) { YT_PLAYER.loadVideoById(pendingLoadId); pendingLoadId = null; }
+                    else if (pendingCue) {
+                        /* Última canción: cargada en pausa donde iba. Si
+                           ya se pidió ▶ (⏯ del widget), arranca. */
+                        YT_PLAYER.cueVideoById({ videoId: pendingCue, startSeconds: restorePos });
+                        pendingCue = null;
+                        if (playWhenReady) { playWhenReady = false; YT_PLAYER.playVideo(); }
+                    }
                 },
                 'onStateChange': function(e){
                     /* Re-aplicar calidad 'small' cuando un video nuevo
@@ -2092,8 +2303,9 @@ window.MuShell = (function(){
         document.head.appendChild(s);
     })();
 
-    function onYTState(e) {
-        var playing = (e.data === 1);
+    /* ⏯ y los vinilos: sonando o en pausa (de YouTube o, en modo TV, de
+       la TV). */
+    function pintarPlay(playing) {
         var ftog = document.getElementById('mu-full-toggle');
         if (ftog) ftog.classList.toggle('is-playing', playing);
         var v1 = document.getElementById('mu-vinyl');
@@ -2102,7 +2314,45 @@ window.MuShell = (function(){
         if (v1) v1.classList.toggle('paused', !playing);
         if (v2) v2.classList.toggle('paused', !playing);
         if (v3) v3.classList.toggle('paused', !playing);
+    }
+
+    function onYTState(e) {
+        var playing = (e.data === 1);
+        /* Modo TV: el YouTube del móvil está callado. Si algo lo arranca,
+           se para; la pantalla la pinta la TV (tvPintar). Solo se suelta
+           el servicio de música de la app. */
+        if (TV.on) {
+            if (playing) { try { YT_PLAYER.pauseVideo(); } catch (_) {} }
+            else if (e.data === 2 || e.data === 5) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
+            return;
+        }
+        pintarPlay(playing);
         setMediaPlaybackState(playing ? 'playing' : 'paused');
+        /* App Android: solo cuenta play (1) y pausa/parada (2, 5). Entre
+           canciones (0, -1, 3) no se avisa: si se soltara, la música se
+           cortaría al pasar de canción con la app en segundo plano. */
+        /* Al cambiar de canción (⏭ del widget con la app en segundo plano,
+           o al acabar una), YouTube a veces carga la siguiente y se queda
+           parada (2 / 5 / -1) en vez de arrancar. Eso no es una pausa: no
+           se suelta el servicio (la app se congelaría y la página pasaría a
+           oculta, y ya no arrancaría sin darle a ▶) y se le vuelve a dar a
+           ▶. Una pausa de verdad (togglePlay, MediaSession) cancela esto. */
+        var stalled = (e.data === 2 || e.data === 5 || e.data === -1) && Date.now() < autoPlayUntil;
+        if (e.data === 1) autoPlayUntil = 0;
+        if (stalled) {
+            setTimeout(function(){
+                if (!autoPlayUntil || !YT_PLAYER) return;
+                try {
+                    var st = YT_PLAYER.getPlayerState();
+                    if (st !== 1 && st !== 3) YT_PLAYER.playVideo();
+                } catch (_) {}
+            }, 400);
+        }
+        if (e.data === 1) nativeMusicPlaying(true, QUEUE[CUR_IDX]);
+        else if ((e.data === 2 || e.data === 5) && !stalled) nativeMusicPlaying(false, QUEUE[CUR_IDX]);
+        if (e.data === 1) restorePos = 0;
+        if (e.data === 1 || ((e.data === 2 || e.data === 5) && !stalled)) nativeWidgetState(e.data === 1);
+        if (e.data === 2 && !stalled) saveLastPos();
         if (e.data === 0) next();
         broadcast({ type: 'mushell:state', state: e.data, idx: CUR_IDX });
         publishNowPlaying(playing, true);
@@ -2146,6 +2396,109 @@ window.MuShell = (function(){
         } catch (_) {}
     }
 
+    /* ── App Android (mobile-app/, MelonMusicPlugin) ──
+       Mientras suena, la app mantiene la música al salir de ella o
+       apagar la pantalla. La web puede ir por delante de la app
+       instalada: sin el plugin, la promesa falla y no pasa nada. */
+    function nativeMusicPlaying(playing, tr) {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        try {
+            cap.nativePromise('MelonMusic', 'setPlaying', {
+                playing: !!playing,
+                title:   (tr && tr.title)  || '',
+                artist:  (tr && tr.artist) || '',
+                /* Para la carátula del widget de la app. */
+                videoId: (tr && tr.videoId) || ''
+            }).catch(function(){});
+        } catch (_) {}
+    }
+
+    /* Lo que pinta el widget de la app: canción, por dónde va (la app la
+       va avanzando sola mientras suena) y si está en aleatorio. */
+    /* fresh: canción recién puesta; YouTube aún da el tiempo de la
+       anterior, así que va desde 0 con la duración de la lista. */
+    function nativeWidgetState(playing, fresh) {
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        var tr = QUEUE[CUR_IDX];
+        if (!tr) return;
+        var cur = 0, tot = 0;
+        if (!fresh) {
+            try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
+        }
+        /* Recién recuperada y sin tocar, YouTube aún dice 0. */
+        if (!cur && restorePos) cur = restorePos;
+        if (!tot) tot = tr.duration || 0;
+        try {
+            cap.nativePromise('MelonMusic', 'setWidgetState', {
+                playing:  !!playing,
+                title:    tr.title  || '',
+                artist:   tr.artist || '',
+                videoId:  tr.videoId || '',
+                position: cur,
+                duration: tot,
+                shuffle:  SHUFFLE_ON
+            }).catch(function(){});
+        } catch (_) {}
+    }
+    function nativeWidgetStateNow() {
+        var playing = false;
+        try { playing = YT_PLAYER.getPlayerState() === 1; } catch (_) {}
+        nativeWidgetState(playing);
+    }
+
+    /* Botones del widget y de la notificación de música de la app
+       (PlayerWidget, MusicService). Con una app vieja el
+       evento no llega nunca y no pasa nada. */
+    (function setupNativeWidget(){
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.addListener !== 'function') return;
+        try {
+            cap.addListener('MelonMusic', 'widgetCommand', function(cmd){
+                if (!cmd) return;
+                if (cmd.action === 'toggle') togglePlay();
+                else if (cmd.action === 'next') next();
+                else if (cmd.action === 'prev') prev();
+                else if (cmd.action === 'shuffle') setShuffle(!SHUFFLE_ON);
+                else if (cmd.action === 'set-shuffle') setShuffle(!!cmd.on);
+                else if (cmd.action === 'play-playlist') loadQueue(cmd.tracks, cmd.index, cmd.name);
+                else if (cmd.action === 'open-push') {
+                    /* Aviso push tocado (MelonNotifs → MainActivity). */
+                    if (typeof window.mhAbrirAviso === 'function') window.mhAbrirAviso(cmd.url);
+                    else window.mhAvisoPendiente = cmd.url;   /* lo abre setupNativePush */
+                }
+                else if (cmd.action === 'seek') {
+                    /* Barra de la notificación de música (MusicService). */
+                    if (TV.on) { tvSaltar(Math.max(0, Number(cmd.position) || 0)); return; }
+                    if (!YT_PLAYER || typeof YT_PLAYER.seekTo !== 'function') return;
+                    try { YT_PLAYER.seekTo(Math.max(0, Number(cmd.position) || 0), true); } catch (_) {}
+                    restorePos = 0;
+                    saveLastPos();
+                    nativeWidgetStateNow();
+                }
+            });
+        } catch (_) {}
+    })();
+
+    /* ── Última canción (app de Android) ──
+       La cola se guarda al cambiar de canción y la posición cada pocos
+       segundos (por separado: la cola puede ser larga). */
+    function saveLastQueue() {
+        if (!IS_ANDROID_APP || CUR_IDX < 0) return;
+        try {
+            localStorage.setItem(LAST_QUEUE_KEY, JSON.stringify({ queue: QUEUE, idx: CUR_IDX, plName: CUR_PL_NAME }));
+            localStorage.setItem(LAST_POS_KEY, '0');
+        } catch (_) {}
+    }
+    function saveLastPos() {
+        if (!IS_ANDROID_APP || CUR_IDX < 0) return;
+        var cur = 0;
+        try { cur = YT_PLAYER.getCurrentTime() || 0; } catch (_) {}
+        if (!cur && restorePos) return;   /* aún sin cargar: no pisar la guardada */
+        try { localStorage.setItem(LAST_POS_KEY, String(Math.floor(cur))); } catch (_) {}
+    }
+
     /* ── Media Session ── */
     function updateMediaSession(tr) {
         if (!('mediaSession' in navigator)) return;
@@ -2174,11 +2527,11 @@ window.MuShell = (function(){
     }
     if ('mediaSession' in navigator) {
         try {
-            navigator.mediaSession.setActionHandler('play',           function(){ if (YT_PLAYER) YT_PLAYER.playVideo();  });
-            navigator.mediaSession.setActionHandler('pause',          function(){ if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
+            navigator.mediaSession.setActionHandler('play',           function(){ if (TV.on) { tvSonar(true); return; } if (YT_PLAYER) YT_PLAYER.playVideo();  });
+            navigator.mediaSession.setActionHandler('pause',          function(){ if (TV.on) { tvSonar(false); return; } autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.pauseVideo(); });
             navigator.mediaSession.setActionHandler('previoustrack',  prev);
             navigator.mediaSession.setActionHandler('nexttrack',      next);
-            navigator.mediaSession.setActionHandler('stop',           function(){ if (YT_PLAYER) YT_PLAYER.stopVideo();  });
+            navigator.mediaSession.setActionHandler('stop',           function(){ autoPlayUntil = 0; if (YT_PLAYER) YT_PLAYER.stopVideo();  });
         } catch (_) {}
     }
 
@@ -2420,9 +2773,40 @@ window.MuShell = (function(){
     }
 
     /* ── GUEST: poll + sync ──────────────────────────────── */
+    /* Invitado: lo que suena sale del archivo estático de la sesión, que el
+       anfitrión reescribe cada 5 s (rt/s/…, update-state en
+       assets/listen/api.php); leerlo no gasta PHP ni BD. A la API (`poll`)
+       solo cada 10 s: es la señal de que sigo en la sesión y da la hora
+       del servidor, con la que se calcula dónde va el anfitrión
+       (LT_DESFASE). Antes, la API cada 2 s. Si el archivo falla, la API
+       como antes. */
+    var LT_RT = null, LT_DESFASE = 0, LT_ULT_POLL = 0;
+    async function ltLeerSesion() {
+        var ahora = Date.now();
+        if (!LT_RT || ahora - LT_ULT_POLL >= 10000) {
+            LT_ULT_POLL = ahora;
+            var r = await ltFetch('poll');
+            if (r && r.ok) {
+                if (r.rt) LT_RT = r.rt;
+                if (r.server_time) LT_DESFASE = parseInt(r.server_time, 10) - Math.round((ahora + Date.now()) / 2000);
+            }
+            return r;
+        }
+        try {
+            var f = await fetch(LT_RT, { cache: 'no-cache', credentials: 'same-origin' });
+            if (!f.ok) throw new Error('sesion ' + f.status);
+            var d = await f.json();
+            if (d.closed) return { ok: true, session: null, closed: true };
+            if (!d.session) throw new Error('sesion vacia');
+            return { ok: true, session: d.session, server_time: Math.round(Date.now() / 1000) + LT_DESFASE };
+        } catch (_) {
+            LT_ULT_POLL = Date.now();
+            return ltFetch('poll');
+        }
+    }
     async function ltGuestPoll() {
         if (LT_ROLE !== 'guest') return;
-        var r = await ltFetch('poll');
+        var r = await ltLeerSesion();
         if (!r || !r.ok) return;
         if (r.closed || !r.session) {
             ltLeaveLocal('El host cerró la sesión.');
@@ -2468,7 +2852,7 @@ window.MuShell = (function(){
         try {
             var ps = YT_PLAYER.getPlayerState();
             if (isPlaying && ps !== 1) YT_PLAYER.playVideo();
-            else if (!isPlaying && ps === 1) YT_PLAYER.pauseVideo();
+            else if (!isPlaying && ps === 1) { autoPlayUntil = 0; YT_PLAYER.pauseVideo(); }
         } catch (_) {}
     }
 
@@ -2489,6 +2873,7 @@ window.MuShell = (function(){
     }
 
     async function ltJoinAsGuest(inviteId) {
+        LT_RT = null;   /* el archivo de la sesión lo da el primer poll */
         var r = await ltFetch('accept', { body: { inviteId: inviteId } });
         if (!r || !r.ok) {
             ltToast({ title: 'Error', message: r.error || 'No se pudo unir.', duration: 3500 });
@@ -2516,6 +2901,7 @@ window.MuShell = (function(){
     function ltLeaveLocal(msg) {
         LT_ROLE = null;
         LT_SESSION_ID = null;
+        LT_RT = null;   /* el archivo de esta sesión ya no vale */
         if (LT_GUEST_POLL_T)       { clearInterval(LT_GUEST_POLL_T);       LT_GUEST_POLL_T = null; }
         if (LT_HOST_BCAST_INTERVAL){ clearInterval(LT_HOST_BCAST_INTERVAL); LT_HOST_BCAST_INTERVAL = null; }
         if (LT_HOST_BCAST_T)       { clearTimeout(LT_HOST_BCAST_T); LT_HOST_BCAST_T = null; }
@@ -2627,10 +3013,12 @@ window.MuShell = (function(){
     })();
 
     /* ── Playback control ── */
-    function playCurrent() {
+    /* startAt: segundo por el que empezar (al volver de la TV). */
+    function playCurrent(startAt) {
         if (CUR_IDX < 0 || CUR_IDX >= QUEUE.length) return;
         var tr = QUEUE[CUR_IDX];
         if (!tr || !tr.videoId) { next(); return; }
+        rememberListened();
 
         /* WRAPPED tracking: logea el track ANTERIOR antes de cargar el
            nuevo, con el tiempo escuchado real. Cubre next/prev/end. */
@@ -2650,8 +3038,16 @@ window.MuShell = (function(){
         document.getElementById('mu-widget').classList.add('visible');
         updateMediaSession(tr);
         startProgressTimer();
+        restorePos = 0;
+        pendingCue = null;
+        /* Esta canción tiene que sonar: si YouTube se queda parado al
+           cargarla, onYTState le vuelve a dar a ▶. */
+        autoPlayUntil = Date.now() + 10000;
+        saveLastQueue();
+        /* El widget cambia de canción ya, sin esperar a que YouTube cargue. */
+        nativeWidgetState(true, true);
         if (!YT_READY || !YT_PLAYER) { pendingLoadId = tr.videoId; return; }
-        YT_PLAYER.loadVideoById(tr.videoId);
+        YT_PLAYER.loadVideoById(startAt > 0 ? { videoId: tr.videoId, startSeconds: startAt } : tr.videoId);
         broadcast({ type: 'mushell:track', idx: CUR_IDX, total: QUEUE.length, track: tr, plName: CUR_PL_NAME });
         publishNowPlaying(true, true);
         /* Listen-Together: si soy host, broadcast estado al backend (debounced). */
@@ -2663,20 +3059,75 @@ window.MuShell = (function(){
         do { r = Math.floor(Math.random() * QUEUE.length); } while (r === CUR_IDX);
         return r;
     }
+
+    /* Historial de lo escuchado para el aleatorio (como el del PC, en
+       reproductor.php): ⏮ vuelve a la canción que sonaba antes (no a una
+       al azar) y ⏭, después de volver atrás, rehace el mismo camino en
+       vez de sortear otra. Cada entrada guarda la playlist y el videoId:
+       si la cola ya no es la misma, se descarta. */
+    var shuffleBack = [], shuffleForward = [], shuffleNow = null, shuffleNav = false;
+    function rememberListened() {
+        var entry = { pl: CUR_PL_NAME, idx: CUR_IDX, vid: QUEUE[CUR_IDX].videoId };
+        var same = shuffleNow && shuffleNow.vid === entry.vid && shuffleNow.pl === entry.pl;
+        /* Una canción nueva que no viene de ⏮/⏭ por el historial (tocada
+           en la lista, al azar…) abre camino nuevo: lo de delante se olvida. */
+        if (!same && !shuffleNav && shuffleNow) {
+            shuffleBack.push(shuffleNow);
+            if (shuffleBack.length > 200) shuffleBack.shift();
+            shuffleForward = [];
+        }
+        shuffleNow = entry;
+        shuffleNav = false;
+    }
+    /* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+    function historyStep(stack) {
+        while (stack.length) {
+            var e = stack.pop();
+            if (e.pl === CUR_PL_NAME && QUEUE[e.idx] && QUEUE[e.idx].videoId === e.vid) return e.idx;
+        }
+        return -1;
+    }
     function next() {
+        if (TV.on) { tvCmd({ c: 'next' }); return; }
         if (CUR_IDX < 0) return;
-        CUR_IDX = SHUFFLE_ON ? pickRandomIdx() : (CUR_IDX + 1) % QUEUE.length;
+        if (SHUFFLE_ON && QUEUE.length > 1) {
+            /* Si se había vuelto atrás, la que venía después; si no, al azar. */
+            var fwd = historyStep(shuffleForward);
+            if (fwd !== -1) {
+                if (shuffleNow) shuffleBack.push(shuffleNow);
+                shuffleNav = true;
+                CUR_IDX = fwd;
+            } else {
+                CUR_IDX = pickRandomIdx();
+            }
+        } else {
+            CUR_IDX = (CUR_IDX + 1) % QUEUE.length;
+        }
         playCurrent();
     }
     function prev() {
+        if (TV.on) { tvCmd({ c: 'prev' }); return; }
         if (CUR_IDX < 0) return;
-        CUR_IDX = SHUFFLE_ON ? pickRandomIdx() : (CUR_IDX - 1 + QUEUE.length) % QUEUE.length;
+        /* En aleatorio, a la que sonaba antes (si queda en el historial);
+           si no, la anterior de la lista, como sin aleatorio. */
+        var back = SHUFFLE_ON ? historyStep(shuffleBack) : -1;
+        if (back !== -1) {
+            if (shuffleNow) shuffleForward.push(shuffleNow);
+            shuffleNav = true;
+            CUR_IDX = back;
+        } else {
+            CUR_IDX = (CUR_IDX - 1 + QUEUE.length) % QUEUE.length;
+        }
         playCurrent();
     }
     function togglePlay() {
-        if (!YT_READY || !YT_PLAYER || CUR_IDX < 0) return;
+        if (TV.on) { tvSonar(!(TV.st && TV.st.on && TV.st.playing)); return; }
+        if (CUR_IDX < 0) return;
+        /* Última canción recuperada y YouTube aún cargando: suena en
+           cuanto esté (⏯ del widget con la app recién abierta). */
+        if (!YT_READY || !YT_PLAYER) { if (pendingCue) playWhenReady = true; return; }
         var st = YT_PLAYER.getPlayerState();
-        if (st === 1) YT_PLAYER.pauseVideo();
+        if (st === 1) { autoPlayUntil = 0; YT_PLAYER.pauseVideo(); }
         else          YT_PLAYER.playVideo();
     }
 
@@ -2705,8 +3156,10 @@ window.MuShell = (function(){
         startProgressTimer();
     }
     var __NP_TICK = 0;
+    var __LAST_POS_TICK = 0;
     var _muScrub = false;   /* true mientras el usuario arrastra la barra */
     function tickProgress() {
+        if (TV.on) { tvTick(); return; }
         if (!YT_READY || !YT_PLAYER) return;
         var cur = 0, tot = 0;
         try { cur = YT_PLAYER.getCurrentTime() || 0; tot = YT_PLAYER.getDuration() || 0; } catch (_) {}
@@ -2740,6 +3193,12 @@ window.MuShell = (function(){
         }
         /* Sync periódico con la TV cada ~2s visible, ~10s oculto.
            publishNowPlaying tiene su propio throttle. */
+        if (Date.now() - __LAST_POS_TICK > 5000) {
+            __LAST_POS_TICK = Date.now();
+            var isPlaying = false;
+            try { isPlaying = YT_PLAYER.getPlayerState() === 1; } catch (_) {}
+            if (isPlaying) saveLastPos();
+        }
         var npGap = hidden ? 10000 : 2000;
         if (Date.now() - __NP_TICK > npGap) {
             __NP_TICK = Date.now();
@@ -2762,15 +3221,19 @@ window.MuShell = (function(){
         function preview(r){
             var fill = document.getElementById('mu-full-progress-fill');
             if (fill) fill.style.width = (r * 100) + '%';
-            var tot = (YT_PLAYER && YT_PLAYER.getDuration) ? (YT_PLAYER.getDuration() || 0) : 0;
+            var tot = TV.on ? tvDur() : ((YT_PLAYER && YT_PLAYER.getDuration) ? (YT_PLAYER.getDuration() || 0) : 0);
             var c1 = document.getElementById('mu-full-time-cur');
             if (c1 && tot > 0) c1.textContent = fmt(r * tot);
         }
         function commit(r){
+            if (TV.on) { if (tvDur() > 0) tvSaltar(r * tvDur()); return; }
             if (!YT_PLAYER || !YT_PLAYER.getDuration) return;
             var tot = YT_PLAYER.getDuration() || 0;
             if (tot <= 0) return;
             try { YT_PLAYER.seekTo(r * tot, true); } catch (_) {}
+            restorePos = 0;
+            saveLastPos();
+            nativeWidgetStateNow();
         }
         bar.addEventListener('pointerdown', function(e){
             _muScrub = true;
@@ -2879,6 +3342,9 @@ window.MuShell = (function(){
     /* ── Lock screen ── */
     function openLock() {
         if (CUR_IDX < 0) return;
+        /* En la app de Android no hay pantalla de bloqueo: así tampoco se
+           abre sola al volver del segundo plano (attachAutoLock). */
+        if (document.documentElement.classList.contains('is-native-app')) return;
         var lock = document.getElementById('mu-lock');
         var hint = document.getElementById('mu-lock-hint');
         if (hint) { hint.style.transform = ''; hint.style.opacity = ''; }
@@ -2917,10 +3383,22 @@ window.MuShell = (function(){
     document.getElementById('mu-full-lock').addEventListener('click', openLock);
 
     /* Shuffle: toggle visual + comportamiento. */
+    /* desdeTv: lo cuenta la TV (no se le vuelve a mandar). */
+    function setShuffle(on, desdeTv) {
+        SHUFFLE_ON = on;
+        if (TV.on && !desdeTv) {
+            if (TV.st) TV.st.shuffle = on;
+            tvCmd({ c: 'shuffle', on: on });
+        }
+        var btn = document.getElementById('mu-full-shuffle');
+        btn.classList.toggle('is-on', SHUFFLE_ON);
+        btn.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
+        /* En la app se recuerda con la última canción (restoreLast). */
+        if (IS_ANDROID_APP) { try { localStorage.setItem(LAST_SHUFFLE_KEY, SHUFFLE_ON ? '1' : '0'); } catch (_) {} }
+        nativeWidgetStateNow();
+    }
     document.getElementById('mu-full-shuffle').addEventListener('click', function(){
-        SHUFFLE_ON = !SHUFFLE_ON;
-        this.classList.toggle('is-on', SHUFFLE_ON);
-        this.setAttribute('aria-pressed', SHUFFLE_ON ? 'true' : 'false');
+        setShuffle(!SHUFFLE_ON);
     });
 
     /* Letra: 1 tap → abre panel sobre el player; doble-tap rápido (<400ms)
@@ -2934,9 +3412,239 @@ window.MuShell = (function(){
     /* (mu-full-add eliminado — la opción "Añadir a playlist" ahora vive
        solo en el menú long-press del vinilo, evitando duplicidad.) */
 
-    /* "Conectar TV": modal con URL del companion + QR para que el
-       usuario lo abra en el navegador del Smart TV. Una vez la TV está
-       en /tv.php, hereda automáticamente lo que sueña el móvil. */
+    /* ── TV: el móvil de mando (botón 📺) ──
+       La TV (tv.php) suena y lleva la cola; el móvil le manda órdenes
+       (assets/music/tv-api.php cmd) y lee cómo va en su archivo de
+       rt/tv/ (estático: no gasta PHP), cada 1 s (5 s en segundo plano).
+       📺 sin pulsar: si hay una TV encendida (su estado tiene menos de
+       2,5 min), la música pasa a ella donde iba y el YouTube del móvil se
+       calla; si no, la ventana para emparejar una. 📺 pulsado: vuelve al
+       móvil donde iba la TV, y la TV se queda esperando. Si se cierra la
+       app, la TV sigue; al abrirla otra vez vuelve a ser su mando
+       (localStorage melonTv:on). */
+    var TV_RT    = <?= json_encode($tvRt) ?>;
+    var TV_RELOJ = <?= tv_ahora() ?> - Date.now();   /* servidor − móvil (ms) */
+    var TV_KEY   = 'melonTv:on';
+
+    function tvAhora() { return Date.now() + TV_RELOJ; }
+    /* Los archivos de rt/tv/ son HTML con el JSON en <pre id="d"> (los
+       lee también la TV con un iframe). */
+    function tvLeer(url) {
+        return fetch(url, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.text() : ''; })
+            .then(function(html){
+                var m = /<pre id="d">([\s\S]*?)<\/pre>/.exec(html || '');
+                if (!m) return null;
+                var t = document.createElement('textarea');
+                t.innerHTML = m[1];
+                return JSON.parse(t.value);
+            })
+            .catch(function(){ return null; });
+    }
+    function tvViva(st) { return !!(st && st.t && tvAhora() - st.t < 150000); }
+    function tvDur() {
+        var st = TV.st;
+        return (st && (st.dur || (st.track && st.track.duration))) || 0;
+    }
+    function tvPos() {
+        var st = TV.st;
+        if (!st || !st.track) return 0;
+        var p = st.pos || 0;
+        if (st.playing) p += Math.max(0, (tvAhora() - st.t) / 1000);
+        var d = tvDur();
+        return d > 0 ? Math.min(p, d) : p;
+    }
+
+    /* Orden a la TV. Mientras no conteste, lo que diga el archivo de la
+       TV es de antes de la orden: no se pinta (ver tvAplicar). */
+    function tvCmd(o) {
+        TV.pendientes++;
+        return fetch('assets/music/tv-api.php?action=cmd', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(o)
+        }).then(function(r){ return r.json(); })
+          .catch(function(){ return null; })
+          .then(function(d){
+              TV.pendientes--;
+              if (d && d.n) TV.ultimaN = Math.max(TV.ultimaN, d.n);
+              else if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'No se ha podido mandar a la TV.' });
+              return d;
+          });
+    }
+    /* Lo que suena en el móvil, a la TV (donde iba). */
+    function tvCargar(play, pos) {
+        var tr = QUEUE[CUR_IDX];
+        if (!tr) return;
+        TV.st = { on: 1, track: tr, idx: CUR_IDX, pl: CUR_PL_NAME, playing: !!play, pos: pos || 0,
+                  dur: tr.duration || 0, shuffle: SHUFFLE_ON, t: tvAhora(), n: 0 };
+        tvPintar();
+        tvCmd({ c: 'load', queue: QUEUE, idx: CUR_IDX, pos: pos || 0, play: !!play, shuffle: SHUFFLE_ON, pl: CUR_PL_NAME });
+    }
+    function tvSonar(play) {
+        if (!TV.st || !TV.st.on) return;
+        TV.st.pos = tvPos();
+        TV.st.t = tvAhora();
+        TV.st.playing = play;
+        pintarPlay(play);
+        tvCmd({ c: play ? 'play' : 'pause' });
+    }
+    function tvSaltar(pos) {
+        if (!TV.st || !TV.st.on) return;
+        TV.st.pos = pos;
+        TV.st.t = tvAhora();
+        tvTick();
+        tvCmd({ c: 'seek', pos: pos });
+    }
+
+    function tvBoton(on) {
+        var b = document.getElementById('mu-full-tv');
+        if (!b) return;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    function tvEntrar(st) {
+        var sonaba = false, pos = 0;
+        try { sonaba = YT_PLAYER.getPlayerState() === 1; pos = YT_PLAYER.getCurrentTime() || 0; } catch (_) {}
+        if (!pos && restorePos) pos = restorePos;
+        TV.on = true;
+        TV.st = st;
+        TV.ultimaN = 0;
+        TV.mostrado = '';
+        try { localStorage.setItem(TV_KEY, '1'); } catch (_) {}
+        tvBoton(true);
+        autoPlayUntil = 0;
+        playWhenReady = false;
+        try { if (YT_PLAYER) YT_PLAYER.pauseVideo(); } catch (_) {}
+        if (CUR_IDX >= 0 && QUEUE[CUR_IDX]) {
+            tvCargar(sonaba, pos);
+        } else if (st && st.on) {
+            /* Nada en el móvil y la TV ya suena: se coge lo suyo. */
+            tvAdoptar(st);
+        }
+        startProgressTimer();
+        tvPoll();
+    }
+    /* La TV ya suena (app recién abierta, o nada puesto en el móvil): su
+       cola pasa a ser la del móvil, para seguir con ella al volver. */
+    function tvAdoptar(st) {
+        tvLeer(TV_RT.cola).then(function(c){
+            if (c && c.queue && c.queue.length) {
+                QUEUE = c.queue;
+                CUR_PL_NAME = st.pl || '';
+            }
+            TV.st = st;
+            tvPintar();
+        });
+    }
+    /* Volver al móvil. stop: la TV se queda esperando. seguir: el móvil
+       sigue sonando donde iba la TV (si sonaba). */
+    function tvSalir(stop, seguir) {
+        var st = TV.st;
+        var sonaba = !!(st && st.on && st.playing);
+        var pos = tvPos();
+        TV.on = false;
+        TV.st = null;
+        TV.mostrado = '';
+        clearTimeout(TV.timer);
+        try { localStorage.removeItem(TV_KEY); } catch (_) {}
+        tvBoton(false);
+        if (stop) tvCmd({ c: 'stop' });
+        if (!st || !st.on || CUR_IDX < 0 || !QUEUE[CUR_IDX]) { pintarPlay(false); return; }
+        if (sonaba && seguir) {
+            playCurrent(pos);
+        } else {
+            var tr = QUEUE[CUR_IDX];
+            restorePos = pos;
+            renderTrack(tr);
+            pintarPlay(false);
+            if (YT_READY && YT_PLAYER) YT_PLAYER.cueVideoById({ videoId: tr.videoId, startSeconds: pos });
+            else pendingCue = tr.videoId;
+        }
+    }
+
+    function tvPoll() {
+        clearTimeout(TV.timer);
+        if (!TV.on) return;
+        tvLeer(TV_RT.estado).then(function(st){
+            if (!TV.on) return;
+            if (st) tvAplicar(st);
+            TV.timer = setTimeout(tvPoll, document.visibilityState === 'hidden' ? 5000 : 1000);
+        });
+    }
+    function tvAplicar(st) {
+        /* Aún no ha hecho la última orden: lo de antes no se pinta. */
+        if (TV.pendientes > 0 || (st.n || 0) < TV.ultimaN) {
+            if (!tvViva(st)) tvPerdida();
+            return;
+        }
+        if (!tvViva(st)) { tvPerdida(); return; }
+        if (!st.on) {
+            /* Esperando: si estaba sonando, alguien la ha parado (o se ha
+               recargado sin canción). */
+            if (TV.st && TV.st.on) {
+                tvSalir(false, false);
+                if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'La TV ha dejado de sonar.' });
+            }
+            return;
+        }
+        TV.st = st;
+        tvPintar();
+    }
+    function tvPerdida() {
+        tvSalir(false, false);
+        if (window.mToast) mToast({ id: 'tv', title: '📺 TV', message: 'No se encuentra la TV. La música vuelve al móvil.' });
+    }
+    /* Pinta en el móvil lo que suena en la TV. */
+    function tvPintar() {
+        var st = TV.st;
+        if (!st || !st.on || !st.track) return;
+        var vid = st.track.videoId;
+        if (!(QUEUE[st.idx] && QUEUE[st.idx].videoId === vid)) {
+            for (var i = 0; i < QUEUE.length; i++) if (QUEUE[i].videoId === vid) { st.idx = i; break; }
+        }
+        if (QUEUE[st.idx] && QUEUE[st.idx].videoId === vid) CUR_IDX = st.idx;
+        if (TV.mostrado !== vid) {
+            TV.mostrado = vid;
+            renderTrack(QUEUE[CUR_IDX] && QUEUE[CUR_IDX].videoId === vid ? QUEUE[CUR_IDX] : st.track);
+            document.getElementById('mu-widget').classList.add('visible');
+        }
+        pintarPlay(!!st.playing);
+        if (!!st.shuffle !== SHUFFLE_ON) setShuffle(!!st.shuffle, true);
+        tvTick();
+    }
+    function tvTick() {
+        if (document.visibilityState === 'hidden' || _muScrub) return;
+        var cur = tvPos(), tot = tvDur();
+        var fillEl = document.getElementById('mu-full-progress-fill');
+        if (fillEl) fillEl.style.width = (tot > 0 ? Math.min(100, cur / tot * 100) : 0) + '%';
+        var c1 = document.getElementById('mu-full-time-cur'); if (c1) c1.textContent = fmt(cur);
+        var t1 = document.getElementById('mu-full-time-tot'); if (t1) t1.textContent = fmt(tot);
+    }
+
+    /* Emparejar una TV: token (QR, enlace.php?tv=… abierto con la app) o
+       el código que enseña. */
+    function tvEmparejar(datos) {
+        return fetch('assets/music/tv-api.php?action=pair', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datos)
+        }).then(function(r){ return r.json(); })
+          .catch(function(){ return { ok: false, error: 'Sin conexión' }; })
+          .then(function(d){
+              d = d || {};
+              if (d.ok) {
+                  var bd = document.getElementById('mu-tv-backdrop');
+                  if (bd) bd.hidden = true;
+                  if (window.mToast) mToast({ id: 'tv', title: '📺 TV conectada', message: 'Pulsa 📺 en el reproductor para que suene en ella.' });
+              } else if (!datos.code && window.mToast) {
+                  mToast({ id: 'tv', title: '📺 TV', message: d.error || 'No se ha podido conectar la TV.' });
+              }
+              return d;
+          });
+    }
+
+    /* Ventana para emparejar (📺 sin ninguna TV encendida). */
     (function attachTvCast(){
         var bd        = document.getElementById('mu-tv-backdrop');
         var closeBtn  = document.getElementById('mu-tv-close');
@@ -2944,78 +3652,57 @@ window.MuShell = (function(){
         var urlInput  = document.getElementById('mu-tv-url');
         var copyBtn   = document.getElementById('mu-tv-copy');
         var urlInline = document.getElementById('mu-tv-url-inline');
-        var codeBox   = document.getElementById('mu-tv-code');
+        var codeInput = document.getElementById('mu-tv-code');
         var codeMeta  = document.getElementById('mu-tv-code-meta');
+        var pairBtn   = document.getElementById('mu-tv-pair');
 
-        /* Smart TVs viejas suelen NO terminar el handshake TLS 1.3 del
-           túnel cloudflared y quedan en blanco indefinidamente. Si el
-           servidor pudo detectar una IP LAN, la usamos como URL de la
-           TV: HTTP plano en la WiFi de casa evita todo el problema TLS.
-           Fallback: la URL del origin actual (cloudflared u hosting). */
-        var lanUrl    = bd.getAttribute('data-lan-url') || '';
-        var publicUrl = location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'tv.php';
-        var tvUrl     = lanUrl || publicUrl;
-        /* Mostramos el "http://" completo para que el usuario lo teclee
-           tal cual en la TV. Si solo enseñamos el host, muchos browsers
-           de Smart TV añaden automáticamente "https://" y rompen el
-           polling por cert self-signed. */
-        var tvHostUrl = tvUrl;
-
-        var countdown = null;
-        function stopCountdown(){ if (countdown) { clearInterval(countdown); countdown = null; } }
-
-        function fmt(code){
-            if (!code) return '— — — — — —';
-            return code.replace(/(\d{3})(\d{3})/, '$1 $2');
-        }
-
-        function loadCode(){
-            codeBox.textContent = '— — — — — —';
-            codeMeta.textContent = 'Generando…';
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'assets/music/api.php?action=get-tv-code', true);
-            xhr.onreadystatechange = function(){
-                if (xhr.readyState !== 4) return;
-                try {
-                    var r = JSON.parse(xhr.responseText);
-                    if (r && r.code) {
-                        codeBox.textContent = fmt(r.code);
-                        var secs = r.expiresIn || 300;
-                        codeMeta.textContent = 'Expira en ' + Math.floor(secs/60) + ':' + ('0'+(secs%60)).slice(-2);
-                        stopCountdown();
-                        countdown = setInterval(function(){
-                            secs--;
-                            if (secs <= 0) {
-                                stopCountdown();
-                                codeBox.textContent = '— — — — — —';
-                                codeMeta.textContent = 'Caducado — pulsa "Regenerar"';
-                                return;
-                            }
-                            codeMeta.textContent = 'Expira en ' + Math.floor(secs/60) + ':' + ('0'+(secs%60)).slice(-2);
-                        }, 1000);
-                    } else {
-                        codeMeta.textContent = r && r.error ? r.error : 'Error generando código';
-                    }
-                } catch (_) {
-                    codeMeta.textContent = 'Error de red';
-                }
-            };
-            xhr.send();
-        }
+        /* LAN_URL (.env) si la hay: Smart TVs viejas que no terminan el
+           TLS moderno, por HTTP plano en la red de casa. Si no, esta web.
+           Con el "http(s)://" entero: si solo va el host, muchas TVs le
+           ponen https:// por su cuenta. */
+        var lanUrl = bd.getAttribute('data-lan-url') || '';
+        var tvUrl  = lanUrl || (location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'tv.php');
 
         function open(){
             urlInput.value = tvUrl;
-            urlInline.textContent = tvHostUrl;
+            urlInline.textContent = tvUrl;
+            codeInput.value = '';
+            codeMeta.textContent = '';
             bd.hidden = false;
-            loadCode();
         }
-        function close(){ bd.hidden = true; stopCountdown(); }
+        function close(){ bd.hidden = true; }
 
-        openBtn.addEventListener('click', open);
+        openBtn.addEventListener('click', function(){
+            if (TV.on) { tvSalir(true, true); return; }
+            if (!TV_RT) { open(); return; }
+            openBtn.disabled = true;
+            tvLeer(TV_RT.estado).then(function(st){
+                openBtn.disabled = false;
+                if (tvViva(st)) tvEntrar(st);
+                else open();
+            });
+        });
         closeBtn.addEventListener('click', close);
         bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
 
-        codeBox.addEventListener('click', loadCode);
+        /* "123 456" mientras se escribe. */
+        codeInput.addEventListener('input', function(){
+            var d = codeInput.value.replace(/\D/g, '').slice(0, 6);
+            codeInput.value = d.length > 3 ? d.slice(0, 3) + ' ' + d.slice(3) : d;
+            codeMeta.textContent = '';
+        });
+        function emparejar(){
+            var code = codeInput.value.replace(/\D/g, '');
+            if (code.length !== 6) { codeMeta.textContent = 'El código tiene 6 cifras'; return; }
+            pairBtn.disabled = true;
+            codeMeta.textContent = 'Conectando…';
+            tvEmparejar({ code: code }).then(function(d){
+                pairBtn.disabled = false;
+                codeMeta.textContent = d.ok ? '' : (d.error || 'No se ha podido conectar');
+            });
+        }
+        pairBtn.addEventListener('click', emparejar);
+        codeInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') emparejar(); });
 
         copyBtn.addEventListener('click', function(){
             urlInput.select();
@@ -3248,7 +3935,11 @@ window.MuShell = (function(){
         document.body.appendChild(bd);
         var body = bd.querySelector('.window-body');
         if (typeof opts.body === 'string') body.innerHTML = opts.body;
-        function close(){ if (bd.parentNode) bd.parentNode.removeChild(bd); }
+        function close(){
+            if (!bd.parentNode) return;
+            bd.parentNode.removeChild(bd);
+            if (typeof opts.onClose === 'function') opts.onClose();
+        }
         bd.querySelector('.title-bar-controls button').addEventListener('click', close);
         bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
         return { body: body, close: close, root: bd };
@@ -3279,6 +3970,78 @@ window.MuShell = (function(){
             m.close(); if (typeof onOk === 'function') onOk();
         });
     }
+
+    /* ── Actualizar la app de Android (MelonUpdaterPlugin) ──
+       Como el escritorio (electron/updater.js): mira cada 5 min si hay
+       versión nueva y avisa con una ventana. "Más tarde" (o cerrarla)
+       calla esa versión hasta que se vuelva a abrir la app. La app
+       baja el APK y abre el instalador de Android, que la actualiza
+       encima sin perder nada. Sin el plugin (navegador, PWA o app
+       vieja) nativePromise no existe o falla y no se avisa. */
+    (function setupAppUpdater(){
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') return;
+        var KEY = 'melonApkLater';
+        var open = false;
+        function laterFor() {
+            try { return +sessionStorage.getItem(KEY) || 0; } catch (_) { return 0; }
+        }
+        function check() {
+            if (open) return;
+            cap.nativePromise('MelonUpdater', 'check').then(function(r){
+                if (open || !r || !r.available || r.versionCode <= laterFor()) return;
+                showUpdate(r);
+            }).catch(function(){});
+        }
+        function showUpdate(r) {
+            open = true;
+            var installing = false;
+            var m = shellOpenModal({
+                title: 'Actualización',
+                body:
+                    '<div class="shell-modal-msg">Hay una versión nueva de Melon Hub' +
+                        (r.versionName ? ' (' + esc(r.versionName) + ')' : '') + '.</div>' +
+                    '<div class="shell-modal-actions">' +
+                        '<button class="button" data-act="later" type="button">Más tarde</button>' +
+                        '<button class="button default" data-act="update" type="button">Actualizar</button>' +
+                    '</div>',
+                onClose: function(){
+                    open = false;
+                    window.removeEventListener('melonUpdateProgress', onProgress);
+                    if (!installing) { try { sessionStorage.setItem(KEY, String(r.versionCode)); } catch (_) {} }
+                }
+            });
+            var msg = m.body.querySelector('.shell-modal-msg');
+            var btnLater = m.body.querySelector('[data-act="later"]');
+            var btnUpdate = m.body.querySelector('[data-act="update"]');
+            function onProgress(e) {
+                msg.textContent = e.percent >= 0 ? 'Descargando… ' + e.percent + '%' : 'Descargando…';
+            }
+            btnLater.addEventListener('click', m.close);
+            btnUpdate.addEventListener('click', function(){
+                btnLater.disabled = btnUpdate.disabled = true;
+                msg.textContent = 'Descargando…';
+                window.addEventListener('melonUpdateProgress', onProgress);
+                cap.nativePromise('MelonUpdater', 'install').then(function(res){
+                    if (res && res.status === 'installing') {
+                        /* Sigue el instalador de Android. */
+                        installing = true;
+                        m.close();
+                        return;
+                    }
+                    msg.textContent = 'Para actualizar, permite que Melon Hub instale aplicaciones y vuelve a intentarlo.';
+                    btnLater.disabled = btnUpdate.disabled = false;
+                    btnUpdate.textContent = 'Reintentar';
+                }).catch(function(){
+                    msg.textContent = 'No se pudo descargar la actualización. Comprueba la conexión y vuelve a intentarlo.';
+                    btnLater.disabled = btnUpdate.disabled = false;
+                    btnUpdate.textContent = 'Reintentar';
+                });
+            });
+        }
+        check();
+        setInterval(check, 5 * 60 * 1000);
+    })();
 
     /* Menú vinilo: 2 acciones (perfil + playlist). */
     /* Icono musicaIcon.png para la opción "Corregir" (lo reescribe
@@ -3751,6 +4514,7 @@ window.MuShell = (function(){
         QUEUE = tracks.slice();
         CUR_IDX = Math.max(0, Math.min(startIdx|0, QUEUE.length - 1));
         CUR_PL_NAME = plName || '';
+        if (TV.on) { tvCargar(true, 0); return; }
         playCurrent();
     }
     function getState() {
@@ -3790,9 +4554,95 @@ window.MuShell = (function(){
         catch(_) { return 0; }
     }
 
+    /* Al abrir la app: la última canción preparada en pausa donde iba. */
+    (function restoreLast(){
+        if (!IS_ANDROID_APP) return;
+        /* El aleatorio sigue como estaba, también en el widget (si no,
+           al reabrir la app salía apagado y se lo contaba así). */
+        var shuffleOn = false;
+        try { shuffleOn = localStorage.getItem(LAST_SHUFFLE_KEY) === '1'; } catch (_) {}
+        if (shuffleOn) setShuffle(true);
+        var d = null;
+        try { d = JSON.parse(localStorage.getItem(LAST_QUEUE_KEY) || 'null'); } catch (_) {}
+        if (!d || !Array.isArray(d.queue) || !d.queue.length) return;
+        QUEUE = d.queue;
+        CUR_IDX = Math.max(0, Math.min(d.idx | 0, QUEUE.length - 1));
+        CUR_PL_NAME = d.plName || '';
+        var tr = QUEUE[CUR_IDX];
+        if (!tr || !tr.videoId) { QUEUE = []; CUR_IDX = -1; return; }
+        try { restorePos = parseFloat(localStorage.getItem(LAST_POS_KEY)) || 0; } catch (_) {}
+        /* Punto de partida del historial del aleatorio: ⏮ desde la
+           siguiente vuelve a esta. */
+        rememberListened();
+        renderTrack(tr);
+        document.getElementById('mu-widget').classList.add('visible');
+        ['mu-vinyl', 'mu-widget-disc', 'mu-lock-vinyl'].forEach(function(id){
+            var el = document.getElementById(id);
+            if (el) el.classList.add('paused');
+        });
+        updateMediaSession(tr);
+        if (YT_READY && YT_PLAYER) YT_PLAYER.cueVideoById({ videoId: tr.videoId, startSeconds: restorePos });
+        else pendingCue = tr.videoId;
+        /* Para que al darle a ▶ avance la barra y se vaya guardando. */
+        startProgressTimer();
+        nativeWidgetState(false);
+    })();
+
+    /* La TV seguía sonando con la app cerrada: el móvil vuelve a ser su
+       mando (si sigue encendida y sonando). */
+    (function tvAlAbrir(){
+        var on = false;
+        try { on = localStorage.getItem(TV_KEY) === '1'; } catch (_) {}
+        if (!on || !TV_RT) return;
+        tvLeer(TV_RT.estado).then(function(st){
+            if (!tvViva(st) || !st.on) { try { localStorage.removeItem(TV_KEY); } catch (_) {} return; }
+            TV.on = true;
+            TV.st = st;
+            tvBoton(true);
+            playWhenReady = false;
+            try { if (YT_PLAYER) YT_PLAYER.pauseVideo(); } catch (_) {}
+            tvAdoptar(st);
+            startProgressTimer();
+            tvPoll();
+        });
+    })();
+
+    /* Colores del widget de la app: los del tema activo (variables CSS). */
+    (function sendWidgetTheme(){
+        var cap = window.Capacitor;
+        if (!IS_ANDROID_APP || !cap || typeof cap.nativePromise !== 'function') return;
+        var KEYS = ['win-bg', 'win-body-bg', 'titlebar-start', 'titlebar-end', 'titlebar-text', 'text',
+                    'text-muted', 'btn-bg', 'btn-text', 'accent', 'accent-text', 'input-bg',
+                    'bezel-light-1', 'bezel-light-2', 'bezel-dark-1', 'bezel-dark-2', 'border',
+                    'hover-bg', 'active-rose', 'accent-deep'];
+        /* El navegador pasa cualquier color CSS (nombres, rgb…) a rgb(). */
+        var probe = document.createElement('span');
+        probe.style.display = 'none';
+        document.body.appendChild(probe);
+        var cs = getComputedStyle(document.body);
+        var colors = {};
+        KEYS.forEach(function(k){
+            var v = cs.getPropertyValue('--' + k).trim();
+            if (!v) return;
+            probe.style.color = '';
+            probe.style.color = v;
+            var m = getComputedStyle(probe).color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!m) return;
+            colors[k] = '#' + [m[1], m[2], m[3]].map(function(n){ return ('0' + (+n).toString(16)).slice(-2); }).join('');
+        });
+        probe.remove();
+        try {
+            cap.nativePromise('MelonMusic', 'setWidgetTheme', {
+                interface: <?= json_encode($_activeInterface) ?>,
+                colors: colors
+            }).catch(function(){});
+        } catch (_) {}
+    })();
+
     return {
         loadQueue: loadQueue, next: next, prev: prev, toggle: togglePlay,
         openFullscreen: openFullscreen, openLock: openLock, getState: getState,
+        tvEmparejar: tvEmparejar,
         getCurrentTime: getCurrentTime, getDuration: getDuration,
     };
 })();
@@ -3969,6 +4819,79 @@ window.MuShell = (function(){
         for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
         return out;
     }
+})();
+
+/* ─── Avisos push de la app de Android (FCM) ──────────────────────────
+   El WebView de la app no tiene PushManager (setupPush de arriba no hace
+   nada ahí): la APK lleva @capacitor/push-notifications. Al abrir la app
+   se pide el permiso de Android (13+, una vez; si se niega no se insiste)
+   y el token de Firebase se guarda en push_subscriptions con tipo 'fcm'
+   (assets/profile/api.php, save-fcm-token). El servidor manda a la vez a
+   la PWA y a la app (assets/push/send-push.php, melonPushEnviar).
+   Con la app en segundo plano o cerrada, Android pinta el aviso solo
+   (icono y canal "avisos" del AndroidManifest). Tocarlo abre la app y
+   llega aquí con la URL del aviso: se trata igual que el sw:deep-link de
+   la PWA (si solo cambia el hash, hashchange; si no, se navega). */
+(function setupNativePush(){
+    var cap = window.Capacitor;
+    if (!/MelonHubApp/.test(navigator.userAgent)) return;
+    if (!cap || typeof cap.nativePromise !== 'function' || typeof cap.addListener !== 'function') return;
+    var P = 'PushNotifications';
+
+    function abrirUrl(url) {
+        try {
+            var u = new URL(url, location.href);
+            if (u.origin === location.origin && u.pathname === location.pathname && u.hash) {
+                if (location.hash !== u.hash) location.hash = u.hash;
+                else window.dispatchEvent(new HashChangeEvent('hashchange', {
+                    oldURL: location.href, newURL: location.href
+                }));
+            } else {
+                location.href = u.href;
+            }
+        } catch (_) {}
+    }
+
+    /* También lo usa la orden "open-push" (aviso tocado con la app de
+       estilo nuevo, MainActivity.openAviso → setupNativeWidget). */
+    window.mhAbrirAviso = abrirUrl;
+    if (window.mhAvisoPendiente) { abrirUrl(window.mhAvisoPendiente); window.mhAvisoPendiente = null; }
+
+    try {
+        cap.addListener(P, 'registration', function(t){
+            if (!t || !t.value) return;
+            /* v: 2 si la app monta los avisos ella (AvisosService, APK
+               1.10+; lo dice MelonMusic.avisosConEstilo): el servidor le
+               manda mensajes de datos. Las APK anteriores no tienen ese
+               método y reciben el aviso ya hecho. */
+            cap.nativePromise('MelonMusic', 'avisosConEstilo', {}).then(function(r){
+                return !!(r && r.ok);
+            }).catch(function(){ return false; }).then(function(conEstilo){
+                return fetch('assets/profile/api.php?action=save-fcm-token', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: t.value, v: conEstilo ? 2 : 1 })
+                });
+            }).catch(function(){});
+        });
+        cap.addListener(P, 'pushNotificationActionPerformed', function(a){
+            var d = a && a.notification && a.notification.data;
+            if (d && d.url) abrirUrl(d.url);
+        });
+    } catch (_) { return; }
+
+    cap.nativePromise(P, 'createChannel', {
+        id: 'avisos', name: 'Avisos', description: 'Mensajes, invitaciones y avisos de Melon Hub',
+        importance: 4, visibility: 1
+    }).catch(function(){}).then(function(){
+        return cap.nativePromise(P, 'checkPermissions', {});
+    }).then(function(p){
+        if (p && p.receive === 'granted') return p;
+        if (p && p.receive === 'denied') return null;
+        return cap.nativePromise(P, 'requestPermissions', {});
+    }).then(function(p){
+        if (p && p.receive === 'granted') return cap.nativePromise(P, 'register', {});
+    }).catch(function(){});
 })();
 </script>
 
@@ -4582,8 +5505,11 @@ window.MuShell = (function(){
     var SHOWN = {};   /* {source: {id: true}} → evita spam */
     var POLL_T = null;
     var POLL_URL = 'assets/notifications/pending.php';
+    function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
 
     /* Toast reusable (idéntico estilo a ltToast). */
+    /* También para las apps de dentro (perfil: la racha encendida). */
+    window.mToast = function(opts){ mToast(opts); };
     function mToast(opts) {
         var existing = document.getElementById('m-toast-' + (opts.id || ''));
         if (existing) existing.remove();
@@ -4724,6 +5650,62 @@ window.MuShell = (function(){
                 ],
             });
         },
+        /* Amigos (assets/profile/amigos.php, decidido así): solicitud
+           pendiente con Rechazar / Aceptar, y "te ha aceptado" (una vez,
+           se cierra sola). Si el Perfil está abierto, su página de
+           Amigos se pone al día (timbre 'amigos'). */
+        amigo: function(inv, asSheet){
+            mToast({
+                id:    'amigo-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' quiere ser tu amigo',
+                message: 'Solicitud de amistad',
+                actions: [
+                    { label: 'Rechazar', fn: function(){
+                        fetchJSON('assets/profile/api.php?action=friend-reject',
+                            { method: 'POST', body: { user: inv.fromKey } });
+                    }},
+                    { label: 'Aceptar', fn: function(){
+                        fetchJSON('assets/profile/api.php?action=friend-accept',
+                            { method: 'POST', body: { user: inv.fromKey } });
+                    }},
+                ],
+            });
+        },
+        'amigo-ok': function(inv, asSheet){
+            mToast({
+                id:    'amigo-ok-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' ha aceptado tu solicitud',
+                message: 'Ahora sois amigos',
+            });
+        },
+        /* Regalo de la tienda sin abrir: "Abrir" → la tienda con ese regalo
+           (?regalo=ID, tienda-mobile.php). Sale hasta que se abre. */
+        'regalo': function(inv, asSheet){
+            mToast({
+                id:    'regalo-' + inv.id,
+                sheet: asSheet,
+                title: 'Regalo',
+                message: esc(inv.fromLabel || '?') + ' te ha enviado un regalo',
+                actions: [
+                    { label: 'Cerrar', fn: function(){} },
+                    { label: 'Abrir',  fn: function(){
+                        if (window.mOpenApp) window.mOpenApp('apps/mobile/tienda-mobile.php?regalo=' + encodeURIComponent(inv.id), 'Tienda');
+                    } },
+                ],
+            });
+        },
+        /* Invitación cumplida (racha.php): en el PC sale en la campana. */
+        'invita': function(inv, asSheet){
+            mToast({
+                id:    'invita-' + inv.id,
+                sheet: asSheet,
+                title: esc(inv.fromLabel || '?') + ' ha llegado a 7 días de racha',
+                message: '+' + (parseInt(inv.puntos, 10) || 500) + ' puntos de autismo por invitarle',
+                duration: 8000,
+            });
+        },
     };
 
     /* Sondeo: descarga pending → muestra los nuevos. Si la URL tiene un
@@ -4753,6 +5735,18 @@ window.MuShell = (function(){
                 if (isDeep) deepShown = true;
                 HANDLERS[src](inv, isDeep);
             });
+            /* Solicitud de amistad o regalo que ya no está (aceptada o
+               rechazada desde el PC o la tienda, cancelada): fuera su aviso. */
+            ['amigo', 'regalo'].forEach(function(src){
+                var siguen = {};
+                d.invites.forEach(function(inv){ if (inv.source === src) siguen[inv.id] = true; });
+                Object.keys(SHOWN[src] || {}).forEach(function(id){
+                    if (siguen[id]) return;
+                    var t = document.getElementById('m-toast-' + src + '-' + id);
+                    if (t) t.remove();
+                    delete SHOWN[src][id];
+                });
+            });
         });
     }
 
@@ -4774,11 +5768,146 @@ window.MuShell = (function(){
         var iv = (document.visibilityState === 'hidden') ? 60000 : 15000;
         POLL_T = setInterval(function(){ poll(false); }, iv);
     }
-    startNotifPoll();
-    document.addEventListener('visibilitychange', startNotifPoll);
+    if (window.melonTimbre) {
+        /* Con timbre (assets/js/timbre.js): cuando cambia alguno de los
+           temas de estos avisos (Escuchar juntos, playlists, listas,
+           pareja); si llegan varios a la vez, una sola petición. Si el
+           timbre no responde, cada 15 s como antes. Al volver a primer
+           plano, una vez (el sistema pudo dormir la página). */
+        var pendiente = null;
+        var pedir = function(){
+            if (pendiente) return;
+            pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
+        };
+        window.melonTimbre.on('lt', pedir, 15000);
+        ['musica', 'items', 'pareja', 'amigos', 'invita', 'regalo'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        document.addEventListener('visibilitychange', function(){
+            if (document.visibilityState === 'visible') pedir();
+        });
+    } else {
+        startNotifPoll();
+        document.addEventListener('visibilitychange', startNotifPoll);
+    }
     window.addEventListener('hashchange', function(){
         if (/#notif=/i.test(location.hash)) poll(true);
     });
+})();
+
+/* ── Ajedrez (como pollAjedrez de desktop-base.php; decidido así, 7/11):
+   avisos de la carcasa con los retos que te llegan (Rechazar / Aceptar),
+   las partidas que te esperan (reto aceptado, ronda de torneo: "Jugar")
+   y los torneos cancelados en los que estabas. Si Juegos ya enseña el
+   ajedrez (ajzViendo de ajedrez.js), la partida entra sola. Se pide
+   ajz-avisos cuando el timbre dice que ha cambiado su "aviso" (o cada
+   10 s si no responde) y a la hora de su próximo torneo (esa llamada lo
+   arranca: ajz_tick). ── */
+(function mAjedrez(){
+    var API = 'assets/juegos/api.php';
+    var VISTOS = {};          /* id del aviso → ya enseñado (una vez por sesión) */
+    var pidiendo = false, otra = false, plazo = null;
+    function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    function post(action, body){
+        return fetch(API + '?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function(r){ return r.json(); });
+    }
+    function abrir(que){
+        if (window.mOpenApp) window.mOpenApp('apps/mobile/juegos-mobile.php?abrir=' + encodeURIComponent(que), 'Juegos');
+    }
+    window.mOpenJuegos = abrir;
+    function toast(o){ if (window.mToast) window.mToast(o); }
+    function error(msg){ toast({ id: 'ajz-err', title: 'Ajedrez', message: esc(msg) }); }
+    /* Aceptar un reto: el aviso de aquí y el botón Aceptar del aviso push
+       de la app (#abrir=reto-aceptar:N). */
+    function aceptarReto(id){
+        post('ajz-reto-responder', { id: id, aceptar: true }).then(function(r){
+            var t = document.getElementById('m-toast-ajz-reto-' + id);
+            if (t) t.remove();
+            if (r && r.ok && r.partida) abrir('partida:' + r.partida);
+            else error((r && r.error) || 'No se ha podido aceptar el reto');
+        }).catch(function(){ error('Sin conexión'); });
+    }
+    window.mAjzAceptarReto = aceptarReto;
+    /* ¿Juegos (abierto y a la vista) está en el ajedrez? */
+    function viendo(){
+        var shell = document.getElementById('shell-app'), f = document.getElementById('app-frame');
+        if (!shell || shell.hidden || !f) return null;
+        try { return f.contentWindow.ajzViendo ? f.contentWindow.ajzViendo() : null; } catch (e) { return null; }
+    }
+    function programar(d){
+        if (plazo) { clearTimeout(plazo); plazo = null; }
+        var falta = d.prox && d.ahora ? d.prox - d.ahora : -1;
+        if (falta > 0 && falta < 6 * 3600000) plazo = setTimeout(pedir, falta + 300 + Math.random() * 1500);
+    }
+    function una(id, o){
+        if (VISTOS[id]) return;
+        VISTOS[id] = true;
+        o.id = id;
+        toast(o);
+    }
+    function pedir(){
+        if (pidiendo) { otra = true; return; }
+        pidiendo = true;
+        fetch(API + '?action=ajz-avisos', { credentials: 'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d || !d.ok) return;
+                programar(d);
+                var siguen = {};
+                (d.retos || []).forEach(function(x){
+                    var u = x.de || {};
+                    siguen['ajz-reto-' + x.id] = true;
+                    una('ajz-reto-' + x.id, {
+                        title: 'Ajedrez',
+                        message: esc(u.nombre || 'Alguien') + ' te reta a una partida (' + esc(x.ritmo) + (x.apuesta > 0 ? ', apuesta ' + (x.apuesta | 0) + ' puntos' : '') + ')',
+                        actions: [
+                            { label: 'Rechazar', fn: function(){ post('ajz-reto-responder', { id: x.id, aceptar: false }).catch(function(){}); } },
+                            { label: 'Aceptar', fn: function(){ aceptarReto(x.id); } },
+                        ],
+                    });
+                });
+                (d.cancelados || []).forEach(function(c){
+                    una('ajz-cancelado-' + c.id, {
+                        title: 'Ajedrez',
+                        message: 'Se ha cancelado el torneo «' + esc(c.torneo) + '» ' +
+                                 (c.motivo === 'vacio' ? 'porque no se llenó a tiempo.' : 'porque lo ha cancelado quien lo organizaba.') +
+                                 (c.devuelto > 0 ? ' Se te han devuelto los ' + (c.devuelto | 0) + ' puntos de la entrada.' : ''),
+                        duration: 9000,
+                    });
+                });
+                var v = viendo();
+                (d.partidas || []).forEach(function(p){
+                    if (v && (v.vista === 'menu' || v.partida === p.id || (v.vista === 'torneo' && p.torneoId && v.torneo === p.torneoId))) return;
+                    var u = p.rival || {};
+                    siguen['ajz-partida-' + p.id] = true;
+                    una('ajz-partida-' + p.id, {
+                        title: 'Ajedrez',
+                        message: p.torneo ? 'Empieza tu partida del torneo ' + esc(p.torneo) + ' contra ' + esc(u.nombre || '?')
+                                          : esc(u.nombre || 'Tu rival') + ' ha aceptado tu reto: ¡a jugar!',
+                        actions: [
+                            { label: 'Cerrar', fn: function(){} },
+                            { label: 'Jugar', fn: function(){ abrir('partida:' + p.id); } },
+                        ],
+                    });
+                });
+                /* Reto o partida que ya no está (aceptado en el PC, caducado…): fuera su aviso. */
+                Object.keys(VISTOS).forEach(function(id){
+                    if (!/^ajz-(reto|partida)-/.test(id) || siguen[id]) return;
+                    var t = document.getElementById('m-toast-' + id);
+                    if (t) t.remove();
+                    delete VISTOS[id];
+                });
+            })
+            .catch(function(){})
+            .then(function(){
+                pidiendo = false;
+                if (otra) { otra = false; pedir(); }
+            });
+    }
+    setTimeout(pedir, 4000);
+    if (window.melonTimbre) window.melonTimbre.on('aviso', pedir, 10000);
+    else setInterval(pedir, 10000);
+    document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') pedir(); });
 })();
 
 /* Tier 2 #5 — Idle broadcast desde los iframes de apps.
@@ -5224,7 +6353,11 @@ window.MuShell = (function(){
     }
     var pollT = null;
     var idleOff = false;
+    /* Con timbre (window.melonTimbre, assets/js/timbre.js) se pide cuando
+       cambia 'chat' (si no responde, cada 10 s como antes); sin timbre,
+       cada 10 s. En la pantalla de bloqueo del reproductor, nada. */
     function startPoll(){
+        if (window.melonTimbre) return;
         if (pollT) clearInterval(pollT);
         if (idleOff) return;
         pollT = setInterval(poll, 10000);
@@ -5233,6 +6366,7 @@ window.MuShell = (function(){
         if (pollT) { clearInterval(pollT); pollT = null; }
     }
     poll();
+    if (window.melonTimbre) window.melonTimbre.on('chat', function(){ if (!idleOff) poll(); }, 10000);
     startPoll();
     /* Refresca al volver a la pestaña — bfcache deja el contador stale. */
     document.addEventListener('visibilitychange', function(){

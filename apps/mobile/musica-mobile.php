@@ -92,8 +92,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <!-- PWA GUARD: fuera de standalone → fuera de la app. -->
     <script>
     (function(){
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (!sa) window.location.replace('../../mobile-landing.php');
     })();
     /* --mh-vh sincronizado con window.innerHeight (sobrevive al bfcache). */
@@ -116,8 +118,12 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="../../assets/css/98.css">
     <link rel="stylesheet" href="../../assets/css/tokens.css">
     <link rel="stylesheet" href="../../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <script src="../../assets/js/icon-pack.js"></script>
+    <script src="../../assets/js/melon-links.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-links.js') ?>"></script>
     <?php require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php"; emitInterfaceCss("../../"); ?>
     <script src="../../assets/js/interface-loader.js?v=fs1"></script>
     <link rel="stylesheet" href="../../assets/css/themes.css">
@@ -197,6 +203,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                  2px  2px 0 var(--bezel-light-2, #dfdfdf);
         }
         .mu-pl-collab-av:last-child { margin-left: 0; }
+        /* Con foto va dentro de .mu-pl-collab-wrap (lleva el marco de
+           perfil): el solape pasa al envoltorio. */
+        .mu-pl-collab-wrap { margin-left: -10px; }
+        .mu-pl-collab-wrap:last-child { margin-left: 0; }
+        .mu-pl-collab-wrap > .mu-pl-collab-av { margin-left: 0; }
         .mu-pl-collab-more {
             background: var(--btn-bg, silver);
             color: var(--text, #000);
@@ -1564,7 +1575,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 
         <!-- Header: icono música + título + contador de playlists -->
         <div class="mh-userbar">
-            <div class="mh-userbar-avatar">
+            <div class="mh-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil (melon-marcos.js) */ ?>
                 <?php if ($userImg): ?>
                     <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                 <?php else: ?>
@@ -1835,7 +1846,7 @@ var QUEUE     = [];        /* tracks de la playlist en reproducción */
 var CUR_IDX   = -1;        /* índice del track actual en QUEUE */
 var YT_PLAYER = null;      /* instancia YT.Player (no llamarla YT — choca con window.YT) */
 var YT_READY  = false;
-var SHUFFLE_ON = false;    /* modo aleatorio: next/prev eligen track al azar */
+var SHUFFLE_ON = false;    /* modo aleatorio: ⏭ al azar, ⏮ por el historial */
 /* Música del perfil — la cargamos en paralelo a las playlists para
    poder mostrar la estrella de reseña en cualquier track cuyo videoId
    ya tengas reseñado en tu lista de música. Solo items PROPIOS. */
@@ -1872,6 +1883,14 @@ function userAvatarByLabel(label) {
         if (USERS[i].label === label) return USERS[i].img || null;
     }
     return null;
+}
+/* user_key por LABEL (track.addedBy): para el marco de perfil de su foto. */
+function userKeyByLabel(label) {
+    if (!label) return '';
+    for (var i = 0; i < USERS.length; i++) {
+        if (USERS[i].label === label) return USERS[i].key || '';
+    }
+    return '';
 }
 function userAvatarByKey(key) {
     if (!key) return null;
@@ -2000,7 +2019,7 @@ function renderPlaylists() {
                 var img = userAvatarByKey(ck);
                 var lbl = userLabelByKey(ck);
                 avatarsHtml += img
-                    ? '<img class="mu-pl-collab-av" src="' + esc(img) + '" alt="' + esc(lbl) + '" title="' + esc(lbl) + '">'
+                    ? '<span class="mh-marco-av mu-pl-collab-wrap" data-marco-user="' + esc(ck) + '"><img class="mu-pl-collab-av" src="' + esc(img) + '" alt="' + esc(lbl) + '" title="' + esc(lbl) + '"></span>'
                     : '<div class="mu-pl-collab-av mu-pl-collab-av-ph" title="' + esc(lbl) + '">' + esc(lbl.substring(0, 1)) + '</div>';
             });
             if (avatarsToShow.length > 4) {
@@ -2040,7 +2059,7 @@ function renderPlaylists() {
                 var addImg = userAvatarByLabel(tr.addedBy);
                 addedByHtml = '<div class="mu-track-addedby" title="Añadido por ' + esc(tr.addedBy) + '">' +
                               (addImg
-                                ? '<img class="mu-track-addedby-av" src="' + esc(addImg) + '" alt="">'
+                                ? '<span class="mh-marco-av" data-marco-user="' + esc(userKeyByLabel(tr.addedBy)) + '"><img class="mu-track-addedby-av" src="' + esc(addImg) + '" alt=""></span>'
                                 : '<span class="mu-track-addedby-av mu-track-addedby-av-ph">' + esc(tr.addedBy.substring(0,1)) + '</span>') +
                               '</div>';
             }
@@ -2684,6 +2703,7 @@ function muOpenNowPlayingMenu() {
         { act: 'fixAlbum', label: MU_FIX_ICON + 'Corregir' },
         { act: 'addPl',    label: '📋 Añadir' }
     ];
+    if (tr.videoId) items.push({ act: 'link', label: '🔗 Copiar enlace' });
     var bodyHtml = '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint, #666);">' +
                      esc(tr.title || tr.videoId || 'Canción') +
                      (tr.artist ? ' — ' + esc(tr.artist) : '') +
@@ -2703,6 +2723,7 @@ function muOpenNowPlayingMenu() {
             m.close();
             if (act === 'fixAlbum') muReportWrongAlbum(tr);
             if (act === 'addPl')    muOpenAddCurrentToPlaylist(tr);
+            if (act === 'link' && window.melonCopyLink) window.melonCopyLink('cancion', tr.videoId);
         });
     });
 }
@@ -2983,6 +3004,7 @@ function playCurrent() {
     if (CUR_IDX < 0 || CUR_IDX >= QUEUE.length) return;
     var tr = QUEUE[CUR_IDX];
     if (!tr || !tr.videoId) { nextTrack(); return; }
+    muRememberListened();
 
     /* WRAPPED tracking: antes de cargar el nuevo videoId, logea el
        track ANTERIOR con el tiempo real escuchado (getCurrentTime del
@@ -3031,19 +3053,55 @@ function playCurrent() {
     YT_PLAYER.loadVideoById(tr.videoId);
 }
 
-/* Devuelve un índice aleatorio de QUEUE distinto al actual. Se usa
-   tanto para prev como next cuando SHUFFLE_ON: si solo hay un track
-   se queda donde está. */
+/* Devuelve un índice aleatorio de QUEUE distinto al actual (⏭ en
+   aleatorio): si solo hay un track se queda donde está. */
 function muPickRandomIdx() {
     if (QUEUE.length <= 1) return CUR_IDX;
     var r;
     do { r = Math.floor(Math.random() * QUEUE.length); } while (r === CUR_IDX);
     return r;
 }
+
+/* Historial de lo escuchado para el aleatorio (sin el shell; dentro de
+   mobile.php lo lleva MuShell, igual): ⏮ vuelve a la canción que sonaba
+   antes (no a una al azar) y ⏭, después de volver atrás, rehace el mismo
+   camino. Cada entrada guarda la playlist y el videoId: si la cola ya no
+   es la misma, se descarta. */
+var muShuffleBack = [], muShuffleForward = [], muShuffleNow = null, muShuffleNav = false;
+function muRememberListened() {
+    var entry = { pl: CUR_PL_IDX, idx: CUR_IDX, vid: QUEUE[CUR_IDX].videoId };
+    var same = muShuffleNow && muShuffleNow.vid === entry.vid && muShuffleNow.pl === entry.pl;
+    /* Una canción nueva que no viene de ⏮/⏭ por el historial (tocada en
+       la lista, al azar…) abre camino nuevo: lo de delante se olvida. */
+    if (!same && !muShuffleNav && muShuffleNow) {
+        muShuffleBack.push(muShuffleNow);
+        if (muShuffleBack.length > 200) muShuffleBack.shift();
+        muShuffleForward = [];
+    }
+    muShuffleNow = entry;
+    muShuffleNav = false;
+}
+/* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+function muHistoryStep(stack) {
+    while (stack.length) {
+        var e = stack.pop();
+        if (e.pl === CUR_PL_IDX && QUEUE[e.idx] && QUEUE[e.idx].videoId === e.vid) return e.idx;
+    }
+    return -1;
+}
 function nextTrack() {
     if (CUR_IDX < 0) return;
-    if (SHUFFLE_ON) { CUR_IDX = muPickRandomIdx(); }
-    else {
+    if (SHUFFLE_ON && QUEUE.length > 1) {
+        /* Si se había vuelto atrás, la que venía después; si no, al azar. */
+        var fwd = muHistoryStep(muShuffleForward);
+        if (fwd !== -1) {
+            if (muShuffleNow) muShuffleBack.push(muShuffleNow);
+            muShuffleNav = true;
+            CUR_IDX = fwd;
+        } else {
+            CUR_IDX = muPickRandomIdx();
+        }
+    } else {
         CUR_IDX++;
         if (CUR_IDX >= QUEUE.length) CUR_IDX = 0;     /* loop circular */
     }
@@ -3051,8 +3109,14 @@ function nextTrack() {
 }
 function prevTrack() {
     if (CUR_IDX < 0) return;
-    if (SHUFFLE_ON) { CUR_IDX = muPickRandomIdx(); }
-    else {
+    /* En aleatorio, a la que sonaba antes (si queda en el historial); si
+       no, la anterior de la lista, como sin aleatorio. */
+    var back = SHUFFLE_ON ? muHistoryStep(muShuffleBack) : -1;
+    if (back !== -1) {
+        if (muShuffleNow) muShuffleForward.push(muShuffleNow);
+        muShuffleNav = true;
+        CUR_IDX = back;
+    } else {
         CUR_IDX--;
         if (CUR_IDX < 0) CUR_IDX = QUEUE.length - 1;  /* loop circular */
     }
@@ -3209,6 +3273,8 @@ function muOpenPlaylistMenu(idx) {
         { act: 'add',       label: '➕ Añadir canción' },
         { act: 'edit',      label: '<img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">️ Renombrar' }
     ];
+    /* Enlace para compartir (cualquiera con sesión puede verla y copiarla). */
+    if (/^\d+$/.test(String(pl.id))) items.push({ act: 'link', label: '🔗 Copiar enlace' });
     if (isOwn) {
         items.push({ act: 'collab', label: '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Colaboradores' });
         items.push({ act: 'delete', label: '<img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Eliminar playlist', danger: true });
@@ -3233,6 +3299,7 @@ function muOpenPlaylistMenu(idx) {
             if (act === 'add')    muOpenAddTrack(idx);
             if (act === 'edit')   muOpenEditPlaylist(idx);
             if (act === 'collab') muOpenCollabs(idx);
+            if (act === 'link' && window.melonCopyLink) window.melonCopyLink('playlist', String(pl.id));
             if (act === 'delete') muConfirm('¿Eliminar "' + pl.name + '"? Esta acción no se puede deshacer.', function(){ muDeletePlaylist(idx); });
             if (act === 'leave')  muConfirm('¿Dejar de colaborar en "' + pl.name + '"?', function(){ muLeavePlaylist(idx); });
         });
@@ -3286,6 +3353,7 @@ function muOpenTrackMenu(pi, ti) {
         { act: 'addProfile', label: '➕ Añadir a mi perfil' },
         { act: 'addPl',      label: '📋 Añadir' },
         { act: 'fixAlbum',   label: MU_FIX_ICON + 'Corregir' },
+        { act: 'link',       label: '🔗 Copiar enlace' },
         { act: 'remove',     label: '<img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Quitar de la playlist', danger: true }
     ];
     var bodyHtml = '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint, #666);">' +
@@ -3310,6 +3378,7 @@ function muOpenTrackMenu(pi, ti) {
             if (act === 'addProfile') addTrackToProfile(pi, ti);
             if (act === 'addPl')      muOpenAddCurrentToPlaylist(tr);
             if (act === 'fixAlbum')   muReportWrongAlbum(tr);
+            if (act === 'link' && tr.videoId && window.melonCopyLink) window.melonCopyLink('cancion', tr.videoId);
             if (act === 'remove') {
                 muConfirm('¿Quitar "' + (tr.title || 'esta canción') + '" de la playlist?', function(){
                     removeTrackFromPlaylist(pi, ti);
@@ -4063,7 +4132,7 @@ function muOpenCollabs(idx) {
         var img = u.img;
         bodyHtml += '<div class="mu-modal-list-item">' +
                       (img
-                        ? '<img class="item-icon" src="' + esc(img) + '" alt="">'
+                        ? '<span class="mh-marco-av" data-marco-user="' + esc(u.key) + '"><img class="item-icon" src="' + esc(img) + '" alt=""></span>'
                         : '<div class="item-icon">' + esc(u.label.substring(0,1)) + '</div>') +
                       '<div class="item-main">' + esc(u.label) + '</div>' +
                       (isCollab
@@ -4357,7 +4426,10 @@ function muOpenAlbumFromTrack(tr) {
    activo y para que reproducir un track NO cierre la ventana). */
 var _muAlbumFullCurrent = null; /* { albumId, album } o null */
 
-function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
+/* El overlay del visor (se crea la primera vez y se reutiliza). Sirve
+   de visor de álbum y de playlist compartida (muOpenSharedPlaylist):
+   _muAlbumViewMode cambia título, acciones y "Reproducir". */
+function _muAlbumFullview() {
     var fv = document.getElementById('mu-album-fullview');
     if (!fv) {
         /* Crea el overlay la primera vez. Reusable entre aperturas. */
@@ -4391,6 +4463,8 @@ function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
                 '<div class="mu-album-actions">' +
                     '<button class="button" type="button" data-act="addProfile">+ Perfil</button>' +
                     '<button class="button" type="button" data-act="addPl">+ Playlist</button>' +
+                    '<button class="button" type="button" data-act="savePl" style="display:none;">+ Guardar</button>' +
+                    '<button class="button" type="button" data-act="link">🔗 Enlace</button>' +
                 '</div>' +
                 '<div class="mu-album-tracks" id="mu-album-view-tracks">' +
                     '<div class="album-viewer-msg" style="padding:14px;text-align:center;color:var(--text-muted,#888);">Cargando…</div>' +
@@ -4409,6 +4483,7 @@ function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
         fv.querySelector('[data-act="back"]').addEventListener('click', _muCloseAlbumViewer);
         fv.querySelector('[data-act="playAlbum"]').addEventListener('click', function(){
             var cur = _muAlbumFullCurrent;
+            if (cur && cur.shared) { _muPlaySharedFrom(0); return; }
             if (!cur || !cur.album || !cur.album.tracks || !cur.album.tracks.length) {
                 muAlert('Aún cargando el álbum…');
                 return;
@@ -4421,6 +4496,16 @@ function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
             if (!cur || !cur.album) { muAlert('Aún cargando el álbum…'); return; }
             muAddAlbumToProfile(cur.albumId, cur.album);
         });
+        fv.querySelector('[data-act="link"]').addEventListener('click', function(){
+            var cur = _muAlbumFullCurrent;
+            if (!cur || !window.melonCopyLink) return;
+            if (cur.shared) window.melonCopyLink('playlist', String(cur.playlistId));
+            else if (_muAlbumKeyLinkable(cur.albumId)) window.melonCopyLink('album', cur.albumId);
+        });
+        fv.querySelector('[data-act="savePl"]').addEventListener('click', function(){
+            var cur = _muAlbumFullCurrent;
+            if (cur && cur.shared) _muSaveShared(this);
+        });
         fv.querySelector('[data-act="addPl"]').addEventListener('click', function(){
             var cur = _muAlbumFullCurrent;
             if (!cur || !cur.album) { muAlert('Aún cargando el álbum…'); return; }
@@ -4428,9 +4513,14 @@ function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
         });
     }
 
+    return fv;
+}
+
+function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
+    var fv = _muAlbumFullview();
+    _muAlbumViewMode('album', albumId);
     /* Estado inicial: cabecera con lo que sabemos, lista en "Cargando…". */
     _muAlbumFullCurrent = { albumId: albumId, album: null };
-    document.getElementById('mu-album-view-titlebar-text').textContent = 'Álbum';
     document.getElementById('mu-album-view-name').textContent = albumName || 'Álbum';
     document.getElementById('mu-album-view-artist').textContent = '';
     document.getElementById('mu-album-view-cover').src = '';
@@ -4510,6 +4600,110 @@ function _muOpenAlbumViewer(albumId, albumName, albumArtist) {
                     '<div style="padding:14px;text-align:center;color:var(--error-text,#c00);">Error de red.</div>';
             });
     }
+}
+
+/* Solo se comparten álbumes con clave real (itunes:/deezer:/spotify:). */
+function _muAlbumKeyLinkable(k) {
+    return typeof k === 'string' && /^[a-z]+:[A-Za-z0-9_-]+$/.test(k) && k.indexOf('synthetic:') !== 0;
+}
+
+function _muAlbumViewMode(mode, albumId) {
+    var fv = _muAlbumFullview();
+    var pl = mode === 'playlist';
+    var t = document.getElementById('mu-album-view-titlebar-text');
+    /* El texto va tras el icono (el título solo lleva icono + palabra). */
+    if (t) {
+        var img = t.querySelector('img');
+        t.textContent = pl ? 'Playlist' : 'Álbum';
+        if (img) t.insertBefore(img, t.firstChild);
+    }
+    fv.querySelector('[data-act="addProfile"]').style.display = pl ? 'none' : '';
+    fv.querySelector('[data-act="addPl"]').style.display      = pl ? 'none' : '';
+    var save = fv.querySelector('[data-act="savePl"]');
+    save.style.display = 'none';
+    save.disabled = false;
+    save.textContent = '+ Guardar';
+    fv.querySelector('[data-act="link"]').style.display = (pl || _muAlbumKeyLinkable(albumId)) ? '' : 'none';
+    fv.querySelector('[data-act="playAlbum"]').lastChild.textContent = pl ? ' Reproducir' : ' Reproducir álbum';
+}
+
+/* Playlist de otra persona abierta desde un enlace (?playlist=N, lo pone
+   mobile.php): solo lectura, se reproduce como cola suelta y "+ Guardar"
+   la copia en mis playlists. Igual que openSharedPlaylistViewer en el
+   reproductor del escritorio. */
+function muOpenSharedPlaylist(playlistId) {
+    var fv = _muAlbumFullview();
+    _muAlbumViewMode('playlist');
+    _muAlbumFullCurrent = { shared: true, playlistId: playlistId, tracks: [], pl: null };
+    var tracksEl = document.getElementById('mu-album-view-tracks');
+    document.getElementById('mu-album-view-name').textContent = 'Cargando…';
+    document.getElementById('mu-album-view-artist').textContent = '';
+    document.getElementById('mu-album-view-cover').src = '';
+    tracksEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text-faint,#888);">Cargando…</div>';
+    fv.classList.add('is-open');
+    fetch('../../assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(playlistId), { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .catch(function(){ return null; })
+        .then(function(pl){
+            var cur = _muAlbumFullCurrent;
+            if (!cur || !cur.shared || cur.playlistId !== playlistId) return;
+            if (!pl || !pl.ok) {
+                document.getElementById('mu-album-view-name').textContent = 'Playlist';
+                tracksEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--error-text,#c00);"></div>';
+                tracksEl.firstChild.textContent = (pl && pl.error) || 'No se pudo abrir la playlist.';
+                return;
+            }
+            var tracks = (pl.tracks || []).filter(function(t){ return t && t.videoId; });
+            cur.pl = pl;
+            cur.tracks = tracks;
+            document.getElementById('mu-album-view-name').textContent = pl.name || 'Playlist';
+            document.getElementById('mu-album-view-artist').textContent = pl.mine ? '' : 'Playlist de ' + pl.ownerLabel;
+            document.getElementById('mu-album-view-cover').src = pl.image || (tracks[0] ? 'https://i.ytimg.com/vi/' + tracks[0].videoId + '/mqdefault.jpg' : '');
+            if (!pl.mine && tracks.length) fv.querySelector('[data-act="savePl"]').style.display = '';
+            tracksEl.innerHTML = '';
+            if (!tracks.length) {
+                tracksEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text-faint,#888);">Esta playlist está vacía.</div>';
+                return;
+            }
+            tracks.forEach(function(t, idx){
+                var row = document.createElement('div');
+                row.className = 'mu-album-track';
+                row.innerHTML =
+                    '<div class="mu-album-track-num">' + (idx + 1) + '</div>' +
+                    '<div class="mu-album-track-title">' + esc(t.title || '') +
+                        (t.artist ? ' <span style="color:var(--text-faint,#888);">— ' + esc(t.artist) + '</span>' : '') +
+                    '</div>' +
+                    '<div class="mu-album-track-dur">' + (t.duration ? fmtDur(t.duration) : '—') + '</div>';
+                row.addEventListener('click', function(){ _muPlaySharedFrom(idx); });
+                tracksEl.appendChild(row);
+            });
+        });
+}
+
+function _muPlaySharedFrom(i) {
+    var cur = _muAlbumFullCurrent;
+    if (!cur || !cur.shared || !cur.tracks.length) return;
+    QUEUE = cur.tracks.map(function(t){ return { videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0 }; });
+    CUR_IDX = Math.max(0, Math.min(i, QUEUE.length - 1));
+    CUR_PL_IDX = -1;
+    applyPlayingHighlight(null, null);
+    var name = (cur.pl && cur.pl.name) || 'Playlist';
+    if (SHELL) { SHELL.loadQueue(QUEUE, CUR_IDX, name); return; }
+    playCurrent();
+}
+
+function _muSaveShared(btn) {
+    var cur = _muAlbumFullCurrent;
+    if (!cur || !cur.pl) return;
+    btn.disabled = true;
+    apiPost('save-playlist-item', {
+        id: 'pl_' + Date.now(), name: cur.pl.name, image: cur.pl.image || '',
+        tracks: cur.tracks.map(function(t){ return { videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0, addedBy: '' }; })
+    }).then(function(res){
+        if (!res.ok) { btn.disabled = false; muAlert((res.data && res.data.error) || 'No se pudo guardar'); return; }
+        btn.textContent = '✓ Guardada';
+        loadPlaylists();
+    });
 }
 
 function _muCloseAlbumViewer() {
@@ -5408,6 +5602,14 @@ loadProfileMusic();
     }
     handleOpenAlbumHash();
     window.addEventListener('hashchange', handleOpenAlbumHash);
+    /* Enlaces compartidos (mobile.php abre musica-mobile.php?album=… o
+       ?playlist=…): visor del álbum o de la playlist. */
+    try {
+        var q = new URLSearchParams(location.search);
+        var qAlbum = q.get('album'), qPl = q.get('playlist');
+        if (qAlbum && _muAlbumKeyLinkable(qAlbum)) _muOpenAlbumViewer(qAlbum);
+        else if (qPl && /^\d+$/.test(qPl)) muOpenSharedPlaylist(qPl);
+    } catch (_) {}
     /* Canal 2: postMessage del shell. */
     window.addEventListener('message', function(e){
         var d = (e && e.data) || {};

@@ -3,7 +3,8 @@
    PENDING ACTION NOTIFICATIONS — endpoint unificado.
 
    Devuelve TODOS los invites pendientes del usuario actual desde las
-   4 fuentes (listen-together, partner, playlist colab, item colab) en
+   fuentes (listen-together, partner, playlist colab, item colab,
+   amigos: solicitud / aceptada, invitación cumplida y regalos) en
    un solo JSON. Usado por la shell móvil para mostrar los pendientes
    al abrir la app y vía polling cada 15s.
 
@@ -142,5 +143,44 @@ try {
         ];
     }
 } catch (Throwable $e) { }
+
+/* ── AMIGOS (assets/profile/amigos.php) ──────────────────────────
+   'amigo'    = solicitud pendiente (Rechazar / Aceptar);
+   'amigo-ok' = te han aceptado (sale una vez: amigos_avisos la marca). */
+try {
+    require_once dirname(__DIR__) . '/php/timbre.php';
+    require_once dirname(__DIR__) . '/profile/amigos.php';
+    amigos_ensure($pdo);
+    $av = amigos_avisos($pdo, (int)$userId);
+    foreach ($av['solicitudes'] as $x) {
+        $invites[] = ['source' => 'amigo', 'id' => $x['key'] . '-' . $x['ts'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre']];
+    }
+    foreach ($av['aceptadas'] as $x) {
+        $invites[] = ['source' => 'amigo-ok', 'id' => $x['id'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre']];
+    }
+} catch (Throwable $e) { error_log('[pending] amigos: ' . $e->getMessage()); }
+
+/* ── INVITACIÓN CUMPLIDA (assets/profile/racha.php) ──────────────
+   'invita' = alguien a quien invitaste llegó a 7 días de racha (en el PC
+   está en la campana; aquí sale una vez: invita_avisos la marca). */
+try {
+    require_once dirname(__DIR__) . '/profile/racha.php';
+    foreach (invita_avisos($pdo, (int)$userId) as $x) {
+        $invites[] = ['source' => 'invita', 'id' => $x['id'], 'fromKey' => $x['key'], 'fromLabel' => $x['nombre'], 'puntos' => $x['puntos']];
+    }
+} catch (Throwable $e) { }
+
+/* ── REGALOS DE LA TIENDA (assets/tienda/api.php) ────────────────
+   'regalo' = te han regalado algo y está sin abrir ("Abrir" lleva a la
+   tienda con ?regalo=ID). En el PC es el aviso del haro (pollGifts). */
+try {
+    $st = $pdo->prepare("SELECT r.id, u.user_key, COALESCE(NULLIF(u.label, ''), u.username, u.user_key) AS label
+                           FROM tienda_regalos r JOIN usuarios u ON u.id = r.from_user_id
+                          WHERE r.to_user_id = ? AND r.estado = 'pendiente' ORDER BY r.id");
+    $st->execute([(int)$userId]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $invites[] = ['source' => 'regalo', 'id' => (int)$r['id'], 'fromKey' => $r['user_key'], 'fromLabel' => $r['label']];
+    }
+} catch (Throwable $e) { /* sin tabla de regalos todavía */ }
 
 echo json_encode(['ok' => true, 'invites' => $invites], JSON_UNESCAPED_UNICODE);

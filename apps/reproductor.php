@@ -317,7 +317,7 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
     <div class="title-bar" id="album-viewer-titlebar">
         <div class="title-bar-text">
             <img src="assets/img/appIcons/musicaIcon.png" alt="" class="album-viewer-titlebar-icon">
-            Álbum
+            <span id="album-viewer-title-text">Álbum</span>
         </div>
         <div class="title-bar-controls">
             <button aria-label="Close" id="album-viewer-close"></button>
@@ -339,6 +339,10 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
             <button class="button" id="album-viewer-play" disabled>
                 <span class="album-viewer-play-tri">▶</span> Reproducir álbum
             </button>
+            <button class="button" id="album-viewer-download" disabled title="Descargar el álbum entero">⬇ Descargar</button>
+            <!-- Solo con una playlist de otro abierta desde un enlace
+                 (openSharedPlaylistViewer). -->
+            <button class="button" id="album-viewer-save" style="display:none;">➕ Guardar en mis playlists</button>
         </div>
     </div>
     <!-- Resize handles por los 4 lados + 4 esquinas (8 direcciones).
@@ -735,6 +739,9 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
         </div>
 
         <div class="field-row" style="justify-content:flex-end;gap:4px;">
+            <!-- Enlace "Escuchar conmigo" (enlace.php?escuchar=…): quien lo
+                 abra se une aunque no seáis amigos. -->
+            <button class="button" id="lt-link-btn" type="button">🔗 Copiar enlace</button>
             <button class="button" id="lt-end-btn" style="display:none;">Cerrar sesión</button>
         </div>
     </div>
@@ -760,6 +767,9 @@ foreach ($loginUsers as $_k => $_u) {
 echo json_encode($_usersInfoArr);
 ?>;
 var spotifyClientId   = '<?php echo SPOTIFY_CLIENT_ID; ?>';
+/* Application ID de Discord (público): la app de escritorio lo usa para la
+   presencia en Discord con lo que suena (electron/discord.js). */
+var discordClientId   = <?php echo json_encode((string)env('DISCORD_CLIENT_ID', '')); ?>;
 
 /* Estado del reproductor persistido en SQL (user_settings.key='player').
    Reemplaza la antigua copia en localStorage['melonOS_player']. La lectura
@@ -806,6 +816,63 @@ var MelonPlayerState = (function(){
 let currentTrack      = 0;
 let currentPlaylistId = null;
 var currentPlaylistHasCollabs = false;
+
+/* Última canción en este ordenador (app de escritorio y navegador): la
+   cola entera y por dónde iba, para que al volver el reproductor salga
+   con ella en pausa donde se quedó. MelonPlayerState (en el servidor)
+   solo recuerda playlists guardadas y no la posición; esto vale también
+   para álbumes, búsquedas y artistas. La posición va aparte porque se
+   guarda cada pocos segundos y la cola puede ser larga. */
+var MelonLastTrack = (function(){
+    var KEY = 'reproductor:last:' + currentUserKey;
+    var POS_KEY = KEY + ':pos';
+    var title = '';
+    function read() {
+        try {
+            var d = JSON.parse(localStorage.getItem(KEY) || 'null');
+            return d && Array.isArray(d.queue) && d.queue.length ? d : null;
+        } catch (_) { return null; }
+    }
+    function saveQueue(index) {
+        if (!playlist.length || !playlist[index]) return;
+        try {
+            localStorage.setItem(KEY, JSON.stringify({
+                queue: playlist.slice(), idx: index, title: title,
+                playlistId: currentPlaylistId, hasCollabs: currentPlaylistHasCollabs
+            }));
+        } catch (_) { /* localStorage lleno: sin recordar */ }
+    }
+    function setTitle(name) {
+        title = name || '';
+        var d = read();
+        if (!d) return;
+        d.title = title;
+        try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (_) {}
+    }
+    function savePos() {
+        var tr = playlist[currentTrack];
+        if (!tr || !ytPlayer || !ytPlayer.getCurrentTime) return;
+        /* Solo sonando o en pausa: recién recuperada (cued) YouTube dice
+           0 y se perdería por dónde iba. */
+        var st = -1;
+        try { st = ytPlayer.getPlayerState(); } catch (_) {}
+        if (st !== 1 && st !== 2) return;
+        var cur = 0;
+        try { cur = ytPlayer.getCurrentTime() || 0; } catch (_) {}
+        try { localStorage.setItem(POS_KEY, JSON.stringify({ videoId: tr.videoId, pos: Math.floor(cur) })); } catch (_) {}
+    }
+    /* Segundo en que se quedó esa canción (0 si era otra). */
+    function position(videoId) {
+        try {
+            var p = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+            return p && p.videoId === videoId ? (p.pos || 0) : 0;
+        } catch (_) { return 0; }
+    }
+    /* Cerrar la app o la pestaña con música: que no se pierdan los
+       últimos segundos. */
+    window.addEventListener('pagehide', savePos);
+    return { read: read, saveQueue: saveQueue, setTitle: setTitle, savePos: savePos, position: position };
+})();
 
 /* ── Escuchas recientes ──────────────────────────────────────────────
    Registra una escucha (canción / álbum / playlist) en el backend para
@@ -877,6 +944,314 @@ function decorateSearchRatings(container) {
         });
     });
 }
+
+/* ── Descargar la canción (solo en la app de escritorio) ──────────────
+   Clic derecho → "⬇ Descargar…" abre esta ventana: formato (MP3 con su
+   calidad, M4A original o WAV), dónde se guarda y una barra de progreso.
+   La descarga la hace la app (electron/download.js); al terminar avisa el
+   haro. El reproductor flotante tiene la misma ventana como panel. */
+var DL_FORMATS = { mp3: 'MP3', m4a: 'M4A (original)', wav: 'WAV' };
+function melonDownloadName(track, format) {
+    var base = [track.artist, track.title].filter(Boolean).join(' - ')
+        .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Canción';
+    return base + '.' + format;
+}
+/* Texto de cada paso de la descarga ({ stage, percent }). */
+function melonDownloadStep(p, format) {
+    var pc = (p.percent == null) ? '' : ' ' + p.percent + ' %';
+    if (p.stage === 'setup')    return 'Preparando el descargador (solo la primera vez)…' + pc;
+    if (p.stage === 'update')   return 'Actualizando el descargador…';
+    if (p.stage === 'download') return 'Descargando…' + pc;
+    return format === 'm4a' ? 'Guardando…' : 'Convirtiendo a ' + format.toUpperCase() + '…';
+}
+function openDownloadDialog(track) {
+    var md = window.melonDesktop;
+    if (!track || !track.videoId || !md || !md.download) return;
+    /* Carátula y álbum: los del reproductor si es la que suena; si es otra
+       fila (playlist, búsqueda), la miniatura de YouTube en mqdefault (16:9
+       sin franjas: la vista previa la recorta a cuadrado; hqdefault trae
+       bandas negras arriba y abajo). */
+    var cur = nowPlayingTrack();
+    var playing = cur && cur.videoId === track.videoId;
+    var info = {
+        videoId: track.videoId, title: track.title || '', artist: track.artist || '',
+        album: playing && _currentAlbum ? (_currentAlbum.albumName || '') : '',
+        cover: (playing && playerCoverUrl()) || 'https://i.ytimg.com/vi/' + track.videoId + '/mqdefault.jpg',
+    };
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:340px;max-width:94vw;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar canción</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+                '<img data-dl="cover" alt="" style="width:48px;height:48px;object-fit:cover;flex:0 0 48px;background:var(--inset-bg,#222);">' +
+                '<div style="min-width:0;flex:1;">' +
+                    '<div data-dl="title" style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                    '<div data-dl="artist" style="font-size:10px;opacity:0.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="field-row" style="margin-bottom:6px;"><label style="width:56px;">Formato:</label>' +
+                '<select data-dl="format" style="flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;"></select></div>' +
+            '<div class="field-row" style="margin-bottom:8px;"><label style="width:56px;">Calidad:</label>' +
+                '<select data-dl="kbps" style="flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
+            '<div style="font-size:10px;line-height:1.4;">Se guarda en Descargas como</div>' +
+            '<div data-dl="name" style="font-size:10px;line-height:1.4;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;"></div>' +
+            '<div class="progress-indicator" data-dl="bar" style="height:20px;padding:3px;display:none;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent,navy);"></span></div>' +
+            '<div data-dl="msg" style="font-size:10px;min-height:14px;margin-top:4px;"></div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">' +
+                '<button class="button" data-act="cancel">Cancelar</button>' +
+                '<button class="button" data-act="go">Descargar</button>' +
+            '</div>' +
+        '</div>';
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    var q = function(k) { return win.querySelector('[data-dl="' + k + '"]'); };
+    q('cover').src = info.cover;
+    q('cover').onerror = function() { this.style.visibility = 'hidden'; };
+    q('title').textContent = info.title;
+    q('artist').textContent = info.artist;
+    Object.keys(DL_FORMATS).forEach(function(f) {
+        var o = document.createElement('option');
+        o.value = f; o.textContent = DL_FORMATS[f];
+        q('format').appendChild(o);
+    });
+    /* La calidad solo se elige en MP3: M4A va tal cual y WAV sin comprimir. */
+    function refresh() {
+        var f = q('format').value;
+        q('kbps').disabled = f !== 'mp3';
+        q('name').textContent = '"' + melonDownloadName(info, f) + '"';
+    }
+    q('format').addEventListener('change', refresh);
+    refresh();
+
+    var jobId = null;
+    function close() {
+        if (jobId) md.cancelDownload(jobId);
+        document.removeEventListener('keydown', onKey, true);
+        bd.remove();
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelector('[data-act="close"]').addEventListener('click', close);
+    win.querySelector('[data-act="cancel"]').addEventListener('click', close);
+
+    var go = win.querySelector('[data-act="go"]');
+    go.addEventListener('click', function() {
+        var format = q('format').value;
+        jobId = 'dl-' + Date.now();
+        var myId = jobId;
+        go.disabled = true;
+        q('format').disabled = q('kbps').disabled = true;
+        q('bar').style.display = '';
+        q('msg').textContent = 'Empezando…';
+        var bar = q('bar').firstChild;
+        melonDownloadListen(myId, function(p) {
+            bar.style.width = (p.percent == null ? 100 : p.percent) + '%';
+            q('msg').textContent = melonDownloadStep(p, format);
+        });
+        md.download(Object.assign({ id: myId, format: format, kbps: Number(q('kbps').value) }, info)).then(function(r) {
+            melonDownloadListen(myId, null);
+            if (jobId !== myId) return;   /* cancelada (ventana cerrada) */
+            jobId = null;
+            if (r && r.ok) {
+                close();
+                if (window.notifSystem) notifSystem.show({ type: 'success', title: 'Canción descargada', message: 'Guardada en Descargas: ' + r.name });
+                return;
+            }
+            go.disabled = false;
+            q('format').disabled = false;
+            refresh();
+            q('bar').style.display = 'none';
+            q('msg').textContent = r && r.cancelled ? '' : '✕ ' + ((r && r.error) || 'No se pudo descargar');
+        });
+    });
+}
+/* Un único oyente del progreso para todas las descargas de esta página. */
+var _dlListeners = {}, _dlHooked = false;
+function melonDownloadListen(id, cb) {
+    if (!_dlHooked && window.melonDesktop && melonDesktop.onDownloadProgress) {
+        _dlHooked = true;
+        melonDesktop.onDownloadProgress(function(p) { if (_dlListeners[p.id]) _dlListeners[p.id](p); });
+    }
+    if (cb) _dlListeners[id] = cb; else delete _dlListeners[id];
+}
+window.openDownloadDialog = openDownloadDialog;
+
+/* "Descargar…" fuera de la app: explica que solo funciona en la app de
+   escritorio y ofrece su instalable (el mismo que el aviso del haro,
+   assets/desktop/download.php). Una app vieja, sin descargas, pide
+   actualizarla. */
+var DL_APP_SYSTEMS = <?php echo json_encode(function_exists('desktopDownloadSystems') ? desktopDownloadSystems() : []); ?>;
+function openGetAppDialog() {
+    var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '') + ' ' + navigator.userAgent;
+    var os = /Win/i.test(platform) ? 'windows'
+           : (/Linux/i.test(platform) && !/Android|CrOS/i.test(platform)) ? 'linux' : '';
+    var canGet = !window.melonDesktop && os && DL_APP_SYSTEMS.indexOf(os) !== -1;
+    var text = window.melonDesktop
+        ? 'Tu app de escritorio es de una versión sin descargas. Actualízala desde el aviso del haro (o vuelve a abrirla) y podrás descargar canciones.'
+        : canGet
+            ? 'La descarga de canciones solo funciona en la app de escritorio de Melon Hub: desde el navegador no se puede bajar el audio de YouTube. ¿Quieres descargar la app para ' + (os === 'windows' ? 'Windows' : 'Linux') + '?'
+            : 'La descarga de canciones solo funciona en la app de escritorio de Melon Hub, que está disponible para Windows y Linux.';
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:320px;max-width:94vw;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar canción</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+                '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:32px;height:32px;object-fit:contain;image-rendering:pixelated;flex:0 0 32px;">' +
+                '<p data-dl="text" style="margin:0;line-height:1.45;"></p>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">' +
+                '<button class="button" data-act="close">' + (canGet ? 'Ahora no' : 'Cerrar') + '</button>' +
+                (canGet ? '<button class="button" data-act="get">Descargar la app</button>' : '') +
+            '</div>' +
+        '</div>';
+    win.querySelector('[data-dl="text"]').textContent = text;
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    function close() { document.removeEventListener('keydown', onKey, true); bd.remove(); }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelectorAll('[data-act="close"]').forEach(function(b) { b.addEventListener('click', close); });
+    var get = win.querySelector('[data-act="get"]');
+    if (get) get.addEventListener('click', function() {
+        /* Iframe oculto, como el haro: la descarga empieza sin salir del escritorio. */
+        var f = document.createElement('iframe');
+        f.style.display = 'none';
+        f.src = 'assets/desktop/download.php?os=' + os;
+        document.body.appendChild(f);
+        setTimeout(function() { f.remove(); }, 60000);
+        close();
+    });
+}
+
+/* "⬇ Descargar todo…" de una playlist (clic derecho en su tarjeta) o un
+   álbum (botón del visor): la misma ventana que una canción, con el formato
+   elegido una vez para todas. Se descargan de una en una en
+   Descargas/<nombre>/ ("3 de 12"); las que fallan se apuntan y se sigue
+   con las demás. set: { name, cover, album, tracks: [{ videoId, title,
+   artist }] }. */
+function openBulkDownloadDialog(set) {
+    var md = window.melonDesktop;
+    if (!md || !md.download) { openGetAppDialog(); return; }
+    var tracks = (set.tracks || []).filter(function(t) { return t && t.videoId; });
+    if (!tracks.length) return;
+    var folder = String(set.name || 'Melon Hub').replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Melon Hub';
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100000;display:flex;align-items:center;justify-content:center;';
+    var win = document.createElement('div');
+    win.className = 'window';
+    win.style.cssText = 'width:360px;max-width:94vw;';
+    var sel = 'flex:1;background-repeat:no-repeat;background-position:top 2px right 2px;';
+    win.innerHTML =
+        '<div class="title-bar"><div class="title-bar-text">Descargar todo</div>' +
+            '<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div></div>' +
+        '<div class="window-body" style="padding:10px;">' +
+            '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+                '<img data-dl="cover" alt="" style="width:48px;height:48px;object-fit:cover;flex:0 0 48px;background:var(--inset-bg,#222);">' +
+                '<div style="min-width:0;flex:1;">' +
+                    '<div data-dl="title" style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+                    '<div data-dl="count" style="font-size:10px;opacity:0.75;"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="field-row" style="margin-bottom:6px;"><label style="width:56px;">Formato:</label>' +
+                '<select data-dl="format" style="' + sel + '"></select></div>' +
+            '<div class="field-row" style="margin-bottom:8px;"><label style="width:56px;">Calidad:</label>' +
+                '<select data-dl="kbps" style="' + sel + '"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select></div>' +
+            '<div style="font-size:10px;line-height:1.4;">Se guardan en la carpeta</div>' +
+            '<div data-dl="folder" style="font-size:10px;line-height:1.4;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;"></div>' +
+            '<div class="progress-indicator" data-dl="bar" style="height:20px;padding:3px;display:none;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent,navy);"></span></div>' +
+            '<div data-dl="msg" style="font-size:10px;min-height:14px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+            '<div data-dl="failed" class="sunken-panel" style="display:none;max-height:80px;overflow-y:auto;margin-top:4px;padding:3px 5px;font-size:10px;line-height:1.4;"></div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">' +
+                '<button class="button" data-act="cancel">Cancelar</button>' +
+                '<button class="button" data-act="go">Descargar</button>' +
+            '</div>' +
+        '</div>';
+    bd.appendChild(win);
+    document.body.appendChild(bd);
+    var q = function(k) { return win.querySelector('[data-dl="' + k + '"]'); };
+    q('cover').src = set.cover || ('https://i.ytimg.com/vi/' + tracks[0].videoId + '/mqdefault.jpg');
+    q('cover').onerror = function() { this.style.visibility = 'hidden'; };
+    q('title').textContent = set.name || '';
+    q('count').textContent = tracks.length + (tracks.length === 1 ? ' canción' : ' canciones');
+    q('folder').textContent = 'Descargas/' + folder + '/';
+    Object.keys(DL_FORMATS).forEach(function(f) {
+        var o = document.createElement('option');
+        o.value = f; o.textContent = DL_FORMATS[f];
+        q('format').appendChild(o);
+    });
+    q('format').addEventListener('change', function() { q('kbps').disabled = this.value !== 'mp3'; });
+
+    var running = false, cancelled = false, currentId = null;
+    function close() {
+        if (running) { cancelled = true; if (currentId) md.cancelDownload(currentId); }
+        document.removeEventListener('keydown', onKey, true);
+        bd.remove();
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+    document.addEventListener('keydown', onKey, true);
+    win.querySelector('[data-act="close"]').addEventListener('click', close);
+    win.querySelector('[data-act="cancel"]').addEventListener('click', close);
+
+    var go = win.querySelector('[data-act="go"]');
+    go.addEventListener('click', function() {
+        var format = q('format').value, kbps = Number(q('kbps').value);
+        var bar = q('bar').firstChild, failed = [], done = 0;
+        running = true;
+        go.disabled = q('format').disabled = q('kbps').disabled = true;
+        q('bar').style.display = '';
+        (function next(i) {
+            if (cancelled) return;
+            if (i >= tracks.length) { finish(); return; }
+            var t = tracks[i], label = (i + 1) + ' de ' + tracks.length + ' · ' + (t.title || '');
+            currentId = 'dl-' + Date.now() + '-' + i;
+            var id = currentId;
+            q('msg').textContent = label;
+            melonDownloadListen(id, function(p) {
+                bar.style.width = (100 * (i + (p.percent == null ? 0.95 : p.percent / 100)) / tracks.length) + '%';
+                q('msg').textContent = label + ' — ' + melonDownloadStep(p, format);
+            });
+            md.download({
+                id: id, videoId: t.videoId, title: t.title || '', artist: t.artist || '', format: format, kbps: kbps, folder: folder,
+                /* En un álbum todas llevan su nombre y su carátula; en una
+                   playlist, cada una su miniatura de YouTube. */
+                album: set.album || '',
+                cover: set.album && set.cover ? set.cover : 'https://i.ytimg.com/vi/' + t.videoId + '/mqdefault.jpg',
+            }).then(function(r) {
+                melonDownloadListen(id, null);
+                if (cancelled || (r && r.cancelled)) return;
+                if (r && r.ok) done++;
+                else failed.push((t.title || t.videoId) + ': ' + ((r && r.error) || 'no se pudo descargar'));
+                bar.style.width = (100 * (i + 1) / tracks.length) + '%';
+                next(i + 1);
+            });
+        })(0);
+        function finish() {
+            running = false;
+            currentId = null;
+            var msg = done + ' de ' + tracks.length + ' guardadas en Descargas/' + folder + '/';
+            if (window.notifSystem) notifSystem.show({ type: failed.length ? 'info' : 'success', title: 'Descarga terminada', message: msg });
+            if (!failed.length) { close(); return; }
+            /* Con fallos, la ventana se queda para enseñar cuáles. */
+            q('msg').textContent = '✓ ' + msg + ' · ✕ ' + failed.length + ' no se pudieron descargar:';
+            q('failed').textContent = failed.join('\n');
+            q('failed').style.whiteSpace = 'pre-line';
+            q('failed').style.display = '';
+            go.style.display = 'none';
+            win.querySelector('[data-act="cancel"]').textContent = 'Cerrar';
+        }
+    });
+}
+window.openBulkDownloadDialog = openBulkDownloadDialog;
 
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
@@ -1185,6 +1560,43 @@ _winDragResize('lt-modal', 260, 200);
 let ytPlayer = null;
 let progressInterval  = null;
 let autoplayRandom    = false;
+/* Historial de lo escuchado para el modo aleatorio: "anterior" vuelve a la
+   canción que sonaba antes (no a la de antes en la lista) y "siguiente",
+   después de volver atrás, rehace el mismo camino en vez de sortear otra.
+   Cada entrada guarda la playlist y el videoId de la canción: si la cola ya
+   no es la misma, se descarta. */
+let shuffleBack = [], shuffleForward = [], shuffleNow = null, shuffleNav = false;
+function rememberListened(index, track) {
+    const entry = { pl: currentPlaylistId, idx: index, vid: track.videoId };
+    if (shuffleNow && shuffleNow.vid === entry.vid && shuffleNow.pl === entry.pl) return;   /* repintado de la misma */
+    if (!shuffleNav && shuffleNow) {
+        shuffleBack.push(shuffleNow);
+        if (shuffleBack.length > 200) shuffleBack.shift();
+        shuffleForward = [];
+    }
+    shuffleNow = entry;
+}
+/* Saca del historial la última canción que siga en la cola (-1 si ninguna). */
+function historyStep(stack) {
+    while (stack.length) {
+        const e = stack.pop();
+        if (e.pl === currentPlaylistId && playlist[e.idx] && playlist[e.idx].videoId === e.vid) return e.idx;
+    }
+    return -1;
+}
+/* Siguiente en aleatorio: la del historial si se había vuelto atrás; si no,
+   una al azar distinta de la actual. */
+function nextShuffleIndex() {
+    const fwd = historyStep(shuffleForward);
+    if (fwd !== -1) {
+        if (shuffleNow) shuffleBack.push(shuffleNow);
+        shuffleNav = true;   /* rememberListened no debe borrar el resto del camino */
+        return fwd;
+    }
+    let next;
+    do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
+    return next;
+}
 
 /* Publica el track actual a save-now-playing para que (1) la TV lo lea
    por polling y (2) el apartado social del perfil muestre "escuchando
@@ -1192,13 +1604,16 @@ let autoplayRandom    = false;
    update tiene < 90s, así que reportamos en cada play/pause/cambio de
    pista (force) y periódicamente desde startProgress (throttled). */
 var __NP_LAST = 0;
-function publishNowPlaying(isPlaying, force) {
-    /* Como GUEST de una sesión de escucha, lo que suena es el track de la
-       sesión (el del host), NO el de mi playlist local. Reportamos ese para
-       que el "escuchando ahora" del perfil muestre la canción real. */
-    var tr = (typeof LT_ROLE !== 'undefined' && LT_ROLE === 'guest' && _ltGuestTrack && _ltGuestTrack.videoId)
+/* Como GUEST de una sesión de escucha, lo que suena es el track de la
+   sesión (el del host), NO el de mi playlist local. */
+function nowPlayingTrack() {
+    return (typeof LT_ROLE !== 'undefined' && LT_ROLE === 'guest' && _ltGuestTrack && _ltGuestTrack.videoId)
         ? _ltGuestTrack
         : ((typeof playlist !== 'undefined' && playlist[currentTrack]) || null);
+}
+function publishNowPlaying(isPlaying, force) {
+    syncSystemMedia(isPlaying);
+    var tr = nowPlayingTrack();
     if (!tr || !tr.videoId) return;
     var now = Date.now();
     if (!force && now - __NP_LAST < 2000) return;
@@ -1225,6 +1640,117 @@ function publishNowPlaying(isPlaying, force) {
         }).catch(function(){});
     } catch (_) {}
 }
+
+/* ── Controles del sistema (MediaSession) y app de escritorio ──
+   MediaSession le dice al navegador (o a la app de escritorio) qué suena:
+   así funcionan las teclas multimedia, los controles del sistema (KDE /
+   GNOME en Linux, los del volumen en Windows) y los botones de los
+   auriculares Bluetooth. Dentro de la app de escritorio, además, se manda
+   lo que enseña este reproductor al reproductor flotante
+   (window.melonDesktop → electron/mini-player.js). Se llama desde
+   publishNowPlaying (play, pausa y progreso) y desde updateTrackUI
+   (cambio de pista). */
+var __SM_VIDEO = null;
+function syncSystemMedia(isPlaying) {
+    var tr = nowPlayingTrack();
+    if (typeof isPlaying !== 'boolean') {
+        try { isPlaying = !!(ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING); }
+        catch (_) { isPlaying = false; }
+    }
+    var dur = 0, pos = 0;
+    try {
+        dur = (ytPlayer && ytPlayer.getDuration    ? ytPlayer.getDuration()    : 0) || 0;
+        pos = (ytPlayer && ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0) || 0;
+    } catch (_) {}
+    if ('mediaSession' in navigator) {
+        try {
+            var ms = navigator.mediaSession;
+            if (tr && tr.videoId && tr.videoId !== __SM_VIDEO) {
+                __SM_VIDEO = tr.videoId;
+                ms.metadata = new MediaMetadata({
+                    title:  tr.title  || '',
+                    artist: tr.artist || '',
+                    artwork: [{ src: 'https://img.youtube.com/vi/' + tr.videoId + '/hqdefault.jpg', sizes: '480x360', type: 'image/jpeg' }]
+                });
+            }
+            ms.playbackState = isPlaying ? 'playing' : 'paused';
+            if (dur > 0 && typeof ms.setPositionState === 'function') {
+                ms.setPositionState({ duration: dur, position: Math.min(pos, dur), playbackRate: 1 });
+            }
+        } catch (_) {}
+    }
+    var md = window.melonDesktop;
+    if (md && typeof md.setNowPlaying === 'function') {
+        var cover = document.getElementById('player-cover');
+        var plName = document.getElementById('player-pl-name');
+        var vol = document.getElementById('player-volume');
+        md.setNowPlaying({
+            hasTrack:   !!(tr && tr.videoId),
+            videoId:    tr ? (tr.videoId || '') : '',
+            title:      tr ? (tr.title  || '') : '',
+            artist:     tr ? (tr.artist || '') : '',
+            cover:      cover ? cover.src : '',
+            coverUrl:   playerCoverUrl(),   /* la original (presencia de Discord, descargas) */
+            playlist:   plName ? plName.textContent : '',
+            playlistId: currentPlaylistId,
+            trackIndex: currentTrack,
+            playing:    !!(tr && isPlaying),
+            position:   pos,
+            duration:   dur,
+            shuffle:    autoplayRandom,
+            ltRole:     LT_ROLE,
+            volume:     vol ? parseInt(vol.value, 10) : 100,
+            album:      (_currentAlbum && _currentAlbum.albumName) || '',
+            ltInvites:  Object.values(LT_PENDING),
+            ltInvited:  LT_INVITED,
+            userKey:    currentUserKey,   /* botón "Escuchar conmigo" de Discord */
+            discordClientId: discordClientId
+        });
+    }
+}
+/* Los botones del sistema y del reproductor flotante hacen lo mismo que
+   los del reproductor: así respetan el modo aleatorio, Listen Together, etc. */
+(function setupSystemMediaControls() {
+    function click(id) { var b = document.getElementById(id); if (b) b.click(); }
+    function playing() {
+        try { return !!(ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING); } catch (_) { return false; }
+    }
+    var actions = {
+        play:          function() { if (!playing()) click('btn-play'); },
+        pause:         function() { if (playing())  click('btn-play'); },
+        previoustrack: function() { click('btn-prev'); },
+        nexttrack:     function() { click('btn-next'); },
+        seekto:        function(d) { if (ytPlayer && d && typeof d.seekTime === 'number') ytPlayer.seekTo(d.seekTime, true); }
+    };
+    if ('mediaSession' in navigator) {
+        Object.keys(actions).forEach(function(a) {
+            try { navigator.mediaSession.setActionHandler(a, actions[a]); } catch (_) {}
+        });
+    }
+    var md = window.melonDesktop;
+    if (md && typeof md.onPlayerCommand === 'function') {
+        md.onPlayerCommand(function(action, value) {
+            if (action === 'toggle') click('btn-play');
+            else if (action === 'shuffle') click('btn-shuffle');
+            else if (action === 'volume') {
+                /* Mueve la barra del reproductor: su 'input' aplica el
+                   volumen (con el general de la barra de tareas) y lo guarda. */
+                var vol = document.getElementById('player-volume');
+                if (vol) { vol.value = value; vol.dispatchEvent(new Event('input')); }
+            }
+            else if (action === 'volume-step') {
+                /* Ctrl+Alt+↑ / ↓ (atajos globales de la app, desktop-extras.js). */
+                var v = document.getElementById('player-volume');
+                if (v) { v.value = Math.max(0, Math.min(100, parseInt(v.value, 10) + value)); v.dispatchEvent(new Event('input')); }
+                syncSystemMedia();
+            }
+            else if (action === 'seekto') actions.seekto({ seekTime: value });
+            else if (actions[action]) actions[action]();
+            /* Playlists y opciones del clic derecho (editor de playlists). */
+            else if (typeof window.melonTrackAction === 'function') window.melonTrackAction(action, value);
+        });
+    }
+})();
 
 /* Estado del WRAPPED tracking: guardamos referencia a la última canción
    que se EMPEZÓ a reproducir. Cuando cambia (skip / natural end / cierre
@@ -1325,6 +1851,13 @@ let LT_HOST_BCAST_T = null;
 let LT_INVITES_POLL_T = null;
 let LT_LAST_HOST_VID = null;    /* host: último videoId enviado */
 let LT_SHOWN_INVITES = new Set(); /* IDs de invites ya mostrados como notif */
+/* Para el reproductor flotante de la app de escritorio, que enseña
+   "Escuchar juntos" mientras esta ventana está escondida (van en
+   syncSystemMedia → apps/mini-player.html):
+   - LT_PENDING: invitaciones recibidas sin contestar (id → invitación);
+   - LT_INVITED: resultado de cada "Invitar" (user_key → 'ok' | error). */
+let LT_PENDING = {};
+let LT_INVITED = {};
 
 function ltFetch(action, opts) {
     opts = opts || {};
@@ -1415,9 +1948,39 @@ function ltHostBroadcastDebounced() {
 }
 
 /* ── GUEST: poll + sync ──────────────────────────────────────────── */
+/* Invitado: lo que suena sale del archivo estático de la sesión, que el
+   anfitrión reescribe cada 5 s (rt/s/…, update-state en
+   assets/listen/api.php); leerlo no gasta PHP ni BD. A la API (`poll`)
+   solo cada 10 s: es la señal de que sigo en la sesión y da la hora del
+   servidor, con la que se calcula dónde va el anfitrión (LT_DESFASE).
+   Antes, la API cada 2 s. Si el archivo falla, la API como antes. */
+let LT_RT = null, LT_DESFASE = 0, LT_ULT_POLL = 0;
+async function ltLeerSesion() {
+    const ahora = Date.now();
+    if (!LT_RT || ahora - LT_ULT_POLL >= 10000) {
+        LT_ULT_POLL = ahora;
+        const r = await ltFetch('poll');
+        if (r && r.ok) {
+            if (r.rt) LT_RT = r.rt;
+            if (r.server_time) LT_DESFASE = parseInt(r.server_time, 10) - Math.round((ahora + Date.now()) / 2000);
+        }
+        return r;
+    }
+    try {
+        const f = await fetch(LT_RT, { cache: 'no-cache', credentials: 'same-origin' });
+        if (!f.ok) throw new Error('sesion ' + f.status);
+        const d = await f.json();
+        if (d.closed) return { ok: true, session: null, closed: true };
+        if (!d.session) throw new Error('sesion vacia');
+        return { ok: true, session: d.session, server_time: Math.round(Date.now() / 1000) + LT_DESFASE };
+    } catch (_) {
+        LT_ULT_POLL = Date.now();
+        return ltFetch('poll');
+    }
+}
 async function ltGuestPoll() {
     if (LT_ROLE !== 'guest') return;
-    const r = await ltFetch('poll');
+    const r = await ltLeerSesion();
     if (!r || !r.ok) return;
     if (r.closed || !r.session) {
         /* Host cerró → salimos. */
@@ -1521,6 +2084,7 @@ async function ltStartAsHost() {
 
 /* ── INICIAR como GUEST (al aceptar invite) ──────────────────────── */
 async function ltJoinAsGuest(inviteId) {
+    LT_RT = null;   /* el archivo de la sesión lo da el primer poll */
     const r = await ltFetch('accept', { body: { inviteId: inviteId } });
     if (!r || !r.ok) {
         if (window.notifSystem) window.notifSystem.show({ type: 'error', title: 'Error', message: r.error || 'No se pudo unir.' });
@@ -1553,6 +2117,7 @@ async function ltLeave() {
 }
 function ltLeaveLocal(msg) {
     LT_ROLE       = null;
+    LT_RT         = null;   /* el archivo de esta sesión ya no vale */
     /* Dejo de seguir la pista de la sesión: el "escuchando ahora" vuelve a
        reportar mi reproducción local. El wrapped de la última canción de la
        sesión lo cerrará el próximo cambio de pista (updateTrackUI). */
@@ -1563,7 +2128,9 @@ function ltLeaveLocal(msg) {
     ltBanner(null);
     ltUpdateLiveDot(null);   /* oculta el punto LIVE */
     LT_KNOWN_PARTICIPANTS = new Set();
+    LT_INVITED = {};
     ltRefreshModalState();
+    syncSystemMedia();
     if (msg && window.notifSystem) window.notifSystem.show({ type: 'info', title: 'Sesión cerrada', message: msg });
 }
 
@@ -1586,10 +2153,7 @@ async function ltOpenModal() {
     }).join('');
     list.querySelectorAll('button[data-userkey]').forEach(function(b){
         b.addEventListener('click', async function(){
-            /* Si no soy host aún, crearme como host primero. */
-            if (LT_ROLE !== 'host') await ltStartAsHost();
-            const k = b.getAttribute('data-userkey');
-            const inv = await ltFetch('invite', { body: { toUser: k } });
+            const inv = await ltInviteUser(b.getAttribute('data-userkey'));
             if (inv && inv.ok) {
                 b.textContent = '✓ Invitado';
                 b.classList.add('invited');
@@ -1599,6 +2163,23 @@ async function ltOpenModal() {
             }
         });
     });
+}
+/* Invita a un usuario; si no soy host aún, primero crea la sesión. Lo usan
+   el modal y el reproductor flotante. */
+async function ltInviteUser(userKey) {
+    if (LT_ROLE !== 'host') await ltStartAsHost();
+    const inv = await ltFetch('invite', { body: { toUser: userKey } });
+    LT_INVITED[userKey] = (inv && inv.ok) ? 'ok' : ((inv && inv.error) || 'No se pudo invitar.');
+    syncSystemMedia();
+    return inv;
+}
+/* Contesta una invitación (desde su notificación o desde el flotante). */
+function ltAnswerInvite(id, accept) {
+    delete LT_PENDING[id];
+    if (window.notifSystem && notifSystem.dismiss) notifSystem.dismiss('lt-invite-' + id);
+    if (accept) ltJoinAsGuest(id);
+    else ltFetch('decline', { body: { inviteId: id } });
+    syncSystemMedia();
 }
 function ltCloseModal() {
     document.getElementById('lt-modal').style.display = 'none';
@@ -1627,6 +2208,8 @@ async function ltPollInvites() {
     r.invites.forEach(function(inv){
         if (LT_SHOWN_INVITES.has(inv.id)) return;
         LT_SHOWN_INVITES.add(inv.id);
+        LT_PENDING[inv.id] = { id: inv.id, from: inv.from_label || '?', track: inv.track_title || '' };
+        syncSystemMedia();
         if (!window.notifSystem) return;
         /* type: 'action' añade botones Aceptar/Rechazar y NO auto-dismissa
            — el usuario decide. */
@@ -1635,11 +2218,9 @@ async function ltPollInvites() {
             type:    'action',
             title:   (inv.from_label || '?') + ' te invita',
             message: 'Escuchar juntos: ' + (inv.track_title || 'una canción'),
-            onAccept: function(){ ltJoinAsGuest(inv.id); },
-            onReject: function(){
-                /* Marcar el invite como declinado en el backend. */
-                ltFetch('decline', { body: { inviteId: inv.id } });
-            },
+            onAccept: function(){ ltAnswerInvite(inv.id, true); },
+            /* Marca el invite como declinado en el backend. */
+            onReject: function(){ ltAnswerInvite(inv.id, false); },
         });
     });
 }
@@ -1684,8 +2265,12 @@ window.ltLeave     = ltLeave;
 (async function ltBootstrap(){
     const r = await ltFetch('current');
     if (!r || !r.ok || !r.role) {
-        /* Iniciar poll de invites. */
-        LT_INVITES_POLL_T = setInterval(ltPollInvites, 5000);
+        /* Invitaciones: ahora y cuando el timbre del escritorio dice que
+           ha llegado una ('lt', window.melonTimbre en desktop-base.php);
+           si no responde, cada 5 s como antes. */
+        ltPollInvites();
+        if (window.melonTimbre) window.melonTimbre.on('lt', ltPollInvites, 5000);
+        else LT_INVITES_POLL_T = setInterval(ltPollInvites, 5000);
         return;
     }
     LT_ROLE       = r.role;
@@ -1700,6 +2285,87 @@ window.ltLeave     = ltLeave;
         ltUpdateLiveDot('host');
     }
 })();
+
+/* ── "Escuchar conmigo" (botón de la presencia de Discord de la app de
+   escritorio, electron/discord.js) ──────────────────────────────────
+   - Quien lo pulsa llega por enlace.php?escuchar=<user_key del anfitrión>
+     (intenta abrir su app; si no, sigue en la web aunque haya que iniciar
+     sesión antes) y melonOpenLink (desktop-base.php) llama a
+     melonJoinListen: se pide unirse (request-join; con el enlace vale
+     aunque no seáis amigos) y, cuando llega la invitación del anfitrión, se
+     acepta sola. ?escuchar= en la URL del escritorio sigue valiendo.
+   - La app del anfitrión atiende esas peticiones cada 5 s: abre la sesión
+     si no la tiene e invita a quien lo pidió (ltInviteUser). */
+window.melonJoinListen = function(host) {
+    if (!host || host === currentUserKey) return;
+    ltFetch('request-join', { body: { host: host } }).then(function(r) {
+        if (!r || !r.ok) return;
+        const name = r.host_label || 'tu amigo';
+        if (window.notifSystem) notifSystem.show({ id: 'lt-joining-' + host, type: 'info', title: '🎧 Escuchar juntos', message: 'Uniéndote a lo que escucha ' + name + '…' });
+        const until = Date.now() + 120000;
+        const t = setInterval(async function() {
+            if (Date.now() > until) {
+                clearInterval(t);
+                if (window.notifSystem) notifSystem.show({ id: 'lt-joining-fail-' + host, type: 'info', title: '🎧 Escuchar juntos', message: name + ' no ha respondido: tiene que tener Melon Hub abierto.' });
+                return;
+            }
+            const inv = await ltFetch('invites');
+            const mine = inv && inv.ok && (inv.invites || []).find(function(i) { return i.from_user_key === host; });
+            if (!mine) return;
+            clearInterval(t);
+            /* Que no se quede también como invitación por contestar. */
+            LT_SHOWN_INVITES.add(mine.id);
+            delete LT_PENDING[mine.id];
+            if (window.notifSystem && notifSystem.dismiss) notifSystem.dismiss('lt-invite-' + mine.id);
+            if (LT_ROLE) ltLeaveLocal();
+            ltJoinAsGuest(mine.id);
+        }, 2000);
+    });
+};
+(function ltJoinFromUrl() {
+    const m = /[?&]escuchar=([A-Za-z0-9_-]+)/.exec(location.search);
+    if (!m) return;
+    try {
+        const qs = location.search.replace(/([?&])escuchar=[^&]*&?/, '$1').replace(/[?&]$/, '');
+        history.replaceState(null, '', location.pathname + qs + location.hash);
+    } catch (_) {}
+    window.melonJoinListen(m[1]);
+})();
+/* Copiar el enlace desde la ventana de "Escuchar juntos". */
+(function () {
+    const b = document.getElementById('lt-link-btn');
+    if (!b) return;
+    b.addEventListener('click', function () {
+        if (typeof window.melonCopyLink !== 'function') return;
+        window.__ltLinkShared = true;
+        window.melonCopyLink('escuchar', currentUserKey);
+    });
+})();
+/* Peticiones de unirse por el enlace: la app de escritorio siempre; la web
+   en el navegador si estás de anfitrión o has copiado el enlace. Se miran
+   cuando el timbre del escritorio dice que ha llegado una ('lt',
+   window.melonTimbre en desktop-base.php; antes, cada 5 s); si no
+   responde, cada 5 s como antes. */
+{
+    const ltAtenderPeticiones = async function() {
+        if (!window.melonDesktop && LT_ROLE !== 'host' && !window.__ltLinkShared) return;
+        if (LT_ROLE === 'guest') return;   /* escuchando a otro: no se puede hostear */
+        const r = await ltFetch('join-requests');
+        if (!r || !r.ok || !r.requests || !r.requests.length) return;
+        for (const req of r.requests) {
+            await ltFetch('answer-join', { body: { requestId: req.id } });
+            const inv = await ltInviteUser(req.from_user_key);
+            if (inv && inv.ok && window.notifSystem) {
+                notifSystem.show({ id: 'lt-joinreq-' + req.id, type: 'info', title: '🎧 ' + req.from_label + ' se une',
+                    message: req.from_label + ' va a escuchar contigo con tu enlace.' });
+            }
+        }
+    };
+    /* La primera, a los 5 s como antes (ya se sabe si estoy en una sesión). */
+    setTimeout(ltAtenderPeticiones, 5000);
+    if (window.melonTimbre) window.melonTimbre.on('lt', ltAtenderPeticiones, 5000);
+    else setInterval(ltAtenderPeticiones, 5000);
+}
 
 /* win98Confirm vive ahora en assets/js/win98-dialogs.js (compartido).
    La firma (message, title, onOk) se mantiene compatible con los callers. */
@@ -1789,6 +2455,7 @@ function updatePlayerTitle(name) {
        del title-bar), así que aquí solo escribimos el nombre del
        playlist — sin prefijo ♪ que duplicaría el icono. */
     el.textContent = name;
+    MelonLastTrack.setTitle(name);
     if (stopPlNameMarquee) { stopPlNameMarquee(); stopPlNameMarquee = null; }
     setTimeout(function() {
         stopPlNameMarquee = marqueeScroll(el, parent, 40, 1500);
@@ -1857,8 +2524,18 @@ function pixelateImg(img, factor) {
     ctx.imageSmoothingEnabled = false;
     try {
         ctx.drawImage(img, 0, 0, w, h);
+        /* La URL de verdad se guarda: Discord y las descargas necesitan
+           la imagen original, no el data: pixelado (playerCoverUrl). */
+        img.dataset.origSrc = img.src;
         img.src = c.toDataURL('image/png');
     } catch (e) {}
+}
+/* URL de la carátula que enseña el reproductor, la de antes de pixelarla. */
+function playerCoverUrl() {
+    var c = document.getElementById('player-cover');
+    if (!c) return '';
+    if (/^https?:/.test(c.src)) return c.src;
+    return c.dataset.origSrc || '';
 }
 
 playerCover.addEventListener('load', function() { pixelateImg(playerCover, 0.25); });
@@ -1873,6 +2550,8 @@ function updateTrackUI(index)
 {
     if (!playlist.length) return;
     const track = playlist[index];
+    rememberListened(index, track);
+    shuffleNav = false;
     playerTitle.textContent  = track.title;
     playerArtist.textContent = track.artist || '—';
     playerCover.crossOrigin = 'anonymous';
@@ -1889,6 +2568,7 @@ function updateTrackUI(index)
         if (adderInfo && adderInfo.img) {
             var wrap = document.createElement('div');
             wrap.className = 'player-addedby-wrap';
+            wrap.setAttribute('data-marco-user', adderInfo.key);   /* marco (melon-marcos.js) */
             wrap.title = adderInfo.label;
             var img = document.createElement('img');
             img.className = 'player-addedby-img';
@@ -1912,6 +2592,7 @@ function updateTrackUI(index)
     }, 50);
 
     MelonPlayerState.setTrack(index);
+    MelonLastTrack.saveQueue(index);
 
     if (typeof window.updatePlaylistPlayingHighlight === 'function') {
         window.updatePlaylistPlayingHighlight(currentPlaylistId, index);
@@ -1933,6 +2614,8 @@ function updateTrackUI(index)
     }
     _wrappedLastTrack      = track;
     _wrappedLastPlaylistId = currentPlaylistId;
+
+    syncSystemMedia();
 }
 
 /* ── Resolución de álbum ──
@@ -2094,6 +2777,194 @@ let _albumViewerToken = 0;
 
 function _albumViewerEl(id) { return document.getElementById(id); }
 
+/* La misma ventana sirve de visor de álbum y de playlist compartida
+   (enlace.php?playlist=N). Cambia el título, el nombre en la barra de
+   tareas y el botón de guardar. */
+function _albumViewerSetMode(win, mode) {
+    const prev = win.dataset.mode || 'album';
+    win.dataset.mode = mode;
+    const label = mode === 'playlist' ? 'Playlist' : 'Álbum';
+    const t = _albumViewerEl('album-viewer-title-text');
+    if (t) t.textContent = label;
+    const save = _albumViewerEl('album-viewer-save');
+    if (save) { save.style.display = 'none'; save.disabled = false; save.onclick = null; }
+    if (prev !== mode && window.taskbarManager && taskbarManager.isRegistered('album-viewer')) {
+        try { taskbarManager.unregister('album-viewer'); } catch (_) {}
+    }
+}
+
+/* Playlist de otra persona abierta desde un enlace: la ve cualquiera con
+   sesión (music api shared-playlist). Se reproduce como cola suelta (no
+   queda como "playlist actual", que es de otro) y se puede guardar una
+   copia en mis playlists. */
+async function openSharedPlaylistViewer(playlistId) {
+    const win = _albumViewerEl('album-viewer');
+    if (!win || !playlistId) return;
+    const myToken = ++_albumViewerToken;
+    _albumViewerSetMode(win, 'playlist');
+    const nameEl   = _albumViewerEl('album-viewer-name');
+    const artistEl = _albumViewerEl('album-viewer-artist');
+    const metaEl   = _albumViewerEl('album-viewer-meta');
+    const coverEl  = _albumViewerEl('album-viewer-cover');
+    const tracksEl = _albumViewerEl('album-viewer-tracks');
+    const playBtn  = _albumViewerEl('album-viewer-play');
+    const dlBtn    = _albumViewerEl('album-viewer-download');
+    const saveBtn  = _albumViewerEl('album-viewer-save');
+    nameEl.textContent = 'Cargando…';
+    artistEl.textContent = '';
+    metaEl.textContent = '';
+    coverEl.src = '';
+    tracksEl.innerHTML = '<div class="album-viewer-msg">Cargando…</div>';
+    playBtn.disabled = true;
+    playBtn.innerHTML = '<span class="album-viewer-play-tri">▶</span> Reproducir';
+    dlBtn.disabled = true;
+    _albumViewerCurrent = null;
+    if (window.taskbarManager) {
+        if (taskbarManager.isRegistered('album-viewer')) taskbarManager.restore('album-viewer');
+        else taskbarManager.register('album-viewer', 'Playlist',
+            '<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">',
+            'flex');
+    } else {
+        win.style.display = 'flex';
+    }
+
+    let pl;
+    try {
+        const r = await fetch('assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(playlistId));
+        pl = await r.json();
+    } catch (_) { pl = null; }
+    if (myToken !== _albumViewerToken) return;
+    if (!pl || !pl.ok) {
+        nameEl.textContent = 'Playlist';
+        tracksEl.innerHTML = '<div class="album-viewer-msg"></div>';
+        tracksEl.firstChild.textContent = (pl && pl.error) || 'No se pudo abrir la playlist.';
+        return;
+    }
+    const tracks = (pl.tracks || []).filter(t => t && t.videoId);
+    nameEl.textContent   = pl.name || 'Playlist';
+    artistEl.textContent = pl.mine ? '' : 'Playlist de ' + pl.ownerLabel;
+    coverEl.src = pl.image || (tracks[0] ? 'https://i.ytimg.com/vi/' + tracks[0].videoId + '/mqdefault.jpg' : '');
+    let totalSec = 0;
+    tracks.forEach(t => { totalSec += t.duration || 0; });
+    let metaText = tracks.length + (tracks.length === 1 ? ' canción' : ' canciones');
+    if (totalSec) {
+        const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60);
+        metaText += ' · ' + (h > 0 ? h + 'h ' : '') + m + 'm';
+    }
+    metaEl.textContent = metaText;
+
+    tracksEl.innerHTML = '';
+    if (!tracks.length) tracksEl.innerHTML = '<div class="album-viewer-msg">Esta playlist está vacía.</div>';
+    tracks.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'album-viewer-row';
+        const num = document.createElement('span');
+        num.className = 'album-viewer-num';
+        num.textContent = i + 1;
+        const info = document.createElement('div');
+        info.className = 'album-viewer-info';
+        const ttl = document.createElement('div');
+        ttl.className = 'album-viewer-title';
+        ttl.textContent = t.title;
+        const ar = document.createElement('div');
+        ar.className = 'album-viewer-artist';
+        ar.textContent = t.artist || '';
+        info.appendChild(ttl); info.appendChild(ar);
+        const dur = document.createElement('span');
+        dur.className = 'album-viewer-dur';
+        dur.textContent = t.duration ? formatTime(t.duration) : '';
+        row.appendChild(num); row.appendChild(info); row.appendChild(dur);
+        row.addEventListener('click', () => _playSharedPlaylistFrom(i));
+        row.addEventListener('contextmenu', ev => {
+            ev.preventDefault();
+            if (typeof window.openTrackCtxMenu === 'function') {
+                window.openTrackCtxMenu(ev, { title: t.title, artist: t.artist, videoId: t.videoId, duration: t.duration });
+            }
+        });
+        tracksEl.appendChild(row);
+    });
+
+    _albumViewerCurrent = { shared: true, playlistId: pl.id, meta: { name: pl.name, image: pl.image }, resolved: tracks };
+    if (!tracks.length) return;
+    playBtn.disabled = false;
+    playBtn.onclick = () => _playSharedPlaylistFrom(0);
+    dlBtn.disabled = false;
+    dlBtn.onclick = () => openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: tracks });
+    if (!pl.mine) {
+        saveBtn.style.display = '';
+        saveBtn.onclick = () => _saveSharedPlaylist(pl, tracks, saveBtn);
+    }
+}
+
+function _playSharedPlaylistFrom(i) {
+    const cur = _albumViewerCurrent;
+    if (!cur || !cur.shared || !cur.resolved.length) return;
+    const start = Math.max(0, Math.min(i, cur.resolved.length - 1));
+    window.__melonLinkPlayed = true;
+    currentPlaylistId = null;
+    currentPlaylistHasCollabs = false;
+    playlist.length = 0;
+    cur.resolved.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist, duration: t.duration || 0 }));
+    currentTrack = start;
+    updatePlayerTitle(cur.meta.name || 'Playlist');
+    updateTrackUI(start);
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') ytPlayer.loadVideoById(playlist[start].videoId);
+    closeAlbumViewer();
+}
+
+/* Reproduce una playlist por su id desde la canción `index` sin abrir el
+   visor (expositor "Playlist destacada" del perfil). Si es mía o colaboro
+   en ella, como desde Mis playlists (queda como playlist actual); si es
+   de otro, como cola suelta, igual que el visor de playlists compartidas. */
+async function melonPlayPlaylistById(playlistId, index) {
+    let pl;
+    try {
+        const r = await fetch('assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(playlistId));
+        pl = await r.json();
+    } catch (_) { pl = null; }
+    if (!pl || !pl.ok) { alert((pl && pl.error) || 'No se pudo abrir la playlist.'); return; }
+    const tracks = (pl.tracks || []).filter(t => t && t.videoId);
+    if (!tracks.length) return;
+    const start = Math.max(0, Math.min(index | 0, tracks.length - 1));
+    if (pl.mine && typeof window.melonTrackAction === 'function') {
+        window.melonTrackAction('play-playlist', { playlistId: pl.id, index: start });
+        return;
+    }
+    window.__melonLinkPlayed = true;
+    currentPlaylistId = null;
+    currentPlaylistHasCollabs = false;
+    playlist.length = 0;
+    tracks.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist, duration: t.duration || 0 }));
+    currentTrack = start;
+    updatePlayerTitle(pl.name || 'Playlist');
+    updateTrackUI(start);
+    if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') ytPlayer.loadVideoById(playlist[start].videoId);
+}
+window.melonPlayPlaylistById = melonPlayPlaylistById;
+
+/* Copia la playlist (nombre, imagen y canciones) en una nueva mía. */
+function _saveSharedPlaylist(pl, tracks, btn) {
+    btn.disabled = true;
+    const me = (typeof usersInfo !== 'undefined' && usersInfo[currentUserKey]) ? usersInfo[currentUserKey].label : '';
+    fetch('assets/music/api.php?action=save-playlist-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            id: 'pl_' + Date.now(), name: pl.name, image: pl.image || '',
+            tracks: tracks.map(t => ({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0, addedBy: me })),
+        }),
+    }).then(r => r.json()).then(d => {
+        if (!d || !d.ok) throw new Error((d && d.error) || 'No se pudo guardar');
+        btn.textContent = '✓ Guardada';
+        if (typeof refreshPlaylists === 'function') refreshPlaylists();
+        if (window.notifSystem) notifSystem.show({ id: 'pl-saved-' + d.id, type: 'info', title: 'Playlists',
+            message: '"' + pl.name + '" está ahora en tus playlists.', autoDismissAfter: 5000 });
+    }).catch(e => {
+        btn.disabled = false;
+        alert(e.message || 'No se pudo guardar');
+    });
+}
+
 function closeAlbumViewer() {
     const win = _albumViewerEl('album-viewer');
     if (!win) return;
@@ -2115,6 +2986,7 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
        _albumViewerToken para verificar verá un valor distinto si entre
        medias alguien cerró o abrió otro álbum. */
     const myToken = ++_albumViewerToken;
+    _albumViewerSetMode(win, 'album');
 
     const nameEl   = _albumViewerEl('album-viewer-name');
     const artistEl = _albumViewerEl('album-viewer-artist');
@@ -2134,6 +3006,8 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
     tracksEl.innerHTML   = '<div class="album-viewer-msg">Cargando…</div>';
     playBtn.disabled     = true;
     playBtn.textContent  = '▶ Reproducir álbum';
+    const dlBtn = _albumViewerEl('album-viewer-download');
+    if (dlBtn) dlBtn.disabled = true;
 
     /* Abrir ventana usando taskbarManager (mismo patrón que
        playlist-editor) para que se registre en la taskbar. */
@@ -2344,6 +3218,14 @@ async function openAlbumViewer(albumId, albumName, albumArtist, albumImage) {
         });
 
         const anyPlayable = resolved.some(t => t.videoId);
+        if (anyPlayable && dlBtn) {
+            dlBtn.disabled = false;
+            dlBtn.onclick = () => openBulkDownloadDialog({
+                name: [meta.artist, meta.name].filter(Boolean).join(' - ') || 'Álbum',
+                album: meta.name || albumName || '', cover: meta.image || albumImage || '',
+                tracks: resolved.filter(t => t.videoId).map(t => ({ videoId: t.videoId, title: t.title, artist: t.artist || meta.artist || '' })),
+            });
+        }
         if (anyPlayable) {
             playBtn.disabled = false;
             playBtn.onclick = () => _playAlbumFrom(0);
@@ -2380,6 +3262,7 @@ function _playAlbumFrom(origIdx) {
         /* Aún cargando videoIds. */
         return;
     }
+    if (_albumViewerCurrent.shared) return _playSharedPlaylistFrom(origIdx);
     const { albumId, meta, resolved } = _albumViewerCurrent;
     /* Filtrar a las canciones que SÍ tienen videoId — son las que se
        reproducirán. Mantenemos el orden del álbum original. */
@@ -2400,28 +3283,35 @@ function _playAlbumFrom(origIdx) {
     }
     if (actualStart < 0) actualStart = 0;
 
+    _loadAlbumQueue(albumId, meta, playable, actualStart);
+    /* Cerrar el viewer al pulsar play — el usuario ya tiene el track
+       sonando en el reproductor pequeño. */
+    closeAlbumViewer();
+}
+
+/* Pone las canciones `playable` (todas con videoId) del álbum como cola
+   y arranca en `start`. Lo usan el viewer y el reproductor flotante de
+   la app de escritorio (melonTrackAction 'play-album'). */
+function _loadAlbumQueue(albumId, meta, playable, start) {
     const virtualId = 'spotify-album:' + albumId;
     currentPlaylistId = virtualId;
     currentPlaylistHasCollabs = false;
     playlist.length = 0;
     playable.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist }));
-    currentTrack = actualStart;
+    currentTrack = start;
     /* Sin emoji: el título de la ventana del reproductor identifica
        el álbum por el nombre solo. */
     updatePlayerTitle(meta.name || 'Álbum');
-    updateTrackUI(actualStart);
+    updateTrackUI(start);
     if (typeof MelonPlayerState !== 'undefined') {
-        try { MelonPlayerState.setPlaylist(virtualId, actualStart); } catch (_) {}
+        try { MelonPlayerState.setPlaylist(virtualId, start); } catch (_) {}
     }
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-        ytPlayer.loadVideoById(playlist[actualStart].videoId);
+        ytPlayer.loadVideoById(playlist[start].videoId);
     }
     /* Loguear como álbum escuchado para wrapped. Una sola llamada por
        sesión de play (dedupe 60s en backend). */
-    _logAlbumPlay();
-    /* Cerrar el viewer al pulsar play — el usuario ya tiene el track
-       sonando en el reproductor pequeño. */
-    closeAlbumViewer();
+    _logAlbumPlay({ albumId, meta });
 }
 
 /* Click en el TÍTULO de la canción → abre la ventana del álbum
@@ -2581,7 +3471,30 @@ function _showAlbumCtxMenu(x, y) {
     const menu = document.getElementById('pl-ctx-menu-el');
     if (!menu || !_albumViewerCurrent) return;
     menu.innerHTML = '';
+    const cur = _albumViewerCurrent;
+    const linkItem = (tipo, valor) => {
+        if (typeof window.melonCopyLink !== 'function') return;
+        const it = document.createElement('div');
+        it.className = 'pl-menu-item';
+        it.textContent = '🔗 Copiar enlace';
+        it.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink(tipo, valor); });
+        menu.appendChild(it);
+    };
 
+    /* Playlist de un enlace: solo guardar copia y el enlace. */
+    if (cur.shared) {
+        const save = _albumViewerEl('album-viewer-save');
+        if (save && save.style.display !== 'none' && !save.disabled) {
+            const it = document.createElement('div');
+            it.className = 'pl-menu-item';
+            it.textContent = '➕ Guardar en mis playlists';
+            it.addEventListener('click', () => { menu.style.display = 'none'; save.click(); });
+            menu.appendChild(it);
+        }
+        linkItem('playlist', String(cur.playlistId));
+    }
+
+    if (!cur.shared) {
     const addPl = document.createElement('div');
     addPl.className = 'pl-menu-item';
     addPl.textContent = 'Añadir álbum a playlist';
@@ -2599,6 +3512,12 @@ function _showAlbumCtxMenu(x, y) {
         _addAlbumToProfile();
     });
     menu.appendChild(addProfile);
+
+    /* Enlace del álbum (solo con clave real: itunes:/deezer:/spotify:). */
+    if (typeof cur.albumId === 'string' && /^[a-z]+:[A-Za-z0-9_-]+$/.test(cur.albumId) && cur.albumId.indexOf('synthetic:') !== 0) {
+        linkItem('album', cur.albumId);
+    }
+    }
 
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
@@ -2764,6 +3683,14 @@ function showSearchAlbumCtxMenu(x, y, album) {
         _addAlbumObjToProfile(album);
     });
     menu.appendChild(addProf);
+    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
+            && typeof window.melonCopyLink === 'function') {
+        const lnk = document.createElement('div');
+        lnk.className = 'pl-menu-item';
+        lnk.textContent = '🔗 Copiar enlace';
+        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
+        menu.appendChild(lnk);
+    }
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth  - cw - 8) + 'px';
@@ -2817,11 +3744,13 @@ function _addAlbumToProfile() {
 
 /* Loguea una reproducción de álbum en wrapped — para que el resumen
    anual cuente "álbumes escuchados". Dedupe de 60s vive en backend.
-   Lo llamamos desde _playAlbumFrom (cuando el usuario realmente da
-   play, sea botón "Reproducir álbum" o click directo en una canción). */
-function _logAlbumPlay() {
-    if (!_albumViewerCurrent) return;
-    const { albumId, meta } = _albumViewerCurrent;
+   Lo llamamos desde _loadAlbumQueue (cuando el usuario realmente da
+   play, sea botón "Reproducir álbum" o click directo en una canción).
+   `album` = { albumId, meta }; sin él, el álbum abierto en el viewer. */
+function _logAlbumPlay(album) {
+    album = album || _albumViewerCurrent;
+    if (!album) return;
+    const { albumId, meta } = album;
     const body = JSON.stringify({
         albumTitle:     meta.name,
         artist:         meta.artist || '',
@@ -3068,11 +3997,16 @@ function resolveAndShowAlbum(track) {
         });
 }
 
+var _lastPosSavedAt = 0;
 function startProgress()
 {
     clearInterval(progressInterval);
     progressInterval = setInterval(() => {
         if (!ytPlayer || !ytPlayer.getDuration) return;
+        if (Date.now() - _lastPosSavedAt > 5000) {
+            _lastPosSavedAt = Date.now();
+            MelonLastTrack.savePos();
+        }
         const dur = ytPlayer.getDuration();
         const cur = ytPlayer.getCurrentTime();
         if (dur) {
@@ -3114,8 +4048,42 @@ function onYouTubeIframeAPIReady()
                     var globalF = (typeof window.getGlobalVolumeFactor === 'function')
                         ? window.getGlobalVolumeFactor() : 1;
                     ytPlayer.setVolume(Math.round(baseVol * globalF));
-                    restorePlaylist(saved);
+                    /* Se ha entrado por un enlace que pone música
+                       (melonOpenLink en desktop-base.php): esa gana a la
+                       última canción y a la playlist guardada. */
+                    window.__melonPlayerReady = true;
+                    if (typeof window.__melonLinkPlay === 'function') {
+                        var linkPlay = window.__melonLinkPlay;
+                        window.__melonLinkPlay = null;
+                        linkPlay();
+                        return;
+                    }
+                    var last = MelonLastTrack.read();
+                    if (last) restoreLast(last);
+                    else restorePlaylist(saved);
                 });
+
+                /* La última canción de este ordenador, en pausa donde iba. */
+                function restoreLast(last) {
+                    currentPlaylistId = last.playlistId || null;
+                    currentPlaylistHasCollabs = !!last.hasCollabs;
+                    playlist.length = 0;
+                    last.queue.forEach(function(t) { playlist.push(t); });
+                    var idx = Math.max(0, Math.min(last.idx | 0, playlist.length - 1));
+                    currentTrack = idx;
+                    updateTrackUI(idx);
+                    if (last.title) updatePlayerTitle(last.title);
+                    var pos = MelonLastTrack.position(playlist[idx].videoId);
+                    ytPlayer.cueVideoById({ videoId: playlist[idx].videoId, startSeconds: pos });
+                    var dur = playlist[idx].duration || 0;
+                    if (pos) {
+                        playerCurrent.textContent = formatTime(pos);
+                        if (dur) {
+                            playerProg.value = (pos / dur) * 100;
+                            playerDur.textContent = formatTime(dur);
+                        }
+                    }
+                }
 
                 function restoreDefault() {
                     if (playlist.length) { updateTrackUI(0); ytPlayer.cueVideoById(playlist[0].videoId); }
@@ -3126,6 +4094,8 @@ function onYouTubeIframeAPIReady()
                     fetch('assets/music/api.php?action=get-playlists')
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
+                        /* Mientras llegaba, un enlace ya puso otra cosa. */
+                        if (window.__melonLinkPlayed) return;
                         if (!Array.isArray(data)) { restoreDefault(); return; }
                         var found = null;
                         for (var i = 0; i < data.length; i++) {
@@ -3156,6 +4126,7 @@ function onYouTubeIframeAPIReady()
                 } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
                     btnPlay.textContent = '►';
                     clearInterval(progressInterval);
+                    if (e.data === YT.PlayerState.PAUSED) MelonLastTrack.savePos();
                     publishNowPlaying(false, true);
                 }
                 /* Si soy host de una sesión conjunta, propago play/pausa al
@@ -3172,9 +4143,7 @@ function onYouTubeIframeAPIReady()
                    wrapped/escuchando-ahora. */
                 if (e.data === YT.PlayerState.ENDED && LT_ROLE !== 'guest') {
                     if (autoplayRandom && playlist.length > 1) {
-                        let next;
-                        do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
-                        currentTrack = next;
+                        currentTrack = nextShuffleIndex();
                     } else {
                         currentTrack = (currentTrack + 1) % playlist.length;
                     }
@@ -3211,6 +4180,14 @@ btnPlay.addEventListener('click', () => {
 document.getElementById('btn-prev').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+    /* En aleatorio, a la que sonaba antes (si queda en el historial). */
+    const back = autoplayRandom ? historyStep(shuffleBack) : -1;
+    if (back !== -1) {
+        if (shuffleNow) shuffleForward.push(shuffleNow);
+        shuffleNav = true;
+        switchTrack(back, playing);
+        return;
+    }
     switchTrack((currentTrack - 1 + playlist.length) % playlist.length, playing);
 });
 
@@ -3218,9 +4195,7 @@ document.getElementById('btn-next').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
     if (autoplayRandom && playlist.length > 1) {
-        let next;
-        do { next = Math.floor(Math.random() * playlist.length); } while (next === currentTrack);
-        switchTrack(next, playing);
+        switchTrack(nextShuffleIndex(), playing);
     } else {
         switchTrack((currentTrack + 1) % playlist.length, playing);
     }
@@ -3621,22 +4596,29 @@ var addTrackCallback = null;
 
     /* Reproduce una playlist entera + la registra en recientes. */
     function playPlaylist(pl) {
-        if (!pl || !pl.tracks || !pl.tracks.length) return;
-        currentPlaylistId = pl.id;
-        currentPlaylistHasCollabs = !!(pl.sharedFrom || (pl.collaborators && pl.collaborators.length > 0));
-        MelonPlayerState.setPlaylist(pl.id, 0);
-        playlist.length = 0;
-        pl.tracks.forEach(function(t) { playlist.push(t); });
-        currentTrack = 0;
-        updateTrackUI(0);
-        updatePlayerTitle(pl.name);
-        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-            ytPlayer.loadVideoById(playlist[0].videoId);
-        }
-        melonRecordRecent('playlist', String(pl.id), pl.name, pl.image || '', '');
+        playPlaylistFrom(pl, 0);
         /* Antes se cerraba la ventana al reproducir; ahora se mantiene
            abierta (reproducir desde el botón ▶ de la tarjeta NO entra ni
            cierra la ventana). */
+    }
+
+    /* Reproduce la playlist empezando por la canción trackIndex (el resto
+       queda en cola). La usan playPlaylist y el reproductor flotante. */
+    function playPlaylistFrom(pl, trackIndex) {
+        if (!pl || !pl.tracks || !pl.tracks.length) return;
+        var i = Math.max(0, Math.min(trackIndex | 0, pl.tracks.length - 1));
+        currentPlaylistId = pl.id;
+        currentPlaylistHasCollabs = !!(pl.sharedFrom || (pl.collaborators && pl.collaborators.length > 0));
+        MelonPlayerState.setPlaylist(pl.id, i);
+        playlist.length = 0;
+        pl.tracks.forEach(function(t) { playlist.push(t); });
+        currentTrack = i;
+        updateTrackUI(i);
+        updatePlayerTitle(pl.name);
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+            ytPlayer.loadVideoById(playlist[i].videoId);
+        }
+        melonRecordRecent('playlist', String(pl.id), pl.name, pl.image || '', '');
     }
 
     function deletePlaylist(pl, idx) {
@@ -3687,6 +4669,28 @@ var addTrackCallback = null;
             buildAddToOtherMenu(menu, pl);
         });
         menu.appendChild(addOther);
+
+        /* Descargar todas sus canciones (en el navegador ofrece la app). */
+        if ((pl.tracks || []).some(function(t) { return t && t.videoId; })) {
+            var dlAll = document.createElement('div');
+            dlAll.className = 'pl-menu-item';
+            dlAll.textContent = '⬇ Descargar todo…';
+            dlAll.addEventListener('click', function(){
+                menu.style.display = 'none';
+                openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: pl.tracks });
+            });
+            menu.appendChild(dlAll);
+        }
+
+        /* Enlace para compartir: cualquiera con sesión la puede ver y
+           copiar (enlace.php?playlist=N). */
+        if (/^\d+$/.test(String(pl.id)) && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function(){ menu.style.display = 'none'; window.melonCopyLink('playlist', String(pl.id)); });
+            menu.appendChild(lnk);
+        }
 
         var del = document.createElement('div');
         del.className = 'pl-menu-item';
@@ -4151,21 +5155,27 @@ var addTrackCallback = null;
                 item.textContent = pl.name;
                 item.addEventListener('click', function() {
                     addToPicker.style.display = 'none';
-                    var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
-                    if (!already) pl.tracks.push(Object.assign({}, track));
-                    fetch('assets/music/api.php?action=save-playlist-item', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
-                    }).then(function(r) { return r.json(); }).then(function(data) {
-                        if (data.error) alert(data.error);
-                    }).catch(function() {});
+                    addTrackToPlaylist(pl, track);
                 });
                 pickerList.appendChild(item);
             });
         }
         /* No reposicionamos aquí — el caller (showAddToPicker o el
            callback del fetch) ya dejó el picker visible y anclado. */
+    }
+
+    /* Añade la canción al final de la playlist (si no estaba) y la guarda.
+       La usan el selector "Añadir" y el reproductor flotante. */
+    function addTrackToPlaylist(pl, track) {
+        var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
+        if (!already) pl.tracks.push(Object.assign({}, track));
+        fetch('assets/music/api.php?action=save-playlist-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.error) alert(data.error);
+        }).catch(function() {});
     }
 
     function showTrackCtxMenu(e, track) {
@@ -4219,6 +5229,35 @@ var addTrackCallback = null;
         });
         ctxMenu.appendChild(addProfile);
 
+        /* Descargar: vale para la que suena y para las filas de las
+           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
+           descarga la app de escritorio; en el navegador, que no puede bajar
+           el audio de YouTube, ofrece la app (openGetAppDialog). */
+        if (track && track.videoId) {
+            var dl = document.createElement('div');
+            dl.className = 'pl-menu-item';
+            dl.textContent = '⬇ Descargar…';
+            dl.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
+                else openGetAppDialog();
+            });
+            ctxMenu.appendChild(dl);
+        }
+
+        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
+           tiene). */
+        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                window.melonCopyLink('cancion', track.videoId);
+            });
+            ctxMenu.appendChild(lnk);
+        }
+
         /* Item Listen Together — abre el modal de invitar (o gestiona
            la sesión actual si ya estás en una). */
         var ltItem = document.createElement('div');
@@ -4260,6 +5299,41 @@ var addTrackCallback = null;
        El álbum se busca en vivo (iTunes + Deezer) mientras se escribe; al
        elegir un resultado queda "seleccionado" y se envía con el resto al
        pulsar Guardar (ya no auto-envía). */
+    /* Tras guardar una corrección (report-album): aplica los datos nuevos
+       en memoria y repinta el reproductor y las filas. También la usa el
+       reproductor flotante, que guarda la corrección por su cuenta
+       (melonTrackAction 'fixed'). */
+    function applyAlbumFix(track, d) {
+        /* Si cambió el link de YouTube, el videoId vigente de la
+           canción pasa a ser el nuevo: aplicamos in-memory para que
+           el resto de la UI (mini-player, filas) use el id correcto. */
+        var effectiveVid = (d.newVideoId && d.newVideoId.length === 11) ? d.newVideoId : track.videoId;
+        if (d.title)  track.title  = d.title;
+        if (d.artist) track.artist = d.artist;
+        /* Guarda la corrección de álbum en la cache local por videoId
+           (autoritativa) para repintar al instante sin re-fetch. */
+        if (d.album) { try { _albumCacheSet(effectiveVid, d.album); _albumCacheSet(track.videoId, d.album); } catch (_) {} }
+        else { try { var c = _loadAlbumCache(); delete c[track.videoId]; _saveAlbumCache(); } catch (_) {} }
+        /* Mini-player. */
+        var cur = (typeof playlist !== 'undefined' && playlist[currentTrack]) || null;
+        if (cur && cur.videoId === track.videoId && typeof resolveAndShowAlbum === 'function') {
+            resolveAndShowAlbum(cur);
+        }
+        /* Filas del editor con ese videoId → actualiza el nombre del
+           álbum que aparece en la lista. */
+        if (typeof plList !== 'undefined' && plList && typeof _resolveAlbumForRow === 'function') {
+            plList.querySelectorAll('.pl-item-album-text').forEach(function(span){
+                if (span.dataset.videoId !== track.videoId) return;
+                var row = span.closest('.pl-item');
+                var th  = row ? row.querySelector('.pl-item-thumb-wrap img') : null;
+                _resolveAlbumForRow(track, span, th);
+            });
+        }
+        /* Si la ventana del artista está abierta, refréscala para que
+           muestre la carátula/datos corregidos al instante. */
+        if (typeof window.refreshArtistWindowIfOpen === 'function') window.refreshArtistWindowIfOpen();
+    }
+
     function reportWrongAlbum(track) {
         if (!track || !track.videoId) return;
 
@@ -4359,34 +5433,7 @@ var addTrackCallback = null;
                     else alert(msg);
                     return;
                 }
-                /* Si cambió el link de YouTube, el videoId vigente de la
-                   canción pasa a ser el nuevo: aplicamos in-memory para que
-                   el resto de la UI (mini-player, filas) use el id correcto. */
-                var effectiveVid = (d.newVideoId && d.newVideoId.length === 11) ? d.newVideoId : track.videoId;
-                if (d.title)  track.title  = d.title;
-                if (d.artist) track.artist = d.artist;
-                /* Guarda la corrección de álbum en la cache local por videoId
-                   (autoritativa) para repintar al instante sin re-fetch. */
-                if (d.album) { try { _albumCacheSet(effectiveVid, d.album); _albumCacheSet(track.videoId, d.album); } catch (_) {} }
-                else { try { var c = _loadAlbumCache(); delete c[track.videoId]; _saveAlbumCache(); } catch (_) {} }
-                /* Mini-player. */
-                var cur = (typeof playlist !== 'undefined' && playlist[currentTrack]) || null;
-                if (cur && cur.videoId === track.videoId && typeof resolveAndShowAlbum === 'function') {
-                    resolveAndShowAlbum(cur);
-                }
-                /* Filas del editor con ese videoId → actualiza el nombre del
-                   álbum que aparece en la lista. */
-                if (typeof plList !== 'undefined' && plList && typeof _resolveAlbumForRow === 'function') {
-                    plList.querySelectorAll('.pl-item-album-text').forEach(function(span){
-                        if (span.dataset.videoId !== track.videoId) return;
-                        var row = span.closest('.pl-item');
-                        var th  = row ? row.querySelector('.pl-item-thumb-wrap img') : null;
-                        _resolveAlbumForRow(track, span, th);
-                    });
-                }
-                /* Si la ventana del artista está abierta, refréscala para que
-                   muestre la carátula/datos corregidos al instante. */
-                if (typeof window.refreshArtistWindowIfOpen === 'function') window.refreshArtistWindowIfOpen();
+                applyAlbumFix(track, d);
                 if (window.notifSystem) {
                     notifSystem.show({ type: 'success', title: 'Canción corregida',
                         message: (d.album && d.album.albumName) ? ('Álbum: ' + d.album.albumName) : 'Guardado correctamente' });
@@ -4456,6 +5503,68 @@ var addTrackCallback = null;
     /* Exposición global → permite triggear el mismo menú desde el
        mini-player (no solo desde los rows de la lista). */
     window.openTrackCtxMenu = showTrackCtxMenu;
+
+    /* Reproductor flotante de la app de escritorio (apps/mini-player.html):
+       su panel de playlists y las opciones de su clic derecho llegan aquí
+       y hacen lo mismo que este reproductor. Las playlists se recargan del
+       servidor antes de tocarlas: guardar una playlist manda la lista
+       entera, y una copia vieja borraría lo añadido desde otro sitio. */
+    window.melonTrackAction = function(action, value) {
+        var track = nowPlayingTrack();
+        function withFreshPlaylist(id, fn) {
+            loadPlaylists(function() {
+                var pl = allPlaylists.find(function(p) { return String(p.id) === String(id); });
+                if (pl) fn(pl);
+            });
+        }
+        switch (action) {
+            case 'play-playlist':      /* value: { playlistId, index } */
+                withFreshPlaylist(value.playlistId, function(pl) { playPlaylistFrom(pl, value.index); });
+                break;
+            /* Búsqueda del flotante (canciones, álbumes y artistas), como
+               la del menú de playlists. */
+            case 'play-song':          /* value: { videoId, title, artist, duration } */
+                melonPlaySong(value);
+                break;
+            case 'play-artist-track':  /* value: { title, artist } — "Populares" del artista */
+                playArtistTrackByName(value.title, value.artist);
+                break;
+            case 'play-album':         /* value: { albumKey, name, artist, image, tracks, index } */
+                if (!value.tracks || !value.tracks[value.index]) break;
+                _loadAlbumQueue(value.albumKey, { name: value.name, artist: value.artist, image: value.image }, value.tracks, value.index);
+                melonRecordRecent('album', value.albumKey, value.name || '', value.image || '', value.artist || '');
+                break;
+            case 'add-to-playlist':    /* value: id de la playlist */
+                if (track && track.videoId) withFreshPlaylist(value, function(pl) { addTrackToPlaylist(pl, track); });
+                break;
+            case 'fix':
+                if (track && track.videoId) reportWrongAlbum(track);
+                break;
+            case 'fixed':              /* value: { videoId, title, artist, result } — corregida en el flotante */
+                if (!value || !value.result) break;
+                applyAlbumFix(track && track.videoId === value.videoId ? track
+                    : { videoId: value.videoId, title: value.title, artist: value.artist }, value.result);
+                syncSystemMedia();
+                break;
+            case 'add-profile':
+                if (typeof window.__closeFullscreenPlayer === 'function') window.__closeFullscreenPlayer();
+                if (track && typeof window.profileAddTrackAndReview === 'function') window.profileAddTrackAndReview(track);
+                break;
+            case 'listen-together':
+                if (typeof ltOpenModal === 'function') ltOpenModal();
+                break;
+            /* "Escuchar juntos" del flotante. */
+            case 'lt-invite':          /* value: user_key */
+                ltInviteUser(value);
+                break;
+            case 'lt-answer':          /* value: { id, accept } */
+                ltAnswerInvite(value.id, !!value.accept);
+                break;
+            case 'leave-session':
+                if (typeof window.ltLeave === 'function') window.ltLeave();
+                break;
+        }
+    };
 
     function startEdit(row, infoDiv, btnsDiv, i) {
         var track = editList[i];
@@ -5007,6 +6116,7 @@ var addTrackCallback = null;
                     row.className = 'collab-user-row';
                     var avatarWrap = document.createElement('div');
                     avatarWrap.className = 'collab-avatar-wrap';
+                    avatarWrap.setAttribute('data-marco-user', u.key);   /* marco (melon-marcos.js) */
                     var uInfo = usersInfo[u.key];
                     if (uInfo && uInfo.img) {
                         var avatarImg = document.createElement('img');
@@ -5416,18 +6526,24 @@ function relTime(sentAt) {
     }
 
     function pushInvite(inv) {
-        if (!window.notifSystem || window.notifSystem.isShown(inv.id) || window.notifSystem.isDismissed(inv.id)) return;
+        /* Id del aviso con prefijo: playlist_invites e item_invites
+           (perfil.php, 'item-') numeran cada una por su cuenta y, con el
+           número a secas, al cerrar una se daba por cerrada la otra con el
+           mismo número y no llegaba a salir. */
+        var avisoId = 'pl-' + inv.id;
+        if (!window.notifSystem || window.notifSystem.isShown(avisoId) || window.notifSystem.isDismissed(avisoId)) return;
         var INFO_TYPES = { 'removed': true, 'collab-accepted': true, 'collab-rejected': true, 'collab-left': true };
         var isAction = !INFO_TYPES[inv.type];
         var senderImg = (typeof usersInfo !== 'undefined' && inv.fromUser && usersInfo[inv.fromUser]) ? usersInfo[inv.fromUser].img : null;
 
         if (isAction) {
             window.notifSystem.show({
-                id:       inv.id,
+                id:       avisoId,
                 type:     'action',
                 title:    TITLES[inv.type] || 'Invitación de playlist',
                 message:  messageFor(inv),
                 senderImage: senderImg,
+                senderKey:   inv.fromUser,            /* su marco */
                 sentAt:   inv.sentAt,
                 onAccept: function() {
                     serverPost(inv.id, 'accept')
@@ -5442,7 +6558,7 @@ function relTime(sentAt) {
             });
         } else {
             window.notifSystem.show({
-                id:      inv.id,
+                id:      avisoId,
                 type:    'info',
                 title:   TITLES[inv.type] || 'Notificación',
                 message: messageFor(inv),
@@ -5455,20 +6571,35 @@ function relTime(sentAt) {
         }
     }
 
-    function connectSSE() {
-        var es = new EventSource('assets/music/notifications-stream.php');
-        es.onmessage = function(e) {
-            try {
-                var data = JSON.parse(e.data);
-                if (!Array.isArray(data)) return;
+    /* Invitaciones y avisos de playlists. Antes llegaban por un SSE
+       (notifications-stream.php) que ocupaba un proceso PHP y una conexión
+       a la BD todo el rato por escritorio. Ahora se piden
+       (playlist-invites) al empezar y cuando el timbre del escritorio dice
+       que han cambiado ('musica', window.melonTimbre en desktop-base.php);
+       si no responde, cada 30 s. pushInvite no repite las ya vistas. Nunca
+       dos peticiones a la vez: si se pide mientras va una, se repite al
+       acabar. */
+    var invPidiendo = false, invOtra = false;
+    function cargarInvites() {
+        if (invPidiendo) { invOtra = true; return; }
+        invPidiendo = true;
+        fetch('assets/music/api.php?action=playlist-invites', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var data = d && d.ok && Array.isArray(d.invites) ? d.invites : [];
                 data.sort(function(a, b) { return (a.sentAt || 0) - (b.sentAt || 0); });
                 data.forEach(pushInvite);
-            } catch(err) {}
-        };
-        es.onerror = function() { es.close(); setTimeout(connectSSE, 3000); };
+            })
+            .catch(function() {})
+            .then(function() {
+                invPidiendo = false;
+                if (invOtra) { invOtra = false; cargarInvites(); }
+            });
     }
 
-    connectSSE();
+    cargarInvites();
+    if (window.melonTimbre) window.melonTimbre.on('musica', cargarInvites, 30000);
+    else setInterval(cargarInvites, 30000);
 })();
 
 /* ════════════════════════════════════════════════════════════════

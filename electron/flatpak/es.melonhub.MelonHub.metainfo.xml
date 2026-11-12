@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ficha que enseñan Discover / GNOME Software al instalar el Flatpak.
+     La versión de <releases> va a la par que "version" de package.json. -->
+<component type="desktop-application">
+  <id>es.melonhub.MelonHub</id>
+  <name>Melon Hub</name>
+  <summary>Tu escritorio de Melon Hub</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <launchable type="desktop-id">es.melonhub.MelonHub.desktop</launchable>
+  <url type="homepage">https://melonhub.es</url>
+  <description>
+    <p>Perfil, chat, música, calendario, tienda y el resto de apps de Melon Hub en su propia ventana.</p>
+  </description>
+  <releases>
+    <release version="0.3.11" date="2026-11-06"/>
+    <release version="0.3.10" date="2026-11-03"/>
+    <release version="0.3.9" date="2026-11-03"/>
+    <release version="0.3.8" date="2026-11-03"/>
+    <release version="0.3.7" date="2026-11-03"/>
+    <release version="0.3.6" date="2026-11-03"/>
+    <release version="0.3.5" date="2026-11-03"/>
+    <release version="0.3.4" date="2026-11-03"/>
+    <release version="0.3.3" date="2026-11-03"/>
+    <release version="0.3.2" date="2026-11-02"/>
+    <release version="0.3.1" date="2026-11-02"/>
+    <release version="0.3.0" date="2026-11-02"/>
+    <release version="0.2.1" date="2026-11-02"/>
+    <release version="0.2.0" date="2026-11-02"/>
+    <release version="0.1.0" date="2026-11-02"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

@@ -40,6 +40,10 @@ header('Content-Type: text/html; charset=UTF-8');
 
 session_start();
 require_once __DIR__ . '/assets/config.php';
+/* Si la sesión del servidor caducó, se rehace con el token recordado. */
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/assets/remember-login.php';
+restoreRememberedLogin($pdo);
 
 $desktopUserKey = null;
 foreach ($loginUsers as $key => $user) {
@@ -50,6 +54,27 @@ if (!isset($_SESSION['user']) || $_SESSION['user'] !== $desktopUserKey) {
     header('Location: ' . $DESKTOP_BASE_URL . 'index.php');
     exit;
 }
+
+/* Timbre (assets/php/timbre.php): archivo estático del usuario que mira
+   window.melonTimbre (más abajo) en vez de preguntar a cada API cada
+   pocos segundos. Se crea ya si no existe, para que no dé 404 al mirarlo,
+   y se lee lo que tiene ahora: es el punto de partida de la página. */
+require_once __DIR__ . '/assets/php/timbre.php';
+[$rtTimbre, $rtTimbreDatos] = (function () use ($pdo, $desktopUserKey) {
+    $st = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $st->execute([$desktopUserKey]);
+    $uid = (int)$st->fetchColumn();
+    if ($uid <= 0) return ['', []];
+    rt_asegurarUsuario($uid);
+    $url = rt_urlUsuario($uid);
+    $datos = json_decode((string)@file_get_contents(__DIR__ . '/' . $url), true);
+    return [$url, is_array($datos) ? $datos : []];
+})();
+
+/* Enlace compartido que espera desde index.php?abrir=… (assets/links.php):
+   lo abre melonOpenLink al cargar. */
+require_once __DIR__ . '/assets/links.php';
+$melonPendingLink = melonTakePendingLink();
 
 // Tras validar sesión: averiguar la pareja del usuario (0 si no tiene).
 require_once __DIR__ . '/db.php';
@@ -71,6 +96,8 @@ require_once __DIR__ . '/assets/php/active-interface.php';
 /* Flag de build solo-dev (define MELON_DEV_BUILD). En main vale false →
    las funciones exclusivas de dev no se renderizan. */
 require_once __DIR__ . '/assets/dev-build.php';
+/* Sistemas con app de escritorio descargable (aviso del haro). */
+require_once __DIR__ . '/assets/desktop/downloads.php';
 
 /* INTERFAZ POR USUARIO:
    La interfaz activa se guarda en BD como SLUG directa
@@ -107,6 +134,20 @@ require_once __DIR__ . '/assets/dev-build.php';
         ]);
         $_COOKIE['activeInterface'] = $slug;
     }
+})();
+
+/* FUENTE POR USUARIO/INTERFAZ (assets/php/fuentes.php): la de la
+   interfaz activa pasa de la BD a la cookie melonFuente, que lee
+   emitInterfaceCss() aquí y en las apps (iframes). La de serie = sin
+   cookie. */
+(function() use (&$pdo, $desktopUserKey) {
+    require_once __DIR__ . '/assets/php/fuentes.php';
+    $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $stmt->execute([$desktopUserKey]);
+    $uid = (int)($stmt->fetchColumn() ?: 0);
+    $iface = getActiveInterface();
+    $slug = melonFuenteActiva($pdo, $uid, $iface);
+    melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
 })();
 
 /* ICON PACK POR USUARIO/INTERFAZ:
@@ -311,6 +352,8 @@ $_isTablet = isTabletDevice();
     <!-- Swap de packs de iconos (lee localStorage.iconPack). DEBE cargar
          antes de cualquier render que dependa de iconos. -->
     <script src="assets/js/icon-pack.js"></script>
+    <!-- "🔗 Copiar enlace" (melonCopyLink) de los menús y del perfil. -->
+    <script src="assets/js/melon-links.js?v=<?php echo @filemtime(__DIR__ . '/assets/js/melon-links.js'); ?>"></script>
     <?php if ($_isTablet): ?>
     <!-- En tablet, los iconos del escritorio y mascota usan long-press
          para abrir su menú contextual (sustituto del click derecho). -->
@@ -319,6 +362,10 @@ $_isTablet = isTabletDevice();
     <link rel="stylesheet" href="assets/css/reproductor.css?v=<?php echo filemtime(__DIR__ . '/assets/css/reproductor.css'); ?>">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
+    <!-- Marcos de perfil: apps/perfil.php va incluido aquí y su <link> a
+         marcos.css solo está en su cabecera standalone. Sin esto el marco
+         (data-marco, de melon-marcos.js) no se dibuja en el escritorio. -->
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/marcos.css'); ?>">
     <?php if ($_isTablet): ?>
     <!-- Overrides para tablets (taskbar, ventanas, hit-targets). Va DESPUÉS
          de themes.css para que sus reglas ganen sin !important. -->
@@ -711,6 +758,15 @@ window.DesktopState.whenReady = function(cb){
         ?></div>
         <span>Tienda</span>
     </div>
+    <div class="desktop-icon" id="juegos-icon">
+        <div class="desktop-icon-img"><?php
+            $_juegosIcon = 'assets/img/appIcons/juegosIcon.png';
+            echo _appIconExists($_juegosIcon)
+                ? '<img src="' . $_juegosIcon . '" style="width:48px;height:48px;object-fit:contain;image-rendering:pixelated;" alt="">'
+                : desktopIcon('juegos', '🎮');
+        ?></div>
+        <span>Juegos</span>
+    </div>
     <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
     <!-- Icono de mascotas (SOLO DEV — gated por MELON_DEV_BUILD). -->
     <div class="desktop-icon" id="mascota-desktop-icon">
@@ -852,6 +908,19 @@ window.DesktopState.whenReady = function(cb){
     <iframe id="dnd-iframe" src="" frameborder="0" style="flex:1; width:100%; border:none; display:block;"></iframe>
 </div>
 
+<!-- JUEGOS WINDOW (apps/juegos.php: de momento, Wordelon) -->
+<div class="window" id="juegos-window" style="display:none; position:fixed; left:calc(50vw - 380px); top:6vh; width:760px; height:640px; max-height:90vh; z-index:500; flex-direction:column;">
+    <div class="title-bar" id="juegos-titlebar">
+        <div class="title-bar-text"><?php echo appTitleIcon('juegosIcon', '🎮'); ?>Juegos</div>
+        <div class="title-bar-controls">
+            <button aria-label="Minimize"></button>
+            <button aria-label="Maximize"></button>
+            <button aria-label="Close" id="juegos-close"></button>
+        </div>
+    </div>
+    <iframe id="juegos-iframe" src="" frameborder="0" style="flex:1; width:100%; border:none; display:block;"></iframe>
+</div>
+
 <!-- GALERÍA WINDOW -->
 <div class="window" id="galeria-window" style="display:none; position:fixed; left:5vw; top:4vh; width:90vw; height:88vh; z-index:500; flex-direction:column;">
     <div class="title-bar" id="galeria-titlebar">
@@ -916,6 +985,7 @@ window.DesktopState.whenReady = function(cb){
             <a class="menu-item" href="#" id="menu-changelog">Changelog...</a>
             <a class="menu-item" href="#" id="menu-reports">Reportes...</a>
             <a class="menu-item" href="#" id="menu-change-password">Cambiar contraseña...</a>
+            <a class="menu-item" href="#" id="menu-desktop-app" style="display:none">Descargar app de escritorio...</a>
             <a class="menu-item" href="logout.php">Cerrar sesión...</a>
             <div class="menu-sep"></div>
         </div>
@@ -987,6 +1057,12 @@ window.DesktopState.whenReady = function(cb){
     </div>
 </div>
 
+<script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
+<script>
+/* Timbre del escritorio (assets/js/timbre.js): el archivo del usuario y lo
+   que tenía al generar esta página. */
+window.melonTimbre = window.melonCrearTimbre(<?= json_encode($rtTimbre) ?>, <?= json_encode((object)$rtTimbreDatos) ?>, 3000);
+</script>
 <?php include __DIR__ . '/apps/reproductor.php'; ?>
 <?php include __DIR__ . '/apps/perfil.php'; ?>
 
@@ -1171,7 +1247,7 @@ window.addEventListener('message', function(e) {
         var className = e.data.className || '';
         var basePath  = e.data.cssBasePath || '';
         applyThemeToDocument(document, className, basePath);
-        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
             var fr = document.getElementById(id);
             if (!fr || !fr.contentDocument || !fr.contentDocument.body) return;
             var childHref = basePath ? '../' + basePath : '';
@@ -1203,7 +1279,7 @@ window.addEventListener('message', function(e) {
                declaran las vars con !important en sus :root. */
             try { document.body.style.setProperty(cssVar, value, 'important'); } catch (_) {}
             /* Propaga a iframes de apps abiertas. */
-            ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+            ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
                 var fr = document.getElementById(id);
                 if (!fr || !fr.contentDocument || !fr.contentDocument.body) return;
                 try { fr.contentDocument.body.style.setProperty(cssVar, value, 'important'); } catch (_) {}
@@ -1256,7 +1332,7 @@ window.addEventListener('message', function(e) {
             }
         }
         refreshImgs(document);
-        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe'].forEach(function(id) {
+        ['calendar-iframe', 'archive-frame', 'temas-frame', 'companion-frame', 'dnd-iframe', 'galeria-iframe', 'juegos-iframe'].forEach(function(id) {
             var fr = document.getElementById(id);
             if (fr && fr.contentDocument) refreshImgs(fr.contentDocument);
         });
@@ -1975,9 +2051,27 @@ window.notifSystem = (function() {
         }
     }
 
+    /* App de escritorio: lo que avisa el haro sale también como
+       notificación del sistema cuando no se está mirando Melon Hub
+       (electron/desktop-extras.js). Una vez por aviso, aunque espere en
+       la cola. */
+    var nativeIds = {};
+    function nativeNotify(opts) {
+        var md = window.melonDesktop;
+        if (!md || !md.notify || nativeIds[opts.id] || document.hasFocus()) return;
+        nativeIds[opts.id] = true;
+        var plain = function(h) {
+            var d = document.createElement('div');
+            d.innerHTML = String(h || '');
+            return (d.textContent || '').replace(/\s+/g, ' ').trim();
+        };
+        md.notify({ title: plain(opts.title) || 'Melon Hub', body: plain(opts.message) });
+    }
+
     function createCard(opts) {
         if (!opts || !opts.id) return;
         if (shownIds[opts.id] || dismissedIds[opts.id]) return;
+        nativeNotify(opts);
         if (Object.keys(shownIds).length >= MAX_VISIBLE) {
             if (!pendingQueue.some(function(q) { return q.id === opts.id; })) pendingQueue.push(opts);
             return;
@@ -2016,6 +2110,8 @@ window.notifSystem = (function() {
             var topRow = document.createElement('div');
             topRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;';
             var avWrap = document.createElement('div'); avWrap.className = 'collab-avatar-wrap';
+            /* opts.senderKey (user_key de quien lo manda): su marco de perfil. */
+            if (opts.senderKey) avWrap.setAttribute('data-marco-user', opts.senderKey);
             var avImg = document.createElement('img'); avImg.className = 'collab-avatar-img';
             avImg.src = opts.senderImage;
             avWrap.appendChild(avImg); topRow.appendChild(avWrap);
@@ -2035,9 +2131,11 @@ window.notifSystem = (function() {
         if (isAction) {
             var row = document.createElement('div'); row.className = 'field-row';
             row.style.cssText = 'justify-content:flex-end;gap:4px;margin-top:5px;';
-            var rejectBtn = document.createElement('button'); rejectBtn.className = 'button'; rejectBtn.textContent = 'Rechazar';
+            /* rejectLabel / acceptLabel: texto propio de los botones
+               (p. ej. el aviso de la app de escritorio: "Ahora no" / "Descargar"). */
+            var rejectBtn = document.createElement('button'); rejectBtn.className = 'button'; rejectBtn.textContent = opts.rejectLabel || 'Rechazar';
             rejectBtn.addEventListener('click', function() { if (typeof opts.onReject === 'function') opts.onReject(); removeSlot(slot); });
-            var acceptBtn = document.createElement('button'); acceptBtn.className = 'button'; acceptBtn.textContent = 'Aceptar';
+            var acceptBtn = document.createElement('button'); acceptBtn.className = 'button'; acceptBtn.textContent = opts.acceptLabel || 'Aceptar';
             acceptBtn.addEventListener('click', function() { if (typeof opts.onAccept === 'function') opts.onAccept(); removeSlot(slot); });
             row.appendChild(rejectBtn); row.appendChild(acceptBtn); body.appendChild(row);
         }
@@ -2141,6 +2239,193 @@ window.notifSystem = (function() {
         isShown:     function(id) { return !!shownIds[id]; },
         isDismissed: function(id) { return !!dismissedIds[id]; }
     };
+})();
+
+/* =========================
+   AVISO: APP DE ESCRITORIO
+   El haro avisa al entrar de que existe la app de escritorio (electron/)
+   si hay instalable para el sistema del usuario. "Descargar" baja el de
+   su sistema (assets/desktop/download.php → GitHub Releases).
+   No sale dentro de la propia app, en tablets, ni si ya se contestó:
+   "Ahora no" lo calla 14 días y "Descargar", para siempre.
+   Para quien dijo "Ahora no" y luego la quiere, la misma descarga está
+   en el menú Inicio ("Descargar app de escritorio..."), que sale siempre
+   que el aviso podría salir, aunque esté callado.
+========================= */
+(function() {
+    var systems = <?= json_encode(desktopDownloadSystems()) ?>;
+    var KEY = 'melonhub.desktopAppPromo';
+    if (window.melonDesktop || document.body.classList.contains('is-tablet')) return;
+
+    var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '') + ' ' + navigator.userAgent;
+    var os = /Win/i.test(platform) ? 'windows'
+           : (/Linux/i.test(platform) && !/Android|CrOS/i.test(platform)) ? 'linux'
+           : '';
+    if (!os || systems.indexOf(os) === -1) return;
+
+    var DAY = 86400000;
+    function silenceFor(ms) {
+        try { localStorage.setItem(KEY, String(Date.now() + ms)); } catch (_) {}
+    }
+    function download() {
+        /* Ya la tiene: el aviso del haro no vuelve a salir. */
+        silenceFor(100 * 365 * DAY);
+        /* Iframe oculto: la descarga empieza sin sacar al usuario
+           del escritorio (si faltara el archivo, no navega a un 404). */
+        var dl = document.createElement('iframe');
+        dl.style.display = 'none';
+        dl.src = 'assets/desktop/download.php?os=' + os;
+        document.body.appendChild(dl);
+        setTimeout(function() { dl.remove(); }, 60000);
+    }
+
+    var menuItem = document.getElementById('menu-desktop-app');
+    if (menuItem) {
+        menuItem.style.display = '';
+        menuItem.addEventListener('click', function(e) {
+            e.preventDefault();
+            download();
+        });
+    }
+
+    var until = 0;
+    try { until = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (_) {}
+    if (Date.now() < until) return;
+
+    /* Después de las notificaciones del arranque (recordatorios a los 5 s). */
+    setTimeout(function() {
+        if (!window.notifSystem) return;
+        window.notifSystem.show({
+            id:      'desktop-app-promo',
+            type:    'action',
+            title:   '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">App de escritorio',
+            message: 'Melon Hub ya tiene app de escritorio para ' + (os === 'windows' ? 'Windows' : 'Linux') + ', con su propia ventana. ¿Quieres descargarla?',
+            rejectLabel: 'Ahora no',
+            acceptLabel: 'Descargar',
+            onReject: function() { silenceFor(14 * DAY); },
+            onAccept: download
+        });
+    }, 8000);
+})();
+
+/* =========================
+   APP DE ESCRITORIO: CONTADOR Y ARRASTRAR IMÁGENES
+   - Los mensajes del chat sin leer salen en el icono de la bandeja
+     (get-unread-chats, cada 20 s y al volver a la ventana).
+   - Una imagen de Melon Hub (galería, momentos, chat…) se puede arrastrar
+     fuera de la app como archivo: al pulsarla la app la va descargando y
+     al arrastrarla entrega el archivo (electron/desktop-extras.js). Vale
+     para esta página y para las apps abiertas en ventanas (iframes de la
+     misma web). No se toca lo que ya se arrastra dentro de Melon Hub
+     (elementos draggable, como las filas de las playlists).
+========================= */
+(function() {
+    var md = window.melonDesktop;
+    if (!md) return;
+    if (md.setBadge) {
+        var pollUnread = function() {
+            fetch('assets/profile/api.php?action=get-unread-chats', { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var n = 0;
+                    Object.keys((d && d.counts) || {}).forEach(function(k) { n += parseInt(d.counts[k], 10) || 0; });
+                    md.setBadge(n);
+                })
+                .catch(function() {});
+        };
+        pollUnread();
+        /* Cuando el timbre dice que hay algo nuevo en los chats (si no
+           responde, cada 20 s como antes). */
+        window.melonTimbre.on('chat', pollUnread, 20000);
+        window.addEventListener('focus', pollUnread);
+    }
+    if (md.startDrag) {
+        var draggableImg = function(t) {
+            var img = t && t.closest ? t.closest('img') : null;
+            if (!img || !img.currentSrc || img.getAttribute('draggable') === 'false') return null;
+            if (img.closest('[draggable="true"]')) return null;
+            if (/\/appIcons\//.test(img.currentSrc)) return null;   /* iconos de la interfaz */
+            if ((img.naturalWidth || 0) < 64 && (img.naturalHeight || 0) < 64) return null;
+            return img;
+        };
+        var hook = function(doc) {
+            if (!doc || doc.__melonDrag) return;
+            doc.__melonDrag = true;
+            doc.addEventListener('pointerdown', function(e) {
+                var img = draggableImg(e.target);
+                if (img) md.prepareDrag(img.currentSrc);
+            }, true);
+            doc.addEventListener('dragstart', function(e) {
+                var img = draggableImg(e.target);
+                if (!img) return;
+                e.preventDefault();
+                md.startDrag(img.currentSrc);
+            }, true);
+        };
+        var hookFrame = function(f) {
+            var tryHook = function() { try { hook(f.contentDocument); } catch (_) { /* otra web: no */ } };
+            tryHook();
+            f.addEventListener('load', function() { try { f.contentDocument.__melonDrag = false; } catch (_) {} tryHook(); });
+        };
+        hook(document);
+        document.querySelectorAll('iframe').forEach(hookFrame);
+        new MutationObserver(function(muts) {
+            muts.forEach(function(m) {
+                m.addedNodes.forEach(function(n) {
+                    if (n.tagName === 'IFRAME') hookFrame(n);
+                    else if (n.querySelectorAll) n.querySelectorAll('iframe').forEach(hookFrame);
+                });
+            });
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+})();
+
+/* =========================
+   AVISO: ACTUALIZACIÓN DE LA APP DE ESCRITORIO
+   Dentro de la app, la parte nativa (electron/updater.js) avisa de que hay
+   versión nueva y el haro ofrece instalarla: al pulsar "Actualizar" se
+   descarga, se instala y la app se reabre sola. Versiones de la app sin
+   actualizador no traen onUpdate y aquí no pasa nada.
+========================= */
+(function() {
+    var md = window.melonDesktop;
+    if (!md || typeof md.onUpdate !== 'function') return;
+    var ICON = '<img src="assets/img/appIcons/downloadIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">';
+    var offered = {}, installing = false;
+    md.onUpdate(function(s) {
+        if (!s || !window.notifSystem) return;
+        if (s.status === 'available' && !offered[s.version]) {
+            offered[s.version] = true;
+            window.notifSystem.show({
+                id:      'desktop-update-' + s.version,
+                type:    'action',
+                title:   ICON + 'Actualización',
+                message: 'Hay una versión nueva de la app de escritorio (' + s.version + '). Se instala sola y la app se reinicia.',
+                rejectLabel: 'Ahora no',
+                acceptLabel: 'Actualizar',
+                onAccept: function() { md.installUpdate(); }
+            });
+        } else if (s.status === 'downloading' && !installing) {
+            installing = true;
+            window.notifSystem.show({
+                id:      'desktop-update-progress',
+                type:    'info',
+                title:   ICON + 'Actualizando',
+                message: 'Descargando la versión ' + s.version + '… La app se reiniciará sola al terminar.'
+            });
+        } else if (s.status === 'error') {
+            installing = false;
+            window.notifSystem.show({
+                id:      'desktop-update-error-' + Date.now(),
+                type:    'action',
+                title:   ICON + 'No se pudo actualizar',
+                message: s.error || 'Error desconocido.',
+                rejectLabel: 'Cerrar',
+                acceptLabel: 'Reintentar',
+                onAccept: function() { md.installUpdate(); }
+            });
+        }
+    });
 })();
 
 /* =========================
@@ -2269,6 +2554,141 @@ window.notifSystem = (function() {
 })();
 
 /* =========================
+   JUEGOS (Wordelon, Buscaminas, Ajedrez)
+========================= */
+(function() {
+    var juegosIframe = document.getElementById('juegos-iframe');
+    var juegosLoaded = false;
+    var JUEGOS_IC = '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">';
+
+    /* abrir = "partida:N" | "torneo:N" (ajedrez): entra directo ahí. */
+    function openJuegos(abrir) {
+        if (!juegosLoaded) {
+            juegosIframe.src = appSrc('apps/juegos.php' + (abrir ? '?abrir=' + encodeURIComponent(abrir) : ''));
+            juegosLoaded = true;
+        } else if (abrir) {
+            try { juegosIframe.contentWindow.postMessage({ type: 'juegos-abrir', abrir: abrir }, location.origin); } catch (e) {}
+        }
+        if (taskbarManager.isRegistered('juegos-window')) {
+            taskbarManager.restore('juegos-window');
+        } else {
+            taskbarManager.register('juegos-window', 'Juegos', JUEGOS_IC, 'flex');
+        }
+    }
+    window.melonOpenJuegos = openJuegos;
+    document.getElementById('juegos-icon').addEventListener('dblclick', function() { openJuegos(); });
+
+    document.getElementById('juegos-close').addEventListener('click', function() {
+        taskbarManager.unregister('juegos-window');
+    });
+
+    /* Ajedrez: aviso del haro con los retos que te llegan (Aceptar /
+       Rechazar), las partidas que te esperan (reto aceptado, ronda de
+       torneo: "Jugar") y los torneos cancelados en los que estabas. Si
+       Juegos ya está enseñando el ajedrez, la partida entra sola y no
+       hace falta avisar.
+       No se llama a la API cada 10 s desde cada escritorio abierto (con
+       mucha gente era carga fija para el servidor): se pide ajz-avisos
+       cuando el timbre (window.melonTimbre) dice que ha cambiado su
+       "aviso". También a la hora en que empieza su próximo torneo
+       (prox): esa llamada es la que lo arranca (ajz_tick) aunque nadie
+       tenga abierto el ajedrez. Si el timbre no responde, como antes:
+       la API cada 10 s. */
+    function ajzViendo() {
+        var win = document.getElementById('juegos-window');
+        if (!juegosLoaded || !win || win.style.display === 'none') return null;
+        try { return juegosIframe.contentWindow.ajzViendo ? juegosIframe.contentWindow.ajzViendo() : null; } catch (e) { return null; }
+    }
+    var AJZ_TIT = '<img src="assets/img/appIcons/juegosIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Ajedrez';
+    function ajzPost(action, body) {
+        return fetch('assets/juegos/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function(r) { return r.json(); });
+    }
+    function ajzError(msg) {
+        window.notifSystem.show({ id: 'ajz-err-' + Date.now(), type: 'info', title: AJZ_TIT, message: msg });
+    }
+    var ajzPlazo = null, ajzPidiendo = false, ajzOtra = false;
+    /* A la hora de su próximo torneo, con un poco de margen al azar para
+       que no lleguen todos los escritorios a la vez. */
+    function ajzProgramar(d) {
+        if (ajzPlazo) { clearTimeout(ajzPlazo); ajzPlazo = null; }
+        var falta = d.prox && d.ahora ? d.prox - d.ahora : -1;
+        if (falta > 0 && falta < 6 * 3600000) ajzPlazo = setTimeout(pollAjedrez, falta + 300 + Math.random() * 1500);
+    }
+    function pollAjedrez() {
+        if (!window.notifSystem) return;
+        /* Nunca dos a la vez; si se pide mientras va, se repite al acabar. */
+        if (ajzPidiendo) { ajzOtra = true; return; }
+        ajzPidiendo = true;
+        fetch('assets/juegos/api.php?action=ajz-avisos', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ok) return;
+                ajzProgramar(d);
+                (d.retos || []).forEach(function(x) {
+                    var u = x.de || {};
+                    window.notifSystem.show({
+                        id:          'ajz-reto-' + x.id,
+                        type:        'action',
+                        title:       AJZ_TIT,
+                        message:     (u.nombre || 'Alguien') + ' te reta a una partida (' + x.ritmo + (x.apuesta > 0 ? ', apuesta ' + x.apuesta + ' puntos' : '') + ')',
+                        senderImage: u.foto || '',
+                        senderKey:   u.key,
+                        sentAt:      x.ts,
+                        rejectLabel: 'Rechazar',
+                        acceptLabel: 'Aceptar',
+                        onReject:    function() { ajzPost('ajz-reto-responder', { id: x.id, aceptar: false }).catch(function() {}); },
+                        onAccept:    function() {
+                            ajzPost('ajz-reto-responder', { id: x.id, aceptar: true }).then(function(r) {
+                                if (r && r.ok && r.partida) openJuegos('partida:' + r.partida);
+                                else ajzError((r && r.error) || 'No se ha podido aceptar el reto');
+                            }).catch(function() { ajzError('Sin conexión'); });
+                        },
+                    });
+                });
+                /* Torneo cancelado en el que estabas apuntado. */
+                (d.cancelados || []).forEach(function(c) {
+                    window.notifSystem.show({
+                        id:      'ajz-cancelado-' + c.id,
+                        type:    'info',
+                        title:   AJZ_TIT,
+                        message: 'Se ha cancelado el torneo «' + c.torneo + '» ' +
+                                 (c.motivo === 'vacio' ? 'porque no se llenó a tiempo.' : 'porque lo ha cancelado quien lo organizaba.') +
+                                 (c.devuelto > 0 ? ' Se te han devuelto los ' + c.devuelto + ' puntos de la entrada.' : ''),
+                        sentAt:  c.ts,
+                    });
+                });
+                var v = ajzViendo();
+                (d.partidas || []).forEach(function(p) {
+                    if (v && (v.vista === 'menu' || v.partida === p.id || (v.vista === 'torneo' && p.torneoId && v.torneo === p.torneoId))) return;
+                    var u = p.rival || {};
+                    window.notifSystem.show({
+                        id:          'ajz-partida-' + p.id,
+                        type:        'action',
+                        title:       AJZ_TIT,
+                        message:     p.torneo ? 'Empieza tu partida del torneo ' + p.torneo + ' contra ' + (u.nombre || '?')
+                                              : (u.nombre || 'Tu rival') + ' ha aceptado tu reto: ¡a jugar!',
+                        senderImage: u.foto || '',
+                        senderKey:   u.key,
+                        sentAt:      p.ts,
+                        rejectLabel: 'Cerrar',
+                        acceptLabel: 'Jugar',
+                        onAccept:    function() { openJuegos('partida:' + p.id); },
+                    });
+                });
+            })
+            .catch(function() {})
+            .then(function() {
+                ajzPidiendo = false;
+                if (ajzOtra) { ajzOtra = false; pollAjedrez(); }
+            });
+    }
+    setTimeout(pollAjedrez, 4000);
+    window.melonTimbre.on('aviso', pollAjedrez, 10000);
+})();
+
+/* =========================
    GALERÍA
 ========================= */
 (function() {
@@ -2385,22 +2805,119 @@ window.notifSystem = (function() {
     var tiendaIframe = document.getElementById('tienda-iframe');
     var tiendaLoaded = false;
 
-    document.getElementById('tienda-icon').addEventListener('dblclick', function() {
+    /* giftId: abre ese regalo (aviso del haro "Abrir"); con la tienda sin
+       cargar va en la URL (?regalo=), si ya estaba, por postMessage. */
+    function openTienda(giftId) {
         if (!tiendaLoaded) {
-            tiendaIframe.src = appSrc('apps/tienda.php');
+            tiendaIframe.src = appSrc('apps/tienda.php' + (giftId ? '?regalo=' + giftId : ''));
             tiendaLoaded = true;
         } else {
             /* Iframe ya estaba cargado: pedimos al iframe que refresque su
                estado (balance, items, compras) para que el wallet de la
                sidebar no se quede congelado tras minutos cerrada. */
             try { tiendaIframe.contentWindow.postMessage({ type: 'tienda-refresh' }, '*'); } catch (e) {}
+            if (giftId) { try { tiendaIframe.contentWindow.postMessage({ type: 'tienda-open-gift', id: giftId }, '*'); } catch (e) {} }
         }
         if (taskbarManager.isRegistered('tienda-window')) {
             taskbarManager.restore('tienda-window');
         } else {
             taskbarManager.register('tienda-window', 'Tienda', '<img src="assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
         }
-    });
+    }
+    window.melonOpenTienda = openTienda;
+    document.getElementById('tienda-icon').addEventListener('dblclick', function() { openTienda(); });
+
+    /* Regalos de la tienda: aviso del haro por cada regalo pendiente de
+       abrir (al entrar y cuando el timbre dice que ha llegado uno; si no
+       responde, cada minuto como antes); "Abrir" lleva a la tienda con él. */
+    function pollGifts() {
+        if (!window.notifSystem) return;
+        fetch('assets/tienda/api.php?action=gifts', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                ((d && d.gifts) || []).forEach(function(g) {
+                    window.notifSystem.show({
+                        id:          'tienda-gift-' + g.id,
+                        type:        'action',
+                        title:       '<img src="assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Regalo',
+                        message:     g.from.label + ' te ha enviado un regalo',
+                        senderImage: (g.from.image || '').replace(/^\.\.\//, ''),
+                        senderKey:   g.from.key,
+                        sentAt:      g.ts,
+                        rejectLabel: 'Cerrar',
+                        acceptLabel: 'Abrir',
+                        onAccept:    function() { openTienda(g.id); },
+                    });
+                });
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollGifts, 6000);
+    window.melonTimbre.on('regalo', pollGifts, 60000);
+
+    /* Amigos (assets/profile/amigos.php, decidido así): además de la
+       campana, el haro avisa de cada solicitud de amistad pendiente
+       (Rechazar / Aceptar) y de cuando te aceptan una (una vez; se cierra
+       al tocarla). Al entrar y cuando el timbre ('amigos') dice que ha
+       cambiado algo; si no responde, cada minuto. Si la solicitud ya no
+       está (aceptada desde la campana o el móvil, cancelada), su tarjeta
+       se quita. */
+    var AMIGOS_TIT = '<img src="assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Amigos';
+    var amigosTarjetas = {};   /* user_key → id de su tarjeta de solicitud */
+    function amigosPost(action, user) {
+        return fetch('assets/profile/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: user })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d && !d.ok && d.error) window.notifSystem.show({ id: 'amigos-err-' + Date.now(), type: 'info', title: AMIGOS_TIT, message: d.error });
+            /* La página de Amigos del Perfil, si está abierta, al día. */
+            if (typeof window.profileAmigosRecargar === 'function') window.profileAmigosRecargar();
+            return d;
+        }).catch(function() {});
+    }
+    function pollAmigos() {
+        if (!window.notifSystem) return;
+        fetch('assets/profile/api.php?action=friend-avisos', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ok) return;
+                var siguen = {};
+                (d.solicitudes || []).forEach(function(x) {
+                    var id = 'amigo-sol-' + x.key + '-' + x.ts;
+                    siguen[x.key] = id;
+                    amigosTarjetas[x.key] = id;
+                    window.notifSystem.show({
+                        id:          id,
+                        type:        'action',
+                        title:       AMIGOS_TIT,
+                        message:     x.nombre + ' quiere ser tu amigo',
+                        senderImage: x.foto || '',
+                        senderKey:   x.key,
+                        sentAt:      x.ts,
+                        rejectLabel: 'Rechazar',
+                        acceptLabel: 'Aceptar',
+                        onReject:    function() { amigosPost('friend-reject', x.key); },
+                        onAccept:    function() { amigosPost('friend-accept', x.key); },
+                    });
+                });
+                Object.keys(amigosTarjetas).forEach(function(k) {
+                    if (siguen[k] === amigosTarjetas[k]) return;
+                    if (window.notifSystem.isShown(amigosTarjetas[k])) window.notifSystem.dismiss(amigosTarjetas[k]);
+                    delete amigosTarjetas[k];
+                });
+                (d.aceptadas || []).forEach(function(x) {
+                    window.notifSystem.show({
+                        id:          'amigo-ok-' + x.id,
+                        type:        'info',
+                        title:       AMIGOS_TIT,
+                        message:     x.nombre + ' ha aceptado tu solicitud de amistad',
+                        sentAt:      x.ts,
+                    });
+                });
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollAmigos, 5000);
+    window.melonTimbre.on('amigos', pollAmigos, 60000);
 
     document.getElementById('tienda-close').addEventListener('click', function() {
         taskbarManager.unregister('tienda-window');
@@ -2737,7 +3254,7 @@ window.notifSystem = (function() {
     [
         'calendar-window','archive-window','temas-window','dnd-window',
         'galeria-window','companion-window','dibujo-window',
-        'tienda-window','kofi-window','mascota-window',
+        'tienda-window','kofi-window','mascota-window','juegos-window',
         'playlist-editor','create-playlist-dialog','profile-window',
         'add-track-dialog','import-playlist-dialog',
         'collab-dialog','spotify-import-dialog','tidal-import-dialog','confirm-dialog',
@@ -2766,7 +3283,7 @@ window.notifSystem = (function() {
         'galeria-window', 'create-playlist-dialog', 'profile-window',
         'companion-window', 'dibujo-window',
         'tienda-window', 'kofi-window', 'mascota-window',
-        'wrapped-window'
+        'wrapped-window', 'juegos-window'
     ];
     ids.forEach(function(id) {
         var win = document.getElementById(id);
@@ -4308,6 +4825,76 @@ window.notifSystem = (function() {
     if (mascota) longPressMenu.attach(mascota);
 })();
 <?php endif; ?>
+</script>
+
+<script>
+/* ── Enlaces compartidos (assets/links.php) ──────────────────────────
+   melonOpenLink('<tipo>:<valor>') abre lo que dice el enlace. Llega:
+   - al entrar desde enlace.php → index.php?abrir=… (enlace pendiente en
+     la sesión, abajo);
+   - de la app de escritorio (melonhub://… o un enlace pulsado dentro),
+     con melonDesktop.onOpenLink, sin recargar la página. */
+(function () {
+    /* La música de un enlace gana a "la última canción" que el
+       reproductor pone al arrancar (ver onReady en reproductor.php). */
+    function whenPlayer(fn) {
+        window.__melonLinkPlayed = true;
+        if (window.__melonPlayerReady) fn();
+        else window.__melonLinkPlay = fn;
+    }
+    function showPlayer() {
+        if (window.taskbarManager && taskbarManager.isRegistered('music-player')) {
+            try { taskbarManager.restore('music-player'); } catch (_) {}
+        }
+    }
+    window.melonOpenLink = function (link) {
+        var m = /^([a-z]+):(.+)$/.exec(String(link || ''));
+        if (!m) return;
+        var tipo = m[1], valor = m[2];
+        if (tipo === 'perfil') {
+            if (valor === currentUserKey) {
+                var ic = document.getElementById('profile-icon');
+                if (ic) ic.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            } else if (typeof window.openProfileAtUser === 'function') {
+                window.openProfileAtUser(valor);
+            }
+        } else if (tipo === 'cancion') {
+            /* Título y artista como se ven en Melon Hub (song-info), no
+               los de YouTube: con esos find-album sacaba otro álbum. */
+            fetch('assets/music/api.php?action=song-info&id=' + encodeURIComponent(valor))
+                .then(function (r) { return r.json(); })
+                .catch(function () { return {}; })
+                .then(function (d) {
+                    d = d || {};
+                    whenPlayer(function () {
+                        melonPlaySong({ videoId: d.videoId || valor, title: d.title || '', artist: d.artist || '', duration: d.duration || 0 });
+                        showPlayer();
+                    });
+                });
+        } else if (tipo === 'album') {
+            if (typeof openAlbumViewer === 'function') openAlbumViewer(valor);
+        } else if (tipo === 'playlist') {
+            if (typeof openSharedPlaylistViewer === 'function') openSharedPlaylistViewer(valor);
+        } else if (tipo === 'escuchar') {
+            if (typeof window.melonJoinListen === 'function') window.melonJoinListen(valor);
+        } else if (tipo === 'torneo' || tipo === 'reto') {
+            /* Torneo de ajedrez (anuncio en Discord, "Copiar enlace") o reto
+               por enlace: Juegos lo abre (ajedrez.js, abrirDesde). */
+            if (typeof window.melonOpenJuegos === 'function') window.melonOpenJuegos(tipo + ':' + valor);
+        }
+    };
+
+    if (window.melonDesktop && typeof window.melonDesktop.onOpenLink === 'function') {
+        window.melonDesktop.onOpenLink(window.melonOpenLink);
+    }
+
+    var pending = <?= json_encode($melonPendingLink) ?>;
+    if (pending) {
+        var run = function () { setTimeout(function () { window.melonOpenLink(pending); }, 300); };
+        if (document.readyState === 'complete') run();
+        else window.addEventListener('load', run);
+    }
+})();
 </script>
 
 <?php

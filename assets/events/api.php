@@ -32,6 +32,8 @@
 require_once dirname(__DIR__) . '/auth.php';
 require_once __DIR__ . '/../../db.php';
 require_once __DIR__ . '/../social-helpers.php';
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema: tablas una vez por versión */
+require_once dirname(__DIR__) . '/php/timbre.php';    /* rt_usuario: avisos al escritorio */
 
 $u       = requireAuth();
 $userKey = $u['key'];
@@ -68,58 +70,60 @@ function ev_userKey(PDO $pdo, int $uid): ?string {
      event_invites      — invitaciones pendientes/aceptadas/rechazadas
 */
 try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS events (
-            id                  INT AUTO_INCREMENT PRIMARY KEY,
-            creator_id          INT NOT NULL,
-            title               VARCHAR(120) NOT NULL,
-            description         TEXT,
-            event_date          DATETIME NOT NULL,
-            duration_min        INT NOT NULL DEFAULT 60,
-            min_participants    INT NOT NULL DEFAULT 1,
-            max_participants    INT NOT NULL DEFAULT 0,
-            visibility          ENUM('public','private') NOT NULL DEFAULT 'public',
-            image_url           VARCHAR(500) NULL,
-            discord_message_id  VARCHAR(32) NULL,
-            created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_event_date (event_date),
-            INDEX idx_creator (creator_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* Idempotente: añade columnas en BDs viejas que ya tenían la tabla. */
-    try {
-        $has = $pdo->query("SHOW COLUMNS FROM events LIKE 'discord_message_id'")->fetch();
-        if (!$has) $pdo->exec("ALTER TABLE events ADD COLUMN discord_message_id VARCHAR(32) NULL");
-    } catch (Throwable $_) {}
-    try {
-        $has = $pdo->query("SHOW COLUMNS FROM events LIKE 'image_url'")->fetch();
-        if (!$has) $pdo->exec("ALTER TABLE events ADD COLUMN image_url VARCHAR(500) NULL AFTER visibility");
-    } catch (Throwable $_) {}
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS event_participants (
-            event_id        INT NOT NULL,
-            user_id         INT NOT NULL,
-            status          ENUM('joined','waitlist') NOT NULL DEFAULT 'joined',
-            recordatorio_id INT NULL,
-            joined_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (event_id, user_id),
-            INDEX idx_user (user_id),
-            INDEX idx_event_status (event_id, status, joined_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS event_invites (
-            id           INT AUTO_INCREMENT PRIMARY KEY,
-            event_id     INT NOT NULL,
-            inviter_id   INT NOT NULL,
-            invitee_id   INT NOT NULL,
-            status       ENUM('pending','accepted','declined') NOT NULL DEFAULT 'pending',
-            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            notified_at  TIMESTAMP NULL,
-            UNIQUE KEY uq_event_invitee (event_id, invitee_id),
-            INDEX idx_invitee_status (invitee_id, status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
+    melon_esquema($pdo, 'eventos', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS events (
+                id                  INT AUTO_INCREMENT PRIMARY KEY,
+                creator_id          INT NOT NULL,
+                title               VARCHAR(120) NOT NULL,
+                description         TEXT,
+                event_date          DATETIME NOT NULL,
+                duration_min        INT NOT NULL DEFAULT 60,
+                min_participants    INT NOT NULL DEFAULT 1,
+                max_participants    INT NOT NULL DEFAULT 0,
+                visibility          ENUM('public','private') NOT NULL DEFAULT 'public',
+                image_url           VARCHAR(500) NULL,
+                discord_message_id  VARCHAR(32) NULL,
+                created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_event_date (event_date),
+                INDEX idx_creator (creator_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* Idempotente: añade columnas en BDs viejas que ya tenían la tabla. */
+        try {
+            $has = $pdo->query("SHOW COLUMNS FROM events LIKE 'discord_message_id'")->fetch();
+            if (!$has) $pdo->exec("ALTER TABLE events ADD COLUMN discord_message_id VARCHAR(32) NULL");
+        } catch (Throwable $_) {}
+        try {
+            $has = $pdo->query("SHOW COLUMNS FROM events LIKE 'image_url'")->fetch();
+            if (!$has) $pdo->exec("ALTER TABLE events ADD COLUMN image_url VARCHAR(500) NULL AFTER visibility");
+        } catch (Throwable $_) {}
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS event_participants (
+                event_id        INT NOT NULL,
+                user_id         INT NOT NULL,
+                status          ENUM('joined','waitlist') NOT NULL DEFAULT 'joined',
+                recordatorio_id INT NULL,
+                joined_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (event_id, user_id),
+                INDEX idx_user (user_id),
+                INDEX idx_event_status (event_id, status, joined_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS event_invites (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                event_id     INT NOT NULL,
+                inviter_id   INT NOT NULL,
+                invitee_id   INT NOT NULL,
+                status       ENUM('pending','accepted','declined') NOT NULL DEFAULT 'pending',
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notified_at  TIMESTAMP NULL,
+                UNIQUE KEY uq_event_invitee (event_id, invitee_id),
+                INDEX idx_invitee_status (invitee_id, status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 } catch (Throwable $e) { /* silencio */ }
 
 /* ── Discord announcer ──────────────────────────────────────────────
@@ -235,7 +239,11 @@ function ev_discordPublish(PDO $pdo, array $event): ?string {
     $counts = ev_counts($pdo, (int)$event['id']);
     $embed  = ev_buildEmbed($event, $ci['label'], $counts['joined'], $counts['waitlist'], $ci['avatarUrl']);
 
-    $payload = ['embeds' => [$embed], 'allowed_mentions' => ['parse' => []]];
+    /* @everyone al publicarlo (solo aquí: los PATCH no tocan `content`,
+       así que al editar no vuelve a avisar a todos). El bot necesita el
+       permiso "Mencionar @everyone" en el canal; sin él, sale el texto
+       pero no avisa. */
+    $payload = ['content' => '@everyone', 'embeds' => [$embed], 'allowed_mentions' => ['parse' => ['everyone']]];
     $url     = 'https://discord.com/api/v10/channels/' . rawurlencode(EV_DISCORD_CHANNEL) . '/messages';
 
     $ch = curl_init($url);
@@ -566,6 +574,8 @@ case 'create-event': {
             if (!$iid || $iid === $uid) continue;
             if (!isset($mutuals[$iid])) continue;
             $insertInvite->execute([$eventId, $uid, $iid]);
+            /* Timbre 'cal': su calendario abierto pide las invitaciones al verlo. */
+            rt_usuario($iid, 'cal');
         }
     }
 
@@ -688,6 +698,7 @@ case 'invite-to-event': {
                            VALUES (?, ?, ?, 'pending')
                            ON DUPLICATE KEY UPDATE status = 'pending', inviter_id = VALUES(inviter_id), notified_at = NULL");
     $stmt->execute([$eid, $uid, $invUid]);
+    rt_usuario((int)$invUid, 'cal');
 
     jsonResponse(['ok' => true]);
 }

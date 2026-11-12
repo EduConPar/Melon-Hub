@@ -3,6 +3,7 @@
   "label": "MelonOS 98",
   "description": "Estilo retro inspirado en Windows 98 — bordes con bisel 3D, fuente pixelada y paleta gris clásica. La interfaz por defecto de la app.",
   "author": "Melon Hub",
+  "fuente": "fuente-win98",
   "isDefault": true,
   "tokens": {
     "winBg":         { "label": "Fondo de ventana",       "default": "#c0c0c0" },

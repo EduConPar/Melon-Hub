@@ -163,6 +163,13 @@ try {
     echo json_encode(['error' => 'No se pudo guardar el usuario en BD']); exit;
 }
 
+/* Llegó por un enlace de invitación (cookie de enlace.php?invitar=…):
+   se apunta para los 500 puntos de los dos (assets/profile/racha.php). */
+try {
+    require_once __DIR__ . '/assets/profile/racha.php';
+    invita_registrar($pdo, (int)$pdo->lastInsertId());
+} catch (Throwable $_) { /* sin invitación: la cuenta ya está creada */ }
+
 /* Persiste el blob de la foto en usuarios.photo_data + photo_ext. Es
    la fuente de verdad: si el filesystem se borra en un deploy,
    getUserImage() la restaura desde aquí. Sin esto la foto del registro

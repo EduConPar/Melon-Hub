@@ -5,6 +5,7 @@
    Acciones (vía ?action= o $_POST['action']):
 
    GET   ?action=get-playlists
+   GET   ?action=shared-playlist&id=N   (playlist de un enlace, solo lectura)
    GET   ?action=get-users
    GET   ?action=yt-title&id=VIDEOID
    GET   ?action=yt-duration&id=VIDEOID
@@ -24,6 +25,7 @@
    POST  ?action=yt-search-batch      { tracks[] }
    POST  ?action=import-playlist      { url }
    POST  ?action=save-now-playing     { videoId, title, artist, plName, position, duration, isPlaying }
+   (La TV: assets/music/tv-api.php)
    GET   ?action=search-albums&q=...&artist=...  (autocompletado de álbumes)
    POST  ?action=report-album         { videoId, albumName|albumKey, artist? }  (corrige el álbum)
    GET   ?action=get-now-playing
@@ -39,6 +41,11 @@
    ────────────────────────────────────────────────────────── */
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_usuario: avisos al escritorio */
+/* Tablas y columnas: una vez por versión de este archivo (melon_esquema),
+   no en cada petición (crear tablas en cada llamada costaba más que la
+   propia llamada; ver .claude/notas/rendimiento.md). */
+require_once dirname(__DIR__) . '/php/esquema.php';
 
 /* Para el polling de tv.php — fuerza socket nuevo en cada petición.
    Las TVs viejas (Tizen <2018, webOS 3) reusan sockets keep-alive
@@ -61,7 +68,7 @@ if (($_GET['action'] ?? '') === 'get-now-playing' && isset($_GET['frame'])) {
         header('Content-Type: text/html; charset=utf-8');
         echo '<!DOCTYPE html><html><body><pre id="d">'
            . htmlspecialchars('{"ok":false,"error":"auth"}', ENT_QUOTES, 'UTF-8')
-           . '</pre></body></html>';
+           . '</pre><script>try{parent.location.reload()}catch(e){}</script></body></html>';
         exit;
     }
 }
@@ -93,6 +100,7 @@ function _ensureRecentTable(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
+    melon_esquema($pdo, 'musica-recientes', __FILE__, function (PDO $pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS music_recent (
         user_id   INT NOT NULL,
         item_type VARCHAR(12)  NOT NULL,
@@ -104,6 +112,7 @@ function _ensureRecentTable(PDO $pdo): void {
         PRIMARY KEY (user_id, item_type, item_key),
         INDEX idx_user_time (user_id, played_at)
     ) DEFAULT CHARSET=utf8mb4");
+    }, true);
 }
 
 /* Añade la columna image_url a `playlists` si no existe (idempotente). */
@@ -111,10 +120,12 @@ function _ensurePlaylistImageCol(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        $has = $pdo->query("SHOW COLUMNS FROM playlists LIKE 'image_url'")->fetch();
-        if (!$has) $pdo->exec("ALTER TABLE playlists ADD COLUMN image_url VARCHAR(500) NULL");
-    } catch (Throwable $e) { /* sin permiso o ya existe */ }
+    melon_esquema($pdo, 'musica-portada-playlist', __FILE__, function (PDO $pdo) {
+        try {
+            $has = $pdo->query("SHOW COLUMNS FROM playlists LIKE 'image_url'")->fetch();
+            if (!$has) $pdo->exec("ALTER TABLE playlists ADD COLUMN image_url VARCHAR(500) NULL");
+        } catch (Throwable $e) { /* sin permiso o ya existe */ }
+    });
 }
 
 /* Devuelve un mapa videoId(original) => ['newVideoId','title','artist'] con
@@ -305,6 +316,7 @@ function pushCollabNotif(PDO $pdo, int $toUid, int $fromUid, int $playlistId, st
         $pdo->prepare("INSERT INTO playlist_invites (to_user_id, from_user_id, playlist_id, type)
                        VALUES (?, ?, ?, ?)")
             ->execute([$toUid, $fromUid, $playlistId, $type]);
+        rt_usuario($toUid, 'musica');
     } catch (PDOException $e) { /* FK perdida → playlist borrada; sin notif */ }
 }
 
@@ -422,6 +434,47 @@ case 'save-playlist-item': {
     jsonResponse(['ok' => true, 'id' => $playlistId]);
 }
 
+/* Playlist abierta desde un enlace (enlace.php?playlist=N): la puede ver
+   cualquiera con sesión que tenga el enlace, como las de Spotify sin
+   publicar. Solo lectura; "Guardar en mis playlists" la copia con
+   save-playlist-item (id nuevo). `mine` = es tuya o colaboras en ella. */
+case 'shared-playlist': {
+    $uid = uidByKey($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    if (!isNumericId($_GET['id'] ?? null)) jsonError('ID inválido');
+    $playlistId = (int)$_GET['id'];
+    _ensurePlaylistImageCol($pdo);
+    $stmt = $pdo->prepare("SELECT p.id, p.name, COALESCE(p.image_url,'') AS image, p.owner_id,
+                                  ou.user_key AS ownerKey, ou.label AS ownerLabel
+                           FROM playlists p JOIN usuarios ou ON p.owner_id = ou.id
+                           WHERE p.id = ?");
+    $stmt->execute([$playlistId]);
+    $pl = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$pl) jsonError('Esta playlist ya no existe', 404);
+    $mine = (int)$pl['owner_id'] === $uid;
+    if (!$mine) {
+        $st = $pdo->prepare("SELECT 1 FROM playlist_collaborators WHERE playlist_id = ? AND user_id = ?");
+        $st->execute([$playlistId, $uid]);
+        $mine = (bool)$st->fetch();
+    }
+    $stmt = $pdo->prepare("SELECT video_id AS videoId, title, artist, duration
+                           FROM playlist_tracks WHERE playlist_id = ? ORDER BY position ASC");
+    $stmt->execute([$playlistId]);
+    $tracks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($tracks as &$t) $t['duration'] = (int)$t['duration'];
+    unset($t);
+    jsonResponse([
+        'ok'         => true,
+        'id'         => $playlistId,
+        'name'       => $pl['name'],
+        'image'      => $pl['image'],
+        'ownerKey'   => $pl['ownerKey'],
+        'ownerLabel' => $pl['ownerLabel'] ?: $pl['ownerKey'],
+        'mine'       => $mine,
+        'tracks'     => _applySongOverrides($pdo, $tracks),
+    ]);
+}
+
 case 'delete-playlist': {
     $uid = uidByKey($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
@@ -504,6 +557,10 @@ case 'invite-collaborator': {
     $pdo->prepare("INSERT INTO playlist_invites (to_user_id, from_user_id, playlist_id, type)
                    VALUES (?, ?, ?, 'invite')")
         ->execute([$toUid, $uid, $playlistId]);
+    $newInviteId = (int)$pdo->lastInsertId();
+    /* Timbre 'musica' (assets/php/timbre.php): su escritorio pide
+       playlist-invites al verlo. */
+    rt_usuario((int)$toUid, 'musica');
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     global $loginUsers;
@@ -512,6 +569,8 @@ case 'invite-collaborator': {
         'playlist',
         '📋 ' . $fromLabel . ' te invita',
         'Colaborar en "' . $plName . '"',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel, 'inviteId' => $newInviteId],
     ));
     jsonResponse(['ok' => true]);
 }
@@ -569,6 +628,35 @@ case 'respond-invite': {
     jsonResponse(['ok' => true]);
 }
 
+/* Invitaciones y avisos de playlists del usuario: lo mismo que empujaba
+   notifications-stream.php, que ocupaba un proceso PHP y una conexión
+   todo el rato por escritorio. Ahora el escritorio lo pide cuando cambia
+   'musica' en su archivo del timbre (assets/php/timbre.php). */
+case 'playlist-invites': {
+    $uid = uidByKey($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $st = $pdo->prepare(
+        "SELECT pi.id, pi.type, pi.playlist_id AS playlistId,
+                COALESCE(p.name, '') AS playlistName,
+                fu.user_key AS fromUser,
+                fu.label    AS fromLabel,
+                UNIX_TIMESTAMP(pi.created_at) AS sentAt
+         FROM playlist_invites pi
+         JOIN usuarios fu ON pi.from_user_id = fu.id
+         LEFT JOIN playlists p ON pi.playlist_id = p.id
+         WHERE pi.to_user_id = ?
+         ORDER BY pi.created_at ASC");
+    $st->execute([$uid]);
+    $invites = $st->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($invites as &$row) {
+        $row['id']         = (int)$row['id'];
+        $row['playlistId'] = (int)$row['playlistId'];
+        $row['sentAt']     = (int)$row['sentAt'];
+    }
+    unset($row);
+    jsonResponse(['ok' => true, 'invites' => $invites]);
+}
+
 /* ─── Usuarios ───────────────────────────────────────────── */
 
 case 'get-users': {
@@ -621,6 +709,15 @@ case 'add-track': {
 }
 
 /* ─── YouTube helpers ────────────────────────────────────── */
+
+/* Datos de una canción para abrirla desde un enlace (enlace.php?cancion=…),
+   como se ve en Melon Hub: ver assets/music/song-info.php. */
+case 'song-info': {
+    $videoId = preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['id'] ?? '');
+    if (strlen($videoId) !== 11) jsonError('ID inválido');
+    require_once __DIR__ . '/song-info.php';
+    jsonResponse(['ok' => true] + melonSongInfo($pdo, $videoId));
+}
 
 case 'yt-title': {
     $videoId = preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['id'] ?? '');
@@ -1566,56 +1663,29 @@ case 'import-playlist': {
     jsonResponse(['tracks' => $tracks]);
 }
 
-/* ─── TV LINK (código de emparejamiento) ──────────────────
-   El móvil llama get-tv-code → recibe un código de 6 dígitos.
-   La TV (sin sesión) lo introduce en tv.php → tv.php valida con
-   la tabla `tv_link_codes` y crea sesión persistente. */
-case 'get-tv-code': {
-    $uid = uidByKey($pdo, $userKey);
-    if (!$uid) jsonError('Usuario no encontrado', 500);
-    /* Auto-crea tabla idempotente. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS tv_link_codes (
-            code VARCHAR(6) PRIMARY KEY,
-            user_key VARCHAR(50) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_created (created_at)
-        ) DEFAULT CHARSET=utf8mb4
-    ");
-    /* Limpia códigos caducados (>5 min). */
-    $pdo->exec("DELETE FROM tv_link_codes WHERE created_at < NOW() - INTERVAL 5 MINUTE");
-    /* Genera código único — random_int es seguro criptográficamente. */
-    $code = '';
-    for ($i = 0; $i < 10; $i++) {
-        $code = sprintf('%06d', random_int(0, 999999));
-        $stmt = $pdo->prepare("SELECT 1 FROM tv_link_codes WHERE code = ?");
-        $stmt->execute([$code]);
-        if (!$stmt->fetchColumn()) break;
-    }
-    $pdo->prepare("INSERT INTO tv_link_codes (code, user_key) VALUES (?, ?)")
-        ->execute([$code, $userKey]);
-    jsonResponse(['code' => $code, 'expiresIn' => 300]);
-}
-
-/* ─── NOW PLAYING (TV companion view) ──────────────────────
-   El shell del móvil publica su estado de reproducción aquí y
-   tv.php hace polling cada segundo para mostrarlo en la TV.
-   Tabla auto-creada al primer save. */
+/* ─── NOW PLAYING ──────────────────────────────────────────
+   El móvil y el PC publican aquí lo que suena: lo leen el perfil y la
+   presencia ("escuchando ahora"). La TV ya no lo lee (tv.php, con el
+   móvil de mando: assets/music/tv-api.php). Tabla auto-creada al
+   primer save. */
 case 'save-now-playing': {
     $uid = uidByKey($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     $b = jsonBody();
     if (!$b) jsonError('Datos inválidos');
 
-    /* Crea la tabla si no existe — idempotente. */
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS now_playing (
-            user_id    INT PRIMARY KEY,
-            track_json TEXT NOT NULL,
-            is_playing TINYINT(1) DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) DEFAULT CHARSET=utf8mb4
-    ");
+    /* Crea la tabla si no existe (una vez por versión del archivo: esto
+       se llama cada vez que cambia la canción). */
+    melon_esquema($pdo, 'musica-sonando', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS now_playing (
+                user_id    INT PRIMARY KEY,
+                track_json TEXT NOT NULL,
+                is_playing TINYINT(1) DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 
     /* Sanitiza y guarda solo los campos que la TV necesita. */
     $track = [
@@ -1632,6 +1702,10 @@ case 'save-now-playing': {
                    VALUES (?, ?, ?)
                    ON DUPLICATE KEY UPDATE track_json=VALUES(track_json), is_playing=VALUES(is_playing)")
         ->execute([$uid, json_encode($track, JSON_UNESCAPED_UNICODE), $playing]);
+    /* Lo que suena sale en la presencia (assets/profile/presencia.php):
+       el archivo que leen los perfiles, al momento. */
+    require_once dirname(__DIR__) . '/profile/presencia.php';
+    pf_presenciaArchivo($pdo, true);
     jsonResponse(['ok' => true]);
 }
 
@@ -1707,14 +1781,13 @@ case 'get-now-playing': {
         ]
         : ['ok' => true, 'track' => null, 'isPlaying' => false];
 
-    /* Modo iframe — para Smart TVs en las que ni XHR ni <script src>
-       funcionan tras el primer poll. El padre lee el JSON desde
-       iframe.contentDocument tras iframe.onload. Sin script dentro del
-       iframe (no corren en navegaciones dinámicas en algunos browsers). */
+    /* Modo iframe: solo lo pide la tv.php de antes (preguntaba cada
+       0,75 s). Se le dice que se recargue para coger la nueva, que no
+       pregunta a PHP. */
     if (isset($_GET['frame'])) {
-        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         header('Content-Type: text/html; charset=utf-8');
-        echo '<!DOCTYPE html><html><body><pre id="d">' . htmlspecialchars($json, ENT_QUOTES, 'UTF-8') . '</pre></body></html>';
+        echo '<!DOCTYPE html><html><body><pre id="d">{"ok":false}</pre>'
+           . '<script>try{parent.location.reload()}catch(e){}</script></body></html>';
         exit;
     }
 
@@ -2059,26 +2132,28 @@ case 'report-album': {
     $aArtist = $match['artist'] ?? '';
     $aImage  = $match['image']  ?? '';
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS song_album_overrides (
-        video_id     VARCHAR(11) PRIMARY KEY,
-        source       VARCHAR(10)  NOT NULL,
-        album_id     VARCHAR(40)  NOT NULL,
-        album_key    VARCHAR(60)  NOT NULL,
-        album_name   VARCHAR(255) NOT NULL DEFAULT '',
-        album_artist VARCHAR(255) NOT NULL DEFAULT '',
-        album_image  VARCHAR(500) NOT NULL DEFAULT '',
-        album_url    VARCHAR(500) NOT NULL DEFAULT '',
-        song_title   VARCHAR(255) NOT NULL DEFAULT '',
-        song_artist  VARCHAR(255) NOT NULL DEFAULT '',
-        new_video_id VARCHAR(11)  NOT NULL DEFAULT '',
-        created_by   INT NULL,
-        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) DEFAULT CHARSET=utf8mb4");
-    /* Columnas para tablas ya existentes (idempotente). */
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_title'")->fetch())   $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_title VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_artist'")->fetch())  $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_artist VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
-    try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'new_video_id'")->fetch()) $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN new_video_id VARCHAR(11) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+    melon_esquema($pdo, 'musica-correcciones', __FILE__, function (PDO $pdo) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS song_album_overrides (
+            video_id     VARCHAR(11) PRIMARY KEY,
+            source       VARCHAR(10)  NOT NULL,
+            album_id     VARCHAR(40)  NOT NULL,
+            album_key    VARCHAR(60)  NOT NULL,
+            album_name   VARCHAR(255) NOT NULL DEFAULT '',
+            album_artist VARCHAR(255) NOT NULL DEFAULT '',
+            album_image  VARCHAR(500) NOT NULL DEFAULT '',
+            album_url    VARCHAR(500) NOT NULL DEFAULT '',
+            song_title   VARCHAR(255) NOT NULL DEFAULT '',
+            song_artist  VARCHAR(255) NOT NULL DEFAULT '',
+            new_video_id VARCHAR(11)  NOT NULL DEFAULT '',
+            created_by   INT NULL,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) DEFAULT CHARSET=utf8mb4");
+        /* Columnas para tablas ya existentes (idempotente). */
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_title'")->fetch())   $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_title VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'song_artist'")->fetch())  $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN song_artist VARCHAR(255) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+        try { if (!$pdo->query("SHOW COLUMNS FROM song_album_overrides LIKE 'new_video_id'")->fetch()) $pdo->exec("ALTER TABLE song_album_overrides ADD COLUMN new_video_id VARCHAR(11) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+    }, true);
     $pdo->prepare("INSERT INTO song_album_overrides
         (video_id, source, album_id, album_key, album_name, album_artist, album_image, album_url, song_title, song_artist, new_video_id, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

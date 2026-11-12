@@ -9,6 +9,7 @@
    Contiene:
      - Banner para abrir el Melon Wrapped (modo dev → todas las plays).
      - Marca de agua "Melon Hub Dev Build" abajo, con poca opacidad.
+     - Notificación de prueba del haro (botón "Probar" de Temas → Haros).
 
    ¿Quieres añadir MÁS cosas solo-dev? Añádelas aquí (o en otro archivo
    de assets/dev/ incluido igual). Mientras MELON_DEV_BUILD siga en FALSE
@@ -95,5 +96,20 @@ if (!defined('MELON_DEV_BUILD') || !MELON_DEV_BUILD) return;
             }
         });
     }
+    /* Botón "Probar" de Temas → Haros: Temas va en un iframe y pide aquí
+       una notificación informativa con el haro activo. Id distinto en
+       cada pulsación: notifSystem no repite un id ya enseñado. */
+    window.addEventListener('message', function(e){
+        if (e.origin !== location.origin) return;
+        if (!e.data || e.data.type !== 'dev-haro-test') return;
+        if (!window.notifSystem) return;
+        window.notifSystem.show({
+            id:      'dev-haro-test-' + Date.now(),
+            type:    'info',
+            title:   'Notificación de prueba',
+            message: 'Esto es una notificación de prueba del haro.',
+            sentAt:  Math.floor(Date.now() / 1000)
+        });
+    });
 })();
 </script>

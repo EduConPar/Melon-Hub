@@ -242,7 +242,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
     </div>
 </div>
 
-<!-- Diálogo unificado: PUBLICAR — siempre va a perfil + Discord. -->
+<!-- Diálogo PUBLICAR — solo Discord (el perfil ya no tiene posts). -->
 <div class="window gal-dialog" id="gal-publish-dialog" style="display:none;">
     <div class="title-bar">
         <div class="title-bar-text">📤 Publicar</div>
@@ -256,7 +256,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             <label for="gal-pub-text">Texto adjunto <small style="color:var(--text-muted);">(opcional, máx 1000)</small></label>
             <textarea id="gal-pub-text" maxlength="1000" rows="3" placeholder="Escribe algo sobre la imagen…" style="resize:vertical;min-height:60px;"></textarea>
         </div>
-        <p style="font-size:10px;color:var(--text-faint);margin:8px 0 0;">Se publicará en tu perfil y en Discord (Melon Hub) a la vez.</p>
+        <p style="font-size:10px;color:var(--text-faint);margin:8px 0 0;">Se publicará en Discord (Melon Hub).</p>
         <p id="gal-pub-status" style="font-size:11px;margin:6px 0 0;min-height:14px;"></p>
         <div class="field-row" style="justify-content:flex-end;gap:4px;margin-top:8px;">
             <button class="button" id="gal-pub-cancel">Cancelar</button>
@@ -1619,9 +1619,11 @@ async function submitEdit() {
     }
 }
 
-/* ─── Publicar en perfil ────────────────────────────────────
+/* ─── Publicar (en Discord) ─────────────────────────────────
    El fichero NO se sube a nuestro servidor: se hace público en Drive
-   (permiso "anyone reader") y se guarda solo la URL pública en posts. */
+   (permiso "anyone reader") y se manda su URL pública a Discord. Antes
+   también se publicaba como post del perfil; el perfil nuevo ya no tiene
+   posts (assets/profile/perfil2.php). */
 var _publishingFile = null;
 function openPublishDialog(f) {
     if (isWip(f)) return;                                // por seguridad
@@ -1668,78 +1670,27 @@ async function submitPublish() {
     try {
         await _ensureDrivePublic(f.id);
         var publicUrl = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.id) + '&sz=w1920';
-        /* Publicamos en paralelo en perfil + Discord. Si una falla, la
-           otra puede haber tirado igualmente — mostramos el detalle. */
         st.textContent = 'Publicando…';
-        var [perfilResult, discordResult] = await Promise.allSettled([
-            fetch('../assets/profile/api.php?action=add-post', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text, image_url: publicUrl })
-            }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.error) throw new Error(d.error);
-                return d;
-            }),
-            fetch('../assets/profile/api.php?action=discord-publish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image_url: publicUrl, caption: text })
-            }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.error) {
-                    /* El backend marca como needsDiscordLink cuando el
-                       usuario no tiene Discord vinculado. Adjuntamos
-                       el code al error para que el handler de fallos
-                       de abajo pueda ofrecer abrir el modal de OAuth. */
-                    var err = new Error(d.error);
-                    if (d.code) err.code = d.code;
-                    throw err;
-                }
-                return d;
-            }),
-        ]);
-
-        var perfilOk  = perfilResult.status  === 'fulfilled';
-        var discordOk = discordResult.status === 'fulfilled';
-
-        if (perfilOk) {
-            /* Avisar al desktop (donde vive perfil.php) para que recargue
-               los posts sin esperar a un refresh manual. */
-            try { window.parent.postMessage({ type: 'profile-post-added' }, '*'); } catch (e) {}
-        }
-
-        if (perfilOk && discordOk) {
-            st.style.color = ''; st.textContent = '✔ Publicado en perfil y Discord.';
-            setTimeout(closePublishDialog, 1100);
-        } else if (perfilOk && !discordOk) {
-            var discordErr = discordResult.reason || {};
-            /* Discord no configurado por el admin (falta env var):
-               tratamos como éxito completo — el post SÍ está en perfil. */
-            if (discordErr.code === 'discordNotConfigured') {
-                st.style.color = ''; st.textContent = '✔ Publicado en perfil.';
-                setTimeout(closePublishDialog, 1100);
-            } else {
-                st.style.color = 'var(--warning-text)';
-                st.textContent = '✔ Publicado en perfil. ⚠ Discord falló: ' + (discordErr.message || 'error');
-                /* Si la única razón es que falta el vínculo de Discord,
-                   ofrecemos abrir el modal directamente. Más útil que
-                   dejar al usuario adivinar dónde se vincula. */
-                if (discordErr.code === 'needsDiscordLink') {
-                    setTimeout(function() {
-                        if (confirm('Para publicar a Discord necesitas vincular tu cuenta. ¿Vincular ahora?')) {
-                            openDiscordSettings();
-                        }
-                    }, 200);
-                }
+        var r = await fetch('../assets/profile/api.php?action=discord-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: publicUrl, caption: text })
+        });
+        var d = await r.json();
+        if (d.error) {
+            /* Sin Discord vinculado, ofrecemos vincularlo directamente:
+               más útil que dejar al usuario adivinar dónde se hace. */
+            if (d.code === 'needsDiscordLink') {
+                setTimeout(function() {
+                    if (confirm('Para publicar en Discord necesitas vincular tu cuenta. ¿Vincular ahora?')) {
+                        openDiscordSettings();
+                    }
+                }, 200);
             }
-        } else if (!perfilOk && discordOk) {
-            st.style.color = 'var(--warning-text)';
-            st.textContent = '✔ Publicado en Discord. ⚠ Perfil falló: ' + (perfilResult.reason && perfilResult.reason.message || 'error');
-        } else {
-            throw new Error(
-                'Perfil: ' + ((perfilResult.reason  && perfilResult.reason.message)  || 'error') +
-                ' / Discord: ' + ((discordResult.reason && discordResult.reason.message) || 'error')
-            );
+            throw new Error(d.code === 'discordNotConfigured' ? 'Discord no está configurado en la web.' : d.error);
         }
+        st.style.color = ''; st.textContent = '✔ Publicado en Discord.';
+        setTimeout(closePublishDialog, 1100);
     } catch (e) {
         st.textContent = 'Error: ' + e.message;
         st.style.color = 'var(--error-text)';
@@ -1899,6 +1850,35 @@ document.getElementById('gal-search').addEventListener('input', function() {
 });
 
 document.getElementById('gal-upload').addEventListener('click', openUploadDialog);
+
+/* Soltar una imagen del ordenador sobre la galería: abre "Subir imagen" con
+   ese archivo ya elegido (el mismo camino que "Examinar..."). Solo la
+   primera si se sueltan varias. */
+(function() {
+    var hasFiles = function(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1; };
+    document.addEventListener('dragover', function(e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        document.body.classList.add('gal-dropping');
+    });
+    document.addEventListener('dragleave', function(e) {
+        if (!e.relatedTarget) document.body.classList.remove('gal-dropping');
+    });
+    document.addEventListener('drop', function(e) {
+        document.body.classList.remove('gal-dropping');
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        var f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        openUploadDialog();
+        var input = document.getElementById('gal-file-input');
+        var dt = new DataTransfer();
+        dt.items.add(f);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change'));
+    });
+})();
 document.getElementById('gal-up-browse').addEventListener('click', function() {
     document.getElementById('gal-file-input').click();
 });
@@ -2493,6 +2473,8 @@ window.addEventListener('load', tryAutoConnectDrive);
   justify-content: flex-end;
   background: var(--win-bg);
 }
+/* Al arrastrar un archivo del ordenador encima: marco para soltarlo. */
+body.gal-dropping { outline: 3px dashed var(--accent, navy); outline-offset: -6px; }
 </style>
 
 <!-- ══════════ JS ══════════ -->

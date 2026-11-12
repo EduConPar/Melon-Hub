@@ -8,6 +8,7 @@
    GET   ?action=get-recordatorios&pareja_id=N
    GET   ?action=get-users
    GET   ?action=get-partner-invites
+   GET   ?action=widget-calendar       (widgets de la app: momentos + recordatorios sin pareja_id)
 
    POST  ?action=save-momento          { pareja_id, titulo, fecha, descripcion }
    POST  ?action=save-recordatorio     { pareja_id, titulo, fecha, descripcion, periodicidad }
@@ -35,20 +36,64 @@ function getCurrentUserId(PDO $pdo, string $userKey): ?int {
     return $cache[$userKey] = $id ? (int)$id : null;
 }
 
+/* Cumpleaños de los amigos (seguimiento mutuo) que lo tienen puesto en el
+   perfil, con la forma de un recordatorio anual. No se guardan en
+   `recordatorios`: se calculan en cada petición, así salen en cuanto os
+   seguís los dos, desaparecen si uno deja de seguir y siguen al día si
+   alguien cambia la fecha. `cumple: true` hace que los calendarios no
+   pongan la ✕ (borrarlo no serviría: volvería a salir). `amigo_id` lo usa
+   upcoming-reminders para no repetir avisos. El propio cumpleaños no sale:
+   es para acordarse del de los demás. */
+function cumplesDeAmigos(PDO $pdo, int $uid): array {
+    require_once dirname(__DIR__) . '/social-helpers.php';
+    $ids = mutualFollowerIds($pdo, $uid);
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    try {
+        $st = $pdo->prepare("SELECT u.id, u.user_key, u.label, u.username, p.birthday
+                               FROM usuarios u JOIN profile p ON p.user_id = u.id
+                              WHERE u.id IN ($ph) AND p.birthday IS NOT NULL");
+        $st->execute($ids);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return []; /* la columna la crea el API del perfil; aún no ha pasado */
+    }
+    $out = [];
+    foreach ($rows as $r) {
+        $fecha = (string)$r['birthday'];
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || $fecha < '1900-01-01') continue;
+        $nombre = $r['label'] ?: $r['username'];
+        $out[] = [
+            'id'           => 'cumple-' . $r['user_key'],
+            'titulo'       => '🎂 Cumpleaños de ' . $nombre,
+            'fecha'        => $fecha,
+            'descripcion'  => '',
+            'periodicidad' => 'anual',
+            'autor'        => '',
+            'cumple'       => true,
+            'amigo_id'     => (int)$r['id'],
+        ];
+    }
+    return $out;
+}
+
 /* Auto-migración: tabla que registra qué recordatorios YA se notificaron
    para cada threshold (7/2/1 días) y fecha de ocurrencia, evitando
    reenviar la misma notificación. */
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema: tablas una vez por versión */
 try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS reminder_notifs_sent (
-            recordatorio_id INT NOT NULL,
-            user_id         INT NOT NULL,
-            threshold       INT NOT NULL,
-            occurrence_date DATE NOT NULL,
-            sent_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (recordatorio_id, user_id, threshold, occurrence_date)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
+    melon_esquema($pdo, 'recordatorios-avisados', __FILE__, function (PDO $pdo) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS reminder_notifs_sent (
+                recordatorio_id INT NOT NULL,
+                user_id         INT NOT NULL,
+                threshold       INT NOT NULL,
+                occurrence_date DATE NOT NULL,
+                sent_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (recordatorio_id, user_id, threshold, occurrence_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    }, true);
 } catch (Throwable $e) { /* silencio */ }
 
 switch ($action) {
@@ -179,7 +224,8 @@ case 'get-recordatorios': {
                                ORDER BY r.fecha ASC");
         $stmt->execute([$userId]);
     }
-    jsonResponse($stmt->fetchAll(PDO::FETCH_ASSOC));
+    /* + cumpleaños de MIS amigos (no los de los amigos de la pareja). */
+    jsonResponse(array_merge($stmt->fetchAll(PDO::FETCH_ASSOC), cumplesDeAmigos($pdo, $userId)));
 }
 
 case 'save-recordatorio': {
@@ -292,6 +338,50 @@ case 'get-partner-invites': {
    Cada match registra un row en reminder_notifs_sent → solo se devuelve
    UNA vez. Si la tabla tiene PK compuesta y INSERT IGNORE, ejecuciones
    concurrentes no duplican notificaciones. Manda push best-effort. */
+/* Widgets de calendario de la app de Android (CalendarWidget): lo mismo que
+   carga el calendario del móvil (momentos y recordatorios de la pareja,
+   más los recordatorios personales, como los de los eventos, y los
+   cumpleaños de los amigos), sin tener que saber el pareja_id. Sin pareja,
+   como el calendario: los momentos y recordatorios personales y los
+   cumpleaños. Las repeticiones las expande el widget. */
+case 'widget-calendar': {
+    $userId = getCurrentUserId($pdo, $userKey);
+    if (!$userId) jsonResponse(['ok' => true, 'pareja' => false, 'momentos' => [], 'recordatorios' => []]);
+    $stPair = $pdo->prepare("SELECT id FROM parejas WHERE usuario1_id = ? OR usuario2_id = ? LIMIT 1");
+    $stPair->execute([$userId, $userId]);
+    $parejaId = (int)($stPair->fetchColumn() ?: 0);
+
+    if ($parejaId) {
+        $stM = $pdo->prepare("SELECT fecha, foto FROM momentos WHERE pareja_id = ? ORDER BY fecha ASC");
+        $stM->execute([$parejaId]);
+        $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
+                              FROM recordatorios r
+                              WHERE r.pareja_id = ?
+                                 OR (r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL))
+                              ORDER BY r.fecha ASC");
+        $stR->execute([$parejaId, $userId]);
+    } else {
+        $stM = $pdo->prepare("SELECT fecha, foto FROM momentos
+                              WHERE usuario_id = ? AND pareja_id IS NULL ORDER BY fecha ASC");
+        $stM->execute([$userId]);
+        $stR = $pdo->prepare("SELECT r.titulo, r.fecha, COALESCE(r.periodicidad, 'ninguna') AS periodicidad
+                              FROM recordatorios r
+                              WHERE r.usuario_id = ? AND (r.pareja_id = 0 OR r.pareja_id IS NULL)
+                              ORDER BY r.fecha ASC");
+        $stR->execute([$userId]);
+    }
+    $recs = $stR->fetchAll(PDO::FETCH_ASSOC);
+    foreach (cumplesDeAmigos($pdo, $userId) as $c) {
+        $recs[] = ['titulo' => $c['titulo'], 'fecha' => $c['fecha'], 'periodicidad' => 'anual'];
+    }
+    jsonResponse([
+        'ok'            => true,
+        'pareja'        => (bool)$parejaId,
+        'momentos'      => $stM->fetchAll(PDO::FETCH_ASSOC),
+        'recordatorios' => $recs,
+    ]);
+}
+
 case 'upcoming-reminders': {
     $userId = getCurrentUserId($pdo, $userKey);
     if (!$userId) jsonResponse(['ok' => true, 'reminders' => []]);
@@ -321,7 +411,7 @@ case 'upcoming-reminders': {
         ");
         $stR->execute([$userId]);
     }
-    $rows = $stR->fetchAll(PDO::FETCH_ASSOC);
+    $rows = array_merge($stR->fetchAll(PDO::FETCH_ASSOC), cumplesDeAmigos($pdo, (int)$userId));
 
     $today = new DateTimeImmutable('today');
     $matches = [];
@@ -386,17 +476,20 @@ case 'upcoming-reminders': {
 
         /* INSERT IGNORE: si ya enviamos esta notif (recordatorio + user
            + threshold + occurrence_date) la query no devuelve nada
-           nuevo. rowCount = 0 → ya estaba notificado. */
+           nuevo. rowCount = 0 → ya estaba notificado. Los cumpleaños no
+           tienen fila en `recordatorios`: van con el id del amigo en
+           negativo (los de recordatorios son AUTO_INCREMENT, positivos). */
+        $notifId = isset($r['amigo_id']) ? -(int)$r['amigo_id'] : (int)$r['id'];
         $stIns = $pdo->prepare("
             INSERT IGNORE INTO reminder_notifs_sent
                 (recordatorio_id, user_id, threshold, occurrence_date)
             VALUES (?, ?, ?, ?)
         ");
-        $stIns->execute([(int)$r['id'], (int)$userId, $diffDays, $next->format('Y-m-d')]);
+        $stIns->execute([$notifId, (int)$userId, $diffDays, $next->format('Y-m-d')]);
         if ($stIns->rowCount() === 0) continue;
 
         $matches[] = [
-            'id'          => (int)$r['id'],
+            'id'          => isset($r['amigo_id']) ? $r['id'] : (int)$r['id'],
             'titulo'      => $r['titulo'],
             'descripcion' => $r['descripcion'] ?? '',
             'fecha'       => $next->format('Y-m-d'),
@@ -442,6 +535,10 @@ case 'invite-partner': {
     try {
         $pdo->prepare("INSERT INTO partner_invites (to_user_id, from_user_id) VALUES (?, ?)")
             ->execute([$toId, $fromId]);
+        /* Timbre 'pareja' (assets/php/timbre.php): el móvil pide sus avisos
+           al verlo (antes, cada 15 s). */
+        require_once dirname(__DIR__) . '/php/timbre.php';
+        rt_usuario((int)$toId, 'pareja');
     } catch (PDOException $e) {
         if ($e->getCode() === '23000') jsonError('Ya tienes una invitación pendiente');
         throw $e;
@@ -452,6 +549,8 @@ case 'invite-partner': {
         'partner',
         $fromLabel . ' te ha invitado a compartir calendario',
         'Acepta para vincular vuestros calendarios',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel],
     ));
     jsonResponse(['ok' => true]);
 }
@@ -483,6 +582,9 @@ case 'respond-partner-invite': {
         /* B12: notifica al inviter que su invitación fue rechazada. */
         require_once dirname(__DIR__) . '/push/send-push.php';
         sendPushToUser($pdo, (int)$fromId, [
+            /* type/tag: la app de Android le pone el icono del calendario. */
+            'type'  => 'partner',
+            'tag'   => 'partner-resp',
             'title' => 'Invitación rechazada',
             'body'  => ucfirst($respLabel) . ' ha rechazado tu invitación al calendario.',
             /* URL portable construida con pushNotifBaseUrl() — usa la
@@ -507,6 +609,8 @@ case 'respond-partner-invite': {
     /* B12: notifica al inviter que la invitación fue ACEPTADA. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     sendPushToUser($pdo, (int)$fromId, [
+        'type'  => 'partner',
+        'tag'   => 'partner-resp',
         'title' => '💕 ¡Sois pareja!',
         'body'  => ucfirst($respLabel) . ' ha aceptado tu invitación. Abrid el calendario juntos.',
         /* Misma corrección que el reject — URL portable con

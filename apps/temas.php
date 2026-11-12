@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
+require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: botón "Probar" de los haros */
 
 $userKey = $_SESSION['user'] ?? null;
 if (!$userKey || !isset($loginUsers[$userKey])) {
@@ -70,6 +71,9 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
     <link rel="stylesheet" href="../assets/css/98.css">
     <link rel="stylesheet" href="../assets/css/tokens.css">
     <link rel="stylesheet" href="../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/css/marcos.css') ?>">
+    <script src="../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <!-- Icon pack swap — debe cargar antes del primer render. -->
     <script src="../assets/js/icon-pack.js"></script>
@@ -259,6 +263,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                  2px  2px 0 var(--bezel-light-2);
             margin:2px;
         }
+        /* Con foto, va dentro de .lib-author-av, que lleva el marco de
+           perfil del autor (data-marco-user, melon-marcos.js). */
+        .lib-author-av { display:block; width:24px; height:24px; margin:2px; flex-shrink:0; }
+        .lib-author-av > .lib-author-img { margin:0; }
         .lib-author-ph {
             width:24px; height:24px; flex-shrink:0; display:flex;
             align-items:center; justify-content:center; font-size:14px;
@@ -300,6 +308,18 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
             background:var(--titlebar-start, #000080);
             color:var(--titlebar-text, #fff);
             letter-spacing:1px;
+        }
+        /* Botón "Probar" (solo dev) a la derecha del título de Haros:
+           compacto para no hacer más alta la barra del título. */
+        .pers-section-title.has-action { display:flex; align-items:center; }
+        .pers-title-btn {
+            margin-left:auto;
+            min-width:0;
+            min-height:0;
+            padding:1px 8px;
+            font-size:11px;
+            letter-spacing:0;
+            font-weight:normal;
         }
         .pers-grid {
             display:grid;
@@ -345,6 +365,10 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
         }
         .pers-item-icon img { max-width:100%; max-height:100%; display:block; }
         .pers-item-name { line-height:1.2; word-break:break-word; }
+        /* Fuentes: "Aa" y el nombre con su fuente. */
+        .pers-fuente .pers-item-icon { font-size:30px; }
+        .pers-fuente .pers-item-icon { white-space:nowrap; }
+        .pers-fuente .pers-item-name { font-size:12px; }
         .pers-item-badge {
             position:absolute;
             top:3px; right:3px;
@@ -549,11 +573,16 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                 <div class="pers-grid" id="pers-themes-grid"></div>
             </section>
             <section class="pers-section">
+                <h3 class="pers-section-title"><img src="../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Fuentes</h3>
+                <div class="pers-grid" id="pers-fonts-grid"></div>
+            </section>
+            <section class="pers-section">
                 <h3 class="pers-section-title"><img src="../assets/img/appIcons/temasIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Iconos</h3>
                 <div class="pers-grid" id="pers-icons-grid"></div>
             </section>
             <section class="pers-section">
-                <h3 class="pers-section-title"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros</h3>
+                <?php $_devHaroTest = defined('MELON_DEV_BUILD') && MELON_DEV_BUILD; ?>
+                <h3 class="pers-section-title<?= $_devHaroTest ? ' has-action' : '' ?>"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros<?php if ($_devHaroTest): ?><button type="button" class="pers-title-btn" id="pers-haro-test" title="Saca una notificación de prueba con el haro activo (solo dev)">Probar</button><?php endif; ?></h3>
                 <div class="pers-grid" id="pers-haros-grid"></div>
             </section>
             <section class="pers-section">
@@ -1579,6 +1608,9 @@ function loadPersonalize() {
     /* Interfaces: ahora vienen del filesystem (assets/interfaces/) en
        lugar del inventario de la tienda. Selección persiste en cookie. */
     renderInterfacePacks();
+    /* Fuentes: las que tienes (assets/php/fuentes.php); cada interfaz
+       guarda la suya. */
+    renderFontPacks();
     /* Iconos: lista construida desde el filesystem (scandir de
        assets/img/appIcons/). Selección persiste en localStorage. */
     renderIconPacks();
@@ -1644,6 +1676,61 @@ function renderInterfacePacks() {
             });
         });
     });
+}
+
+/* Fuentes que tienes (las de serie, las compradas en la tienda y las que
+   vienen con una interfaz tuya). La de cada tarjeta se ve con su fuente
+   (mh-fuente-muestra la libra de la fuente puesta en la página). Click →
+   set-font para la interfaz activa y recarga, como las interfaces. */
+function renderFontPacks() {
+    var grid = document.getElementById('pers-fonts-grid');
+    if (!grid) return;
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    fetch('../assets/personalize/api.php?action=fonts', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (!d || !d.ok) throw new Error(d && d.error || 'error');
+            var mias = (d.fuentes || []).filter(function(f){ return f.tiene; });
+            mias.forEach(function(f){
+                if (!f.url || document.querySelector('link[data-fuente="' + f.slug + '"]')) return;
+                var l = document.createElement('link');
+                l.rel = 'stylesheet'; l.href = f.url; l.dataset.fuente = f.slug;
+                document.head.appendChild(l);
+            });
+            grid.innerHTML = mias.map(function(f){
+                var on = f.slug === d.activa;
+                var fam = 'font-family:&quot;' + esc(f.familia) + '&quot;, sans-serif;';
+                return '<div class="pers-item pers-fuente' + (on ? ' active' : '') + '" data-fuente="' + esc(f.slug) + '"' +
+                    (f.slug === d.defecto ? ' title="La de serie de esta interfaz"' : '') + '>' +
+                    '<div class="pers-item-icon mh-fuente-muestra" style="' + fam + '">Aa</div>' +
+                    '<div class="pers-item-name mh-fuente-muestra" style="' + fam + '">' + esc(f.nombre) + '</div>' +
+                    (on ? '<div class="pers-item-badge">ACTIVA</div>' : '') +
+                '</div>';
+            }).join('');
+            grid.querySelectorAll('[data-fuente]').forEach(function(card){
+                card.addEventListener('click', function(){
+                    if (card.classList.contains('active')) return;
+                    try {
+                        var topStorage = (window.top && window.top.sessionStorage) || sessionStorage;
+                        topStorage.setItem('temas-restore-tab', 'personalize');
+                    } catch (_) {}
+                    fetch('../assets/personalize/api.php?action=set-font', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slug: card.dataset.fuente, interface: d.interfaz })
+                    }).catch(function(){}).finally(function() {
+                        try { window.top.location.reload(); }
+                        catch (_) { location.reload(); }
+                    });
+                });
+            });
+        })
+        .catch(function(){ grid.innerHTML = ''; });
 }
 
 function renderIconPacks() {
@@ -1785,6 +1872,19 @@ function buildPersItem(opts) {
     return el;
 }
 
+/* Botón "Probar" de los haros (solo dev, ver MELON_DEV_BUILD): Temas va
+   en un iframe, así que le pide al escritorio que saque la notificación
+   de prueba (lo atiende assets/dev/dev-desktop.php, también solo dev). */
+(function(){
+    var btn = document.getElementById('pers-haro-test');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'dev-haro-test' }, location.origin);
+        }
+    });
+})();
+
 function setActiveHaro(item) {
     fetch('../assets/personalize/api.php?action=set-active-haro', {
         method: 'POST',
@@ -1920,7 +2020,7 @@ function loadLibrary(){
                 author.className = 'lib-author';
                 author.title = 'Ver el perfil de ' + it.label;
                 var imgHtml = it.image
-                    ? '<img class="lib-author-img" src="../' + it.image + '" alt="">'
+                    ? '<span class="lib-author-av" data-marco-user="' + escapeHtml(it.userKey || '') + '"><img class="lib-author-img" src="../' + it.image + '" alt=""></span>'
                     : '<span class="lib-author-ph">👤</span>';
                 author.innerHTML = imgHtml + '<span class="lib-author-name">' + escapeHtml(it.label) + '</span>';
                 author.addEventListener('click', function(e){

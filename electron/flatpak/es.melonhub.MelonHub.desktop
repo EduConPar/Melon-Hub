@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Melon Hub
+Comment=Tu escritorio de Melon Hub
+Exec=melonhub %U
+Icon=es.melonhub.MelonHub
+Terminal=false
+Type=Application
+Categories=Network;Chat;
+StartupWMClass=es.melonhub.MelonHub
+MimeType=x-scheme-handler/melonhub;

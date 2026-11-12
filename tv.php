@@ -1,6 +1,6 @@
 <?php
 /* ──────────────────────────────────────────────────────────────────────
-   TV COMPANION VIEW — now playing screen para Smart TVs.
+   TV — la música suena aquí y el móvil hace de mando (reproductor → 📺).
    ──────────────────────────────────────────────────────────────────────
    Versión con CSS/JS legacy para Smart TVs viejos (Tizen 2017+, webOS
    3+, Android TV con Chrome 50+). Sin aspect-ratio, sin inset, sin
@@ -31,10 +31,20 @@ if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
 session_start();
 require_once __DIR__ . '/assets/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/assets/remember-login.php';
+require_once __DIR__ . '/assets/music/tv-lib.php';
 
-/* Cierre de sesión de la TV: GET ?logout=1 (o el botón "Desconectar"
-   abajo). Borra cookie persistente y limpia la sesión. */
+/* ──────────────────────────────────────────────────────────────────────
+   La TV suena y lleva la cola; el móvil (reproductor → 📺) es el mando.
+   Se hablan con archivos estáticos de rt/tv/ (assets/music/tv-lib.php):
+   la TV mira sus órdenes cada ~0,75 s sin gastar PHP y solo llama a
+   tv-api.php para contar cómo va (al cambiar algo y un latido cada
+   20–60 s). Sin órdenes del móvil, espera ("Esperando música").
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Cierre de sesión de la TV: GET ?logout=1 (el botón "Desconectar"). */
 if (isset($_GET['logout'])) {
+    forgetLogin($pdo);
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $p = session_get_cookie_params();
@@ -52,48 +62,81 @@ if (isset($_GET['logout'])) {
     exit;
 }
 
-/* ── Redención de código de emparejamiento ──
-   Si la TV postea un código de 6 dígitos válido, creamos sesión y
-   redirigimos a la propia tv.php (ya logueada). El código se invalida
-   tras un solo uso. */
-$linkError = '';
-if (isset($_POST['code'])) {
-    $code = preg_replace('/[^0-9]/', '', (string)$_POST['code']);
-    if (strlen($code) === 6) {
-        try {
-            $stmt = $pdo->prepare(
-                "SELECT user_key FROM tv_link_codes
-                 WHERE code = ? AND created_at > NOW() - INTERVAL 5 MINUTE"
-            );
-            $stmt->execute([$code]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($row && isset($loginUsers[$row['user_key']])) {
-                $_SESSION['user'] = $row['user_key'];
-                $pdo->prepare("DELETE FROM tv_link_codes WHERE code = ?")->execute([$code]);
-                /* Cookie de sesión persistente 30 días — la TV no
-                   tendrá que volver a emparejarse en un mes. */
-                $params = session_get_cookie_params();
-                setcookie(session_name(), session_id(), [
-                    'expires'  => time() + 30 * 86400,
-                    'path'     => $params['path'],
-                    'domain'   => $params['domain'],
-                    'secure'   => $params['secure'],
-                    'httponly' => true,
-                    'samesite' => 'Lax',
-                ]);
+/* El hosting borra las sesiones mucho antes de 30 días: la TV vuelve a
+   entrar con su sesión recordada. */
+if (empty($_SESSION['user'])) restoreRememberedLogin($pdo);
+$loggedIn = isset($_SESSION['user']) && isset($loginUsers[$_SESSION['user']]);
+
+/* ── Emparejar ──
+   La TV sin sesión enseña un QR (enlace.php?tv=<token>, lo abre la app
+   del móvil) y un código de 6 cifras (se teclea en el móvil, ventana
+   📺). El móvil lo aprueba (tv-api.php pair) y escribe ok en el archivo
+   de emparejamiento de rt/tv/, que la TV mira cada 2 s; entonces vuelve
+   aquí con ?emparejar=1 y entra si el token de SU sesión está aprobado. */
+$par = null;
+if (!$loggedIn) {
+    try {
+        tv_esquema($pdo);
+        if (isset($_GET['emparejar']) && !empty($_SESSION['tv_par'])) {
+            $q = $pdo->prepare("SELECT user_key FROM tv_pairs WHERE token = ? AND user_key IS NOT NULL
+                                AND created_at > NOW() - INTERVAL " . TV_PAR_MINUTOS . " MINUTE");
+            $q->execute([$_SESSION['tv_par']]);
+            $k = (string)$q->fetchColumn();
+            if ($k !== '' && isset($loginUsers[$k])) {
+                $pdo->prepare("DELETE FROM tv_pairs WHERE token = ?")->execute([$_SESSION['tv_par']]);
+                @unlink(__DIR__ . '/' . tv_urlPar($_SESSION['tv_par']));
+                unset($_SESSION['tv_par']);
+                session_regenerate_id(true);
+                $_SESSION['user'] = $k;
+                rememberLogin($pdo, $k);
                 header('Location: tv.php');
                 exit;
             }
-        } catch (Throwable $e) { /* tabla no existe aún o error → mensaje genérico */ }
-        $linkError = 'Código inválido o caducado';
-    } else {
-        $linkError = 'El código debe tener 6 dígitos';
+        }
+        /* Limpieza de lo caducado (tabla y archivos). */
+        $pdo->exec("DELETE FROM tv_pairs WHERE created_at < NOW() - INTERVAL 30 MINUTE");
+        foreach (glob(__DIR__ . '/rt/tv/p-*.html') ?: [] as $f) {
+            if (@filemtime($f) < time() - 3600) @unlink($f);
+        }
+        $token = bin2hex(random_bytes(12));
+        $code = '';
+        for ($i = 0; $i < 10; $i++) {
+            $code = sprintf('%06d', random_int(0, 999999));
+            $q = $pdo->prepare("SELECT 1 FROM tv_pairs WHERE code = ?");
+            $q->execute([$code]);
+            if (!$q->fetchColumn()) break;
+        }
+        $pdo->prepare("INSERT INTO tv_pairs (token, code) VALUES (?, ?)")->execute([$token, $code]);
+        $_SESSION['tv_par'] = $token;
+        tv_escribir(tv_urlPar($token), ['ok' => false]);
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $base = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'melonhub.es')
+              . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
+        $par = [
+            'code' => $code,
+            'qr'   => $base . 'enlace.php?tv=' . $token,
+            'rt'   => tv_urlPar($token),
+        ];
+    } catch (Throwable $e) {
+        error_log('[tv] emparejar: ' . $e->getMessage());
     }
 }
+/* La sesión no hace falta más: que no bloquee las llamadas de la TV. */
+session_write_close();
 
-/* Sin sesión → form de emparejamiento, no rebote al login. */
-$loggedIn = isset($_SESSION['user']) && isset($loginUsers[$_SESSION['user']]);
 $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
+$rt = null;
+if ($loggedIn) {
+    $q = $pdo->prepare("SELECT id FROM usuarios WHERE user_key = ?");
+    $q->execute([$_SESSION['user']]);
+    $uid = (int)$q->fetchColumn();
+    $rt = [
+        'ordenes' => tv_urlOrdenes($uid),
+        'cola'    => tv_urlCola($uid),
+        'estado'  => tv_urlEstado($uid),
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -369,12 +412,11 @@ $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
             .tv-cover { width: 60vmin; height: 60vmin; }
         }
 
-        /* ── Form de pairing (cuando no hay sesión) ── */
+        /* ── Emparejar (cuando no hay sesión): QR + código ── */
         .tv-pair {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: #0a0a0a;
-            display: block;
             text-align: center;
         }
         .tv-pair-inner {
@@ -383,67 +425,66 @@ $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
             -webkit-transform: translate(-50%, -50%);
                     transform: translate(-50%, -50%);
             width: 90%;
-            max-width: 540px;
-        }
-        .tv-pair-icon {
-            font-size: 80px;
-            color: rgba(255,255,255,0.4);
-            margin-bottom: 18px;
+            max-width: 900px;
         }
         .tv-pair-title {
-            font-size: 32px;
+            font-size: 34px;
             font-weight: bold;
             color: #fff;
-            margin-bottom: 12px;
+            margin-bottom: 30px;
         }
-        .tv-pair-sub {
-            font-size: 16px;
-            color: rgba(255,255,255,0.6);
-            margin-bottom: 32px;
+        /* Dos columnas con inline-block (sin flex: TVs viejas). */
+        .tv-pair-col {
+            display: inline-block;
+            vertical-align: middle;
+            width: 44%;
+            margin: 0 2%;
+        }
+        .tv-pair-qr {
+            display: inline-block;
+            background: #fff;
+            padding: 14px;
+            border-radius: 10px;
+            line-height: 0;
+        }
+        .tv-pair-qr img {
+            width: 250px;
+            height: 250px;
+            image-rendering: pixelated;
+        }
+        .tv-pair-step {
+            font-size: 17px;
+            color: rgba(255,255,255,0.75);
             line-height: 1.5;
+            margin-top: 16px;
         }
-        .tv-pair-input {
-            width: 100%;
-            max-width: 360px;
-            padding: 22px 16px;
-            font-size: 48px;
+        .tv-pair-or {
+            font-size: 14px;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 18px;
+        }
+        .tv-pair-code {
+            font-family: Consolas, Monaco, monospace;
+            font-size: 64px;
             font-weight: bold;
-            text-align: center;
-            letter-spacing: 18px;
-            background: #1c1c1c;
             color: #fff;
+            letter-spacing: 8px;
+            background: #1c1c1c;
             border: 2px solid rgba(255,255,255,0.2);
             border-radius: 8px;
-            font-family: Consolas, Monaco, monospace;
-        }
-        .tv-pair-input:focus {
-            outline: none;
-            border-color: #34c759;
-        }
-        .tv-pair-btn {
-            display: block;
-            margin: 24px auto 0;
-            padding: 16px 48px;
-            font-size: 18px;
-            font-weight: bold;
-            background: #34c759;
-            color: #fff;
-            border: 0;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        .tv-pair-btn:hover, .tv-pair-btn:focus { background: #2ea84e; outline: none; }
-        .tv-pair-err {
-            color: #ff5546;
-            font-size: 16px;
-            margin-top: 14px;
-            min-height: 22px;
+            padding: 18px 10px;
         }
         .tv-pair-hint {
             font-size: 13px;
             color: rgba(255,255,255,0.4);
-            margin-top: 26px;
+            margin-top: 34px;
             line-height: 1.55;
+        }
+        .tv-pair-err {
+            font-size: 18px;
+            color: #ff5546;
         }
 
         /* Aviso cuando YouTube bloquea la reproducción en embed (errores
@@ -467,26 +508,75 @@ $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
 <body>
 
 <?php if (!$loggedIn): ?>
-<!-- Form de emparejamiento: la TV recibe el código generado en el móvil. -->
+<!-- Emparejar: QR (lo abre la app del móvil) o código (se teclea en el
+     móvil, reproductor → 📺). -->
 <div class="tv-pair">
-    <form class="tv-pair-inner" method="POST" autocomplete="off">
-        <div class="tv-pair-icon">📺</div>
-        <div class="tv-pair-title">Conecta tu TV</div>
-        <div class="tv-pair-sub">
-            En el reproductor del móvil → botón 📺<br>
-            Introduce abajo el código de 6 dígitos:
+    <div class="tv-pair-inner">
+        <div class="tv-pair-title">📺 Conecta tu TV</div>
+        <?php if ($par): ?>
+        <div class="tv-pair-col">
+            <div class="tv-pair-qr" id="tv-pair-qr"></div>
+            <div class="tv-pair-step">Escanéalo con la cámara del móvil</div>
+        </div><div class="tv-pair-col">
+            <div class="tv-pair-or">o en la app</div>
+            <div class="tv-pair-code"><?= substr($par['code'], 0, 3) . ' ' . substr($par['code'], 3) ?></div>
+            <div class="tv-pair-step">Reproductor → 📺 → escribe este código</div>
         </div>
-        <input class="tv-pair-input" type="tel" name="code"
-               inputmode="numeric" pattern="[0-9]*" maxlength="6"
-               autofocus required>
-        <div class="tv-pair-err"><?= htmlspecialchars($linkError) ?></div>
-        <button class="tv-pair-btn" type="submit">Conectar</button>
         <div class="tv-pair-hint">
-            El código caduca en 5 minutos. Una vez conectado, esta TV
-            queda recordada durante 30 días.
+            Una vez conectada, esta TV se queda recordada.
         </div>
-    </form>
+        <?php else: ?>
+        <div class="tv-pair-err">No se ha podido preparar el emparejamiento. Recarga la página.</div>
+        <?php endif; ?>
+    </div>
 </div>
+<?php if ($par): ?>
+<script src="assets/vendor/qrcode-generator/qrcode.js"></script>
+<script>
+(function(){
+    /* QR del enlace (tipo 0 = el tamaño que haga falta; corrección M). */
+    try {
+        var qr = qrcode(0, 'M');
+        qr.addData(<?= json_encode($par['qr']) ?>);
+        qr.make();
+        document.getElementById('tv-pair-qr').innerHTML = qr.createImgTag(6, 0);
+    } catch (e) {}
+
+    /* ¿Lo ha aprobado el móvil? Archivo estático de rt/tv/ cada 2 s, con un
+       iframe (como el resto de la TV: XHR falla en algunas tras la primera
+       petición). */
+    var url = <?= json_encode($par['rt']) ?>;
+    var f = document.createElement('iframe');
+    f.style.cssText = 'position:absolute;width:1px;height:1px;border:0;left:-9999px;top:-9999px;visibility:hidden';
+    var marca = '';
+    f.onload = function(){
+        /* Solo la carga que se ha pedido (no la página en blanco). */
+        var aqui = '';
+        try { aqui = String(f.contentWindow.location.href); } catch (e) {}
+        if (!marca || aqui.indexOf(marca) === -1) return;
+        marca = '';
+        var ok = false;
+        try {
+            var pre = f.contentDocument.getElementById('d');
+            ok = !!JSON.parse(pre.textContent || pre.innerText || '{}').ok;
+        } catch (e) {}
+        if (ok) { location.replace('tv.php?emparejar=1'); return; }
+        setTimeout(mirar, 2000);
+    };
+    document.body.appendChild(f);
+    function mirar(){
+        marca = '_=' + (new Date()).getTime();
+        f.src = url + '?' + marca;
+        /* Si no carga (red), se vuelve a probar. */
+        var esta = marca;
+        setTimeout(function(){ if (marca === esta) mirar(); }, 8000);
+    }
+    mirar();
+    /* El QR y el código caducan: uno nuevo antes de que pase. */
+    setTimeout(function(){ location.reload(); }, (<?= TV_PAR_MINUTOS ?> * 60 - 30) * 1000);
+})();
+</script>
+<?php endif; ?>
 <?php else: ?>
 
 <!-- IFrame de YouTube — emite el audio por los altavoces de la TV.
@@ -496,19 +586,19 @@ $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
 
 <div class="tv-bg" id="tv-bg"></div>
 <div class="tv-bg-overlay"></div>
-<div class="tv-user" id="tv-user"><span class="tv-user-dot"></span><?= htmlspecialchars($userLabel) ?></div>
+<div class="tv-user connected" id="tv-user"><span class="tv-user-dot"></span><?= htmlspecialchars($userLabel) ?></div>
 <a class="tv-logout" href="tv.php?logout=1"><span class="tv-logout-icon"></span>Desconectar</a>
 
-<!-- Vista idle. -->
+<!-- Esperando: hasta que el móvil mande algo (reproductor → 📺). -->
 <div class="tv-idle" id="tv-idle">
     <div class="tv-idle-inner">
         <div class="tv-idle-icon">♪</div>
         <div class="tv-idle-title">Esperando música</div>
-        <div class="tv-idle-sub">Abre el reproductor en el móvil</div>
+        <div class="tv-idle-sub">En el móvil: reproductor → 📺</div>
     </div>
 </div>
 
-<!-- Vista activa. -->
+<!-- Sonando. -->
 <div class="tv-stage" id="tv-stage">
     <div class="tv-cover" id="tv-cover">
         <div class="tv-cover-hole"></div>
@@ -528,546 +618,474 @@ $userLabel = $loggedIn ? $loginUsers[$_SESSION['user']]['label'] : '';
 </div>
 
 <script>
-/* Estado local. La posición se INTERPOLA entre polls para que la barra
-   se mueva suave aunque polleamos cada segundo. Compatible IE11+. */
-var STATE = {
-    track:     null,
-    isPlaying: false,
-    serverPos: 0,
-    serverTs:  0,
-    duration:  0
+/* Solo ES5 y nada moderno: navegadores de TVs viejas (Tizen 2017+,
+   webOS 3+, Android TV con Chrome 50+). */
+var RT  = <?= json_encode($rt) ?>;
+var API = 'assets/music/tv-api.php';
+/* Diferencia entre el reloj del servidor y el de la TV (ms). */
+var RELOJ = <?= tv_ahora() ?> - now();
+
+function now() { return Date.now ? Date.now() : (new Date()).getTime(); }
+
+var bgEl      = document.getElementById('tv-bg');
+var coverEl   = document.getElementById('tv-cover');
+var titleEl   = document.getElementById('tv-title');
+var artistEl  = document.getElementById('tv-artist');
+var plEl      = document.getElementById('tv-playlist');
+var fillEl    = document.getElementById('tv-progress-fill');
+var curEl     = document.getElementById('tv-time-cur');
+var totEl     = document.getElementById('tv-time-tot');
+var idleEl    = document.getElementById('tv-idle');
+var stageEl   = document.getElementById('tv-stage');
+var errBanner = document.getElementById('tv-err-banner');
+
+/* ── Lo que suena ── */
+var ON = false;          /* el móvil la está usando (si no: "Esperando") */
+var Q = [], IDX = -1, PL = '', SHUFFLE = false;
+var QV = '';             /* versión de la cola cargada (rt …-q.html) */
+var QUIERE_SONAR = false;
+var ULTIMA = 0;          /* última orden hecha (n) */
+
+/* ── Leer archivos de rt/ ──
+   Un solo iframe oculto, una lectura detrás de otra: lee el JSON del
+   <pre id="d"> del documento cargado. (XHR y <script> dinámicos dejan de
+   funcionar tras la primera petición en algunos navegadores de TV.) */
+var LECTOR = { f: null, ocupado: false, cola: [], turno: 0 };
+function leerRt(url, cb) {
+    LECTOR.cola.push({ url: url, cb: cb });
+    siguienteLectura();
+}
+function siguienteLectura() {
+    if (LECTOR.ocupado || !LECTOR.cola.length) return;
+    var job = LECTOR.cola.shift();
+    var turno = ++LECTOR.turno;
+    LECTOR.ocupado = true;
+    if (!LECTOR.f) {
+        LECTOR.f = iframeOculto();
+    }
+    var hecho = false;
+    /* Marca de esta lectura: un onload que no sea el suyo (el de la
+       página en blanco al crear el iframe, o uno que llega tarde) no
+       cuenta. */
+    var marca = '_=' + turno + 'x' + now();
+    function fin(datos) {
+        if (hecho || turno !== LECTOR.turno) return;
+        hecho = true;
+        LECTOR.ocupado = false;
+        try { job.cb(datos); } catch (e) {}
+        setTimeout(siguienteLectura, 0);
+    }
+    LECTOR.f.onload = function() {
+        if (!esCarga(LECTOR.f, marca)) return;
+        fin(leerPre(LECTOR.f));
+    };
+    setTimeout(function(){ fin(null); }, 5000);
+    try { LECTOR.f.src = job.url + '?' + marca; } catch (e) { fin(null); }
+}
+function esCarga(f, marca) {
+    try {
+        var w = f.contentWindow;
+        return String(w.location.href).indexOf(marca) !== -1;
+    } catch (e) { return false; }
+}
+function iframeOculto() {
+    var f = document.createElement('iframe');
+    f.style.cssText = 'position:absolute;width:1px;height:1px;border:0;left:-9999px;top:-9999px;visibility:hidden';
+    f.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(f);
+    return f;
+}
+function leerPre(f) {
+    try {
+        var doc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
+        var pre = doc && doc.getElementById ? doc.getElementById('d') : null;
+        if (!pre) return null;
+        return JSON.parse(pre.textContent || pre.innerText || '');
+    } catch (e) { return null; }
+}
+
+/* ── Contar cómo va (tv-api.php estado) ──
+   Otro iframe; si hay uno en marcha, el siguiente espera y solo se manda
+   el último (con "ev" si alguno lo llevaba). ev = ha cambiado algo:
+   también lo apunta como "escuchando" del perfil. */
+var ESCRITOR = { f: null, ocupado: false, pendiente: false, ev: false, ultimo: 0, sonando: false };
+function contarEstado(ev) {
+    ESCRITOR.pendiente = true;
+    if (ev) ESCRITOR.ev = true;
+    enviarEstado();
+}
+function enviarEstado() {
+    if (ESCRITOR.ocupado || !ESCRITOR.pendiente) return;
+    if (!ESCRITOR.f) ESCRITOR.f = iframeOculto();
+    var d = estadoActual(ESCRITOR.ev);
+    ESCRITOR.sonando = d.playing;
+    ESCRITOR.pendiente = false;
+    ESCRITOR.ev = false;
+    ESCRITOR.ocupado = true;
+    ESCRITOR.ultimo = now();
+    var hecho = false;
+    function fin() {
+        if (hecho) return;
+        hecho = true;
+        ESCRITOR.ocupado = false;
+        setTimeout(enviarEstado, 0);
+    }
+    ESCRITOR.f.onload = fin;
+    setTimeout(fin, 6000);
+    try {
+        ESCRITOR.f.src = API + '?action=estado&frame=1&_=' + now() + '&d=' + encodeURIComponent(JSON.stringify(d));
+    } catch (e) { fin(); }
+}
+function estadoActual(ev) {
+    var tr = (ON && IDX >= 0) ? Q[IDX] : null;
+    return {
+        on: ON && tr ? 1 : 0,
+        track: tr,
+        idx: IDX,
+        pl: PL,
+        playing: !!(tr && sonando()),
+        pos: posicion(),
+        dur: tr ? duracion() : 0,
+        shuffle: SHUFFLE,
+        n: ULTIMA,
+        ev: ev ? 1 : 0
+    };
+}
+/* Latido: el móvil sabe que la TV está encendida si su estado tiene
+   menos de 2,5 min. Cada 20 s sonando (para que la barra del móvil no
+   se desvíe), cada 60 s esperando. */
+setInterval(function(){
+    var cada = sonando() ? 20000 : 60000;
+    if (now() - ESCRITOR.ultimo >= cada - 500) contarEstado(false);
+}, 5000);
+
+/* ── Órdenes del móvil ── */
+function mirarOrdenes() {
+    leerRt(RT.ordenes, function(d){
+        var cmds = (d && d.cmds) || [];
+        var nuevas = [];
+        for (var i = 0; i < cmds.length; i++) {
+            if (cmds[i] && cmds[i].n > ULTIMA) nuevas.push(cmds[i]);
+        }
+        hacerOrdenes(nuevas, function(){ setTimeout(mirarOrdenes, 750); });
+    });
+}
+function hacerOrdenes(lista, fin) {
+    if (!lista.length) { fin(); return; }
+    var o = lista.shift();
+    ULTIMA = o.n;
+    hacerOrden(o, function(){
+        contarEstado(true);
+        hacerOrdenes(lista, fin);
+    });
+}
+function hacerOrden(o, fin) {
+    switch (o.c) {
+        case 'load':
+            conCola(o.qv, function(ok){
+                if (!ok) { fin(); return; }
+                PL = o.pl || '';
+                SHUFFLE = !!o.shuffle;
+                ON = true;
+                QUIERE_SONAR = !!o.play;
+                historialBorrar();
+                cargar(Math.max(0, Math.min(o.idx || 0, Q.length - 1)), o.pos || 0);
+                fin();
+            });
+            return;
+        case 'play':  QUIERE_SONAR = true;  if (ON) reproducir(); break;
+        case 'pause': QUIERE_SONAR = false; pausar(); break;
+        case 'next':  if (ON) siguiente(); break;
+        case 'prev':  if (ON) anterior(); break;
+        case 'seek':
+            if (ON && ytPlayer) {
+                try { ytPlayer.seekTo(o.pos || 0, true); } catch (e) {}
+            }
+            break;
+        case 'shuffle': SHUFFLE = !!o.on; break;
+        case 'stop':
+            ON = false;
+            QUIERE_SONAR = false;
+            if (ytPlayer) { try { ytPlayer.stopVideo(); } catch (e) {} }
+            Q = []; IDX = -1;
+            break;
+    }
+    render();
+    fin();
+}
+/* La cola de una orden "load" (rt …-q.html), si no es la que ya hay. */
+function conCola(qv, cb) {
+    if (qv && qv === QV && Q.length) { cb(true); return; }
+    leerRt(RT.cola, function(d){
+        if (!d || !d.queue || !d.queue.length) { cb(false); return; }
+        Q = d.queue;
+        QV = d.qv || '';
+        cb(true);
+    });
+}
+
+/* ── Aleatorio con memoria (como mobile.php y reproductor.php): ⏮ vuelve
+   a la que sonaba antes y ⏭, tras volver atrás, rehace el camino. ── */
+var HIST_ATRAS = [], HIST_ADELANTE = [], HIST_AHORA = null, HIST_NAV = false;
+function historialBorrar() { HIST_ATRAS = []; HIST_ADELANTE = []; HIST_AHORA = null; HIST_NAV = false; }
+function recordar() {
+    var e = { idx: IDX, vid: Q[IDX].videoId };
+    var misma = HIST_AHORA && HIST_AHORA.vid === e.vid;
+    if (!misma && !HIST_NAV && HIST_AHORA) {
+        HIST_ATRAS.push(HIST_AHORA);
+        if (HIST_ATRAS.length > 200) HIST_ATRAS.shift();
+        HIST_ADELANTE = [];
+    }
+    HIST_AHORA = e;
+    HIST_NAV = false;
+}
+function pasoHistorial(pila) {
+    while (pila.length) {
+        var e = pila.pop();
+        if (Q[e.idx] && Q[e.idx].videoId === e.vid) return e.idx;
+    }
+    return -1;
+}
+function siguiente() {
+    if (!Q.length) return;
+    var i;
+    if (SHUFFLE && Q.length > 1) {
+        i = pasoHistorial(HIST_ADELANTE);
+        if (i !== -1) {
+            if (HIST_AHORA) HIST_ATRAS.push(HIST_AHORA);
+            HIST_NAV = true;
+        } else {
+            do { i = Math.floor(Math.random() * Q.length); } while (i === IDX);
+        }
+    } else {
+        i = (IDX + 1) % Q.length;
+    }
+    cargar(i, 0);
+}
+function anterior() {
+    if (!Q.length) return;
+    var i = SHUFFLE ? pasoHistorial(HIST_ATRAS) : -1;
+    if (i !== -1) {
+        if (HIST_AHORA) HIST_ADELANTE.push(HIST_AHORA);
+        HIST_NAV = true;
+    } else {
+        i = (IDX - 1 + Q.length) % Q.length;
+    }
+    cargar(i, 0);
+}
+
+/* ── Reproductor de YouTube ── */
+var ytReady = false, ytPlayer = null, ytVid = null;
+var YT_ENDED = 0, YT_PLAYING = 1, YT_PAUSED = 2, YT_BUFFERING = 3, YT_CUED = 5;
+var ATASCO_DESDE = 0;     /* desde cuándo debería sonar y no suena */
+var CARGA_PENDIENTE = null;
+var BLOQUEADA = false;    /* el autor no deja reproducirla fuera de YouTube */
+
+window.onYouTubeIframeAPIReady = function() {
+    ytReady = true;
+    if (CARGA_PENDIENTE) { var c = CARGA_PENDIENTE; CARGA_PENDIENTE = null; cargar(c.idx, c.pos); }
 };
 
-var bgEl       = document.getElementById('tv-bg');
-var coverEl    = document.getElementById('tv-cover');
-var titleEl    = document.getElementById('tv-title');
-var artistEl   = document.getElementById('tv-artist');
-var plEl       = document.getElementById('tv-playlist');
-var fillEl     = document.getElementById('tv-progress-fill');
-var curEl      = document.getElementById('tv-time-cur');
-var totEl      = document.getElementById('tv-time-tot');
-var idleEl     = document.getElementById('tv-idle');
-var stageEl    = document.getElementById('tv-stage');
-var userEl     = document.getElementById('tv-user');
-var errBanner  = document.getElementById('tv-err-banner');
+function cargar(idx, pos) {
+    if (!Q[idx]) return;
+    IDX = idx;
+    recordar();
+    BLOQUEADA = false;
+    ocultarError();
+    render();
+    if (!ytReady) { CARGA_PENDIENTE = { idx: idx, pos: pos }; return; }
+    var vid = Q[idx].videoId;
+    ytVid = vid;
+    ATASCO_DESDE = 0;
+    if (!ytPlayer) { crearPlayer(vid, pos); return; }
+    /* cue + play en vez de loadVideoById: algunos vídeos no dejan el
+       "embed con autoplay" pero sí ▶ a mano. */
+    try { ytPlayer.cueVideoById({ videoId: vid, startSeconds: Math.floor(pos || 0) }); } catch (e) {}
+    if (QUIERE_SONAR) {
+        setTimeout(function(){
+            if (ytPlayer && ytVid === vid && QUIERE_SONAR) { try { ytPlayer.playVideo(); } catch (e) {} }
+        }, 300);
+    }
+}
+function crearPlayer(vid, pos) {
+    try {
+        ytPlayer = new YT.Player('tv-player', {
+            videoId: vid,
+            playerVars: { playsinline: 1, autoplay: 0, start: Math.floor(pos || 0) },
+            events: {
+                onReady: function(e) {
+                    if (QUIERE_SONAR) { try { e.target.playVideo(); } catch (x) {} }
+                },
+                onStateChange: alCambiarYT,
+                onError: alFallarYT
+            }
+        });
+    } catch (e) {}
+}
+function alCambiarYT(e) {
+    var s = e.data;
+    if (s === YT_PLAYING || s === YT_BUFFERING) ATASCO_DESDE = 0;
+    /* Algo lo puso a sonar sin que nadie lo pidiera (autoplay). */
+    if (s === YT_PLAYING && !QUIERE_SONAR) { try { ytPlayer.pauseVideo(); } catch (x) {} }
+    if (s === YT_CUED && QUIERE_SONAR) {
+        setTimeout(function(){ if (ytPlayer && QUIERE_SONAR) { try { ytPlayer.playVideo(); } catch (x) {} } }, 120);
+    }
+    if (s === YT_ENDED && ON) { siguiente(); contarEstado(true); }
+    /* Al móvil: cuando suena o se pausa y no es lo último que se le ha
+       contado (no en cada fin de buffer; sí al empezar la canción nueva,
+       que se contó cuando aún estaba preparándose). */
+    if ((s === YT_PLAYING || s === YT_PAUSED) && (s === YT_PLAYING) !== ESCRITOR.sonando) contarEstado(true);
+    render();
+}
+/* 2 = id inválido, 5 = error HTML5, 100 = no existe o privado,
+   101/150 = el autor no deja reproducirlo fuera de YouTube: se avisa y se
+   pasa a la siguiente. Otros: se reintenta una vez. */
+function alFallarYT(e) {
+    var code = e && e.data;
+    mostrarError(code);
+    if (code === 101 || code === 150 || code === 100 || code === 2) {
+        BLOQUEADA = true;
+        var vid = ytVid;
+        setTimeout(function(){ if (ON && ytVid === vid) { siguiente(); contarEstado(true); } }, 3000);
+        return;
+    }
+    setTimeout(function(){
+        if (!ytPlayer || !ON || IDX < 0) return;
+        try { ytPlayer.cueVideoById({ videoId: Q[IDX].videoId, startSeconds: Math.floor(posicion()) }); } catch (x) {}
+        if (QUIERE_SONAR) setTimeout(function(){ try { ytPlayer.playVideo(); } catch (x) {} }, 300);
+    }, 500);
+}
+function reproducir() { if (ytPlayer) { try { ytPlayer.playVideo(); } catch (e) {} } }
+function pausar() { if (ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} } }
+function estadoYT() { try { return ytPlayer ? ytPlayer.getPlayerState() : -1; } catch (e) { return -1; } }
+function sonando() { return estadoYT() === YT_PLAYING; }
+function posicion() {
+    try { return ytPlayer ? (ytPlayer.getCurrentTime() || 0) : 0; } catch (e) { return 0; }
+}
+function duracion() {
+    var d = 0;
+    try { d = ytPlayer ? (ytPlayer.getDuration() || 0) : 0; } catch (e) {}
+    return d || (IDX >= 0 && Q[IDX] ? (Q[IDX].duration || 0) : 0);
+}
 
-function showPlaybackError(code) {
-    if (!errBanner) return;
+/* Debería sonar y no suena: los navegadores de TV bloquean playVideo()
+   sin un gesto del usuario, pero dejan si está en silencio. Se escala:
+   ▶ otra vez → silencio + ▶ + sonido (imperceptible) → recargar el vídeo. */
+setInterval(function(){
+    if (!ON || !QUIERE_SONAR || !ytPlayer || BLOQUEADA || IDX < 0) { ATASCO_DESDE = 0; return; }
+    var s = estadoYT();
+    if (s === YT_PLAYING || s === YT_BUFFERING || s === YT_ENDED) { ATASCO_DESDE = 0; return; }
+    if (!ATASCO_DESDE) ATASCO_DESDE = now();
+    var t = now() - ATASCO_DESDE;
+    if (t > 6000) {
+        ATASCO_DESDE = now();
+        try { ytPlayer.cueVideoById({ videoId: Q[IDX].videoId, startSeconds: Math.floor(posicion()) }); } catch (e) {}
+        setTimeout(reproducir, 300);
+    } else if (t > 1500) {
+        try {
+            ytPlayer.mute();
+            ytPlayer.playVideo();
+            setTimeout(function(){
+                try { ytPlayer.unMute(); ytPlayer.setVolume(100); } catch (e) {}
+            }, 200);
+        } catch (e) {}
+    } else {
+        reproducir();
+    }
+}, 1000);
+
+/* ── Pantalla ── */
+function render() {
+    var tr = (ON && IDX >= 0) ? Q[IDX] : null;
+    if (!tr) {
+        idleEl.className  = 'tv-idle';
+        stageEl.className = 'tv-stage';
+        return;
+    }
+    idleEl.className  = 'tv-idle hidden';
+    stageEl.className = 'tv-stage active';
+    var bgVal = 'url("https://i.ytimg.com/vi/' + tr.videoId + '/maxresdefault.jpg")';
+    if (coverEl.style.backgroundImage !== bgVal) {
+        coverEl.style.backgroundImage = bgVal;
+        bgEl.style.backgroundImage    = bgVal;
+    }
+    titleEl.innerHTML  = escapeHtml(tr.title || '—');
+    artistEl.innerHTML = escapeHtml(tr.artist || '');
+    plEl.innerHTML     = PL ? ('📋 ' + escapeHtml(PL)) : '';
+    coverEl.className  = sonando() ? 'tv-cover playing' : 'tv-cover';
+}
+function tickProgress() {
+    if (!ON || IDX < 0) return;
+    var dur = duracion(), pos = posicion();
+    fillEl.style.width = (dur > 0 ? Math.min(100, pos / dur * 100) : 0) + '%';
+    curEl.innerHTML = fmt(pos);
+    totEl.innerHTML = fmt(dur);
+}
+function mostrarError(code) {
     var msg;
     switch (code) {
-        case 101: case 150: msg = '🎵 El audio sigue en el móvil — esta canción no se puede reproducir en TV'; break;
-        case 100:           msg = 'Video no encontrado o privado'; break;
-        case 2:             msg = 'ID de video inválido'; break;
-        case 5:             msg = 'Error del reproductor HTML5'; break;
+        case 101: case 150: msg = 'Esta canción no se puede reproducir en la TV — pasando a la siguiente'; break;
+        case 100:           msg = 'Vídeo no encontrado o privado — pasando a la siguiente'; break;
+        case 2:             msg = 'Vídeo no válido — pasando a la siguiente'; break;
         default:            msg = 'Error de reproducción (código ' + code + ')';
     }
     errBanner.innerHTML = msg;
     errBanner.className = 'tv-err-banner visible';
 }
-function hidePlaybackError() {
-    if (errBanner) errBanner.className = 'tv-err-banner';
-}
-
+function ocultarError() { errBanner.className = 'tv-err-banner'; }
 function fmt(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     var m = Math.floor(sec / 60), s = sec % 60;
     return m + ':' + (s < 10 ? '0' : '') + s;
 }
-
-function thumbUrl(videoId) {
-    return videoId ? 'https://i.ytimg.com/vi/' + videoId + '/maxresdefault.jpg' : '';
-}
-
-function render() {
-    var tr = STATE.track;
-    if (!tr || !tr.videoId) {
-        idleEl.className = 'tv-idle';
-        stageEl.className = 'tv-stage';
-        userEl.className  = 'tv-user';
-        return;
-    }
-    idleEl.className  = 'tv-idle hidden';
-    stageEl.className = 'tv-stage active';
-    userEl.className  = 'tv-user connected';
-
-    var url = thumbUrl(tr.videoId);
-    var bgVal = 'url("' + url + '")';
-    if (coverEl.style.backgroundImage !== bgVal) {
-        coverEl.style.backgroundImage = bgVal;
-        bgEl.style.backgroundImage    = bgVal;
-    }
-    titleEl.innerHTML  = escapeHtml(tr.title  || '—');
-    artistEl.innerHTML = escapeHtml(tr.artist || '');
-    plEl.innerHTML     = tr.plName ? ('📋 ' + escapeHtml(tr.plName)) : '';
-
-    if (STATE.isPlaying) {
-        coverEl.className = 'tv-cover playing';
-    } else {
-        coverEl.className = 'tv-cover';
-    }
-}
-
 function escapeHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function tickProgress() {
-    if (!STATE.track || !STATE.duration) {
-        fillEl.style.width = '0%';
-        curEl.innerHTML = '0:00';
-        totEl.innerHTML = '0:00';
-        return;
-    }
-    /* Fuente de verdad para la barra:
-       - Embed bloqueado → interpolamos desde la posición del móvil (el
-         player de la TV está parado, su getCurrentTime daría 0).
-       - Caso normal  → leemos del iframe propio de la TV (es el audio
-         que el usuario realmente está oyendo). Elimina los saltos que
-         se producían al refrescar serverPos cada 5s.
-       - Fallback     → interpolación si el player aún no cargó o falla. */
-    var pos = -1;
-    if (!EMBED_BLOCKED && ytPlayer && ytPlayer.getCurrentTime) {
-        try {
-            var t = ytPlayer.getCurrentTime();
-            if (typeof t === 'number' && isFinite(t) && t >= 0) pos = t;
-        } catch (_) {}
-    }
-    if (pos < 0) {
-        var elapsed = (now() - STATE.serverTs) / 1000;
-        pos = STATE.isPlaying ? STATE.serverPos + elapsed : STATE.serverPos;
-    }
-    if (pos > STATE.duration) pos = STATE.duration;
-    var pct = STATE.duration > 0 ? (pos / STATE.duration) * 100 : 0;
-    fillEl.style.width = pct + '%';
-    curEl.innerHTML = fmt(pos);
-    totEl.innerHTML = fmt(STATE.duration);
-}
-
-function now() {
-    /* Date.now() existe desde IE9; algunos browsers antiguos de TV
-       pueden no tenerlo → fallback. */
-    return Date.now ? Date.now() : (new Date()).getTime();
-}
-
-/* XMLHttpRequest en vez de fetch() — fetch puede no estar en Tizen/
-   webOS de antes de 2018. Cache-buster (?_=ts) porque algunos browsers
-   antiguos de Smart TV ignoran Cache-Control y sirven la primera
-   respuesta para siempre. Sin el buster, el polling parece "congelado"
-   tras el primer hit. */
-/* Polling vía <iframe> oculto reusable — XHR y <script src> dinámicos
-   están rotos en este navegador de TV tras el primer hit. El truco
-   universal: un solo <iframe> que cambia de src en cada poll. El
-   endpoint responde HTML con el JSON en <pre id="d">. En el padre,
-   iframe.onload lee el texto del <pre>, lo parsea y aplica el estado.
-   Sin scripts dentro del iframe (no corren en navegaciones dinámicas
-   en algunos browsers). Polling SERIAL: el siguiente poll se programa
-   al terminar el actual. */
-var POLL_BUSY   = false;
-var POLL_DELAY  = 750;
-var POLL_FRAME  = null;
-var POLL_TIMER  = null;
-var POLL_DONE   = false;
-
-function ensurePollFrame() {
-    if (POLL_FRAME) return POLL_FRAME;
-    POLL_FRAME = document.createElement('iframe');
-    POLL_FRAME.style.cssText = 'position:absolute;width:1px;height:1px;border:0;left:-9999px;top:-9999px;visibility:hidden';
-    POLL_FRAME.setAttribute('aria-hidden', 'true');
-    /* onload se dispara en CADA cambio de src, también en navegaciones
-       sucesivas. Leemos el JSON desde el <pre id="d"> del documento
-       cargado y se lo pasamos a applyNowPlaying. */
-    POLL_FRAME.onload = function() {
-        if (POLL_DONE) return;
-        try {
-            var doc = POLL_FRAME.contentDocument
-                   || (POLL_FRAME.contentWindow && POLL_FRAME.contentWindow.document);
-            if (!doc) { POLL_DONE = true; POLL_BUSY = false; schedulePoll(); return; }
-            var pre = doc.getElementById ? doc.getElementById('d') : null;
-            var raw = pre
-                ? (pre.textContent || pre.innerText || '')
-                : (doc.body ? (doc.body.textContent || doc.body.innerText || '') : '');
-            raw = (raw || '').replace(/^\s+|\s+$/g, '');
-            if (!raw) { POLL_DONE = true; POLL_BUSY = false; schedulePoll(); return; }
-            applyNowPlaying(JSON.parse(raw));
-        } catch (e) {
-            POLL_DONE = true; POLL_BUSY = false; schedulePoll();
-        }
-    };
-    document.body.appendChild(POLL_FRAME);
-    return POLL_FRAME;
-}
-
-function applyNowPlaying(d) {
-    if (POLL_DONE) return;
-    POLL_DONE = true;
-    if (POLL_TIMER) { clearTimeout(POLL_TIMER); POLL_TIMER = null; }
-    POLL_BUSY = false;
-
-    if (!d || !d.ok) { schedulePoll(); return; }
-
-    STATE.track     = d.track || null;
-    STATE.isPlaying = !!d.isPlaying;
-    if (d.track) {
-        var basePos = (typeof d.track.position === 'number') ? d.track.position : 0;
-        /* `age` = segundos transcurridos en el servidor desde el último
-           save-now-playing. Si el móvil está reproduciendo, su posición
-           REAL ahora es position + age (más la latencia red→TV, no
-           estimable sin clock sync). Sin este ajuste el TV interpolaría
-           desde una snapshot atrasada → drift estable de ~2-3s + cualquier
-           lag adicional acumulado. */
-        var age = (typeof d.age === 'number') ? d.age : 0;
-        STATE.serverPos = STATE.isPlaying ? (basePos + age) : basePos;
-        STATE.duration  = (typeof d.track.duration === 'number') ? d.track.duration : 0;
-        STATE.serverTs  = now();
-    }
-    render();
-    schedulePoll();
-}
-
-function fetchNowPlaying() {
-    if (POLL_BUSY) { schedulePoll(); return; }
-    POLL_BUSY  = true;
-    POLL_DONE  = false;
-
-    var f = ensurePollFrame();
-    /* Timeout de respaldo: si el iframe nunca dispara onload. */
-    POLL_TIMER = setTimeout(function(){
-        if (POLL_DONE) return;
-        POLL_DONE = true;
-        POLL_BUSY = false;
-        schedulePoll();
-    }, 4000);
-
-    try {
-        f.src = 'assets/music/api.php?action=get-now-playing&frame=1&_=' + now();
-    } catch (e) {
-        POLL_BUSY = false;
-        schedulePoll();
-    }
-}
-
-/* ── YouTube IFrame Player ──
-   La TV reproduce el audio. Se crea cuando llega el primer track y se
-   resincroniza con el servidor: cambia videoId, play/pause según
-   isPlaying, seek si difiere >3s del tiempo esperado. */
-var ytReady = false;
-var ytPlayer = null;
-var currentVideoId = null;
-var YT_UNSTARTED = -1, YT_ENDED = 0, YT_PLAYING = 1, YT_PAUSED = 2, YT_BUFFERING = 3, YT_CUED = 5;
-/* Throttle del seek: cada seek provoca un buffer + corte de audio. Solo
-   re-sincronizamos cuando ha pasado >5s desde el último seek/load y la
-   diferencia con el servidor es muy grande (>8s). Drift pequeño se
-   tolera para no cortar el audio constantemente. */
-var LAST_SEEK_TS = 0;
-/* Detector de "atascado": cuando el servidor pide isPlaying pero el
-   player no entra en PLAYING. STUCK_SINCE es el primer instante en
-   que detectamos el atasco — si persiste, escalamos a forzar play
-   → mute-trick → recargar video → recrear player. */
-var STUCK_SINCE = 0;
-/* Tracking de buffering. Cada entrada en BUFFERING marca el inicio;
-   al salir contamos el tiempo total perdido. Después de un buffer
-   largo (>2s) forzamos un resync agresivo porque sabemos que el TV
-   ha caído atrás. */
-var BUFFER_STARTED = 0;
-var POST_BUFFER_RESYNC = false;
-/* Embed bloqueado por el autor (errores 101/150). En este caso la TV
-   se queda como "now-playing visual": portada, título, vinilo girando
-   y barra de progreso desde la posición del móvil. Sin reintentos. */
-var EMBED_BLOCKED = false;
-
-/* Workaround de la autoplay policy del navegador de TV: los browsers
-   bloquean playVideo() programático sin gesto de usuario, pero
-   permiten autoplay si el audio está muteado. Truco: mute → play →
-   unmute. La transición es imperceptible (~100ms muteado). */
-function forcePlayWithMuteTrick() {
-    if (!ytPlayer) return;
-    try {
-        ytPlayer.mute();
-        ytPlayer.playVideo();
-        setTimeout(function(){
-            if (!ytPlayer) return;
-            try { ytPlayer.unMute(); } catch (_) {}
-            try { ytPlayer.setVolume(100); } catch (_) {}
-        }, 200);
-    } catch (_) {}
-}
-
-window.onYouTubeIframeAPIReady = function() {
-    ytReady = true;
-    syncPlayer();
-};
-
-function createPlayer() {
-    if (ytPlayer || !STATE.track || !STATE.track.videoId) return;
-    currentVideoId = STATE.track.videoId;
-    var startSec = Math.max(0, Math.floor(STATE.serverPos || 0));
-    LAST_SEEK_TS = now();
-    try {
-        /* Config minimalista igual que mobile.php. Algunos videos
-           bloquean específicamente el "embed con autoplay=1" pero
-           aceptan embed manual (autoplay=0 + playVideo()). Quitamos
-           también controls/rel/etc. — ninguno afecta a la validación
-           del embed, pero menos params = menos diferencias respecto a
-           la configuración que SÍ funciona en el móvil. */
-        ytPlayer = new YT.Player('tv-player', {
-            videoId: currentVideoId,
-            playerVars: {
-                playsinline: 1,
-                autoplay:    0,
-                start:       startSec
-            },
-            events: {
-                onReady: function(e) {
-                    if (STATE.isPlaying) { try { e.target.playVideo(); } catch (_) {} }
-                    else { try { e.target.pauseVideo(); } catch (_) {} }
-                },
-                /* El autoplay tras loadVideoById a veces se queda en
-                   CUED o UNSTARTED en vez de pasar a PLAYING. Forzamos
-                   play cuando el servidor dice isPlaying. */
-                onStateChange: function(e) {
-                    if (e.data === YT_PLAYING || e.data === YT_BUFFERING) {
-                        STUCK_SINCE = 0; /* salió del atasco */
-                    }
-                    /* Marca inicio/fin de buffering — buffer largo →
-                       resync agresivo al volver a PLAYING. */
-                    if (e.data === YT_BUFFERING) {
-                        if (!BUFFER_STARTED) BUFFER_STARTED = now();
-                    } else if (e.data === YT_PLAYING && BUFFER_STARTED) {
-                        var buffered = now() - BUFFER_STARTED;
-                        BUFFER_STARTED = 0;
-                        /* Resync agresivo SOLO si el buffer fue largo y NO
-                           lo provocó nuestro propio seek reciente. Los
-                           buffers tras un seek son esperados; tratarlos
-                           como "atraso" disparaba otro seek → buffer →
-                           seek… = micro-cortes en bucle. */
-                        if (buffered > 1500 && (now() - LAST_SEEK_TS) > 2500) {
-                            POST_BUFFER_RESYNC = true;
-                        }
-                    }
-                    if (!STATE.isPlaying) return;
-                    if (e.data === YT_CUED || e.data === YT_UNSTARTED) {
-                        setTimeout(function(){
-                            try { e.target.playVideo(); } catch (_) {}
-                        }, 120);
-                    }
-                },
-                /* Códigos: 2 = videoId inválido, 5 = HTML5 error,
-                   100 = no encontrado/privado, 101/150 = embed bloqueado.
-                   Para embed bloqueado mostramos un banner — no hay
-                   reintento posible. Para el resto reintentamos load. */
-                onError: function(e) {
-                    var code = e && e.data;
-                    showPlaybackError(code);
-                    if (code === 101 || code === 150) {
-                        /* Embed bloqueado por el autor → modo visual:
-                           paramos el player, dejamos portada+vinilo+
-                           barra (interpolada desde el móvil). */
-                        EMBED_BLOCKED = true;
-                        try { ytPlayer.stopVideo(); } catch (_) {}
-                        return;
-                    }
-                    if (code === 100 || code === 2) {
-                        return; /* otros errores no recuperables */
-                    }
-                    setTimeout(function(){
-                        if (!ytPlayer || !STATE.track || !STATE.track.videoId) return;
-                        try {
-                            ytPlayer.cueVideoById({
-                                videoId: STATE.track.videoId,
-                                startSeconds: Math.max(0, Math.floor(STATE.serverPos || 0))
-                            });
-                            setTimeout(function(){
-                                if (ytPlayer) { try { ytPlayer.playVideo(); } catch (_) {} }
-                            }, 300);
-                        } catch (_) {}
-                    }, 500);
-                }
-            }
-        });
-    } catch (_) {}
-}
-
-function syncPlayer() {
-    if (!ytReady) return;
-    var tr = STATE.track;
-    if (!tr || !tr.videoId) {
-        if (ytPlayer && currentVideoId) {
-            try { ytPlayer.stopVideo(); } catch (_) {}
-            currentVideoId = null;
-        }
-        return;
-    }
-    if (!ytPlayer) { createPlayer(); return; }
-
-    /* Cambió la pista → cargar la nueva.
-       Usamos cueVideoById + playVideo() en vez de loadVideoById. El
-       móvil opera así y muchos videos rechazan loadVideoById (que
-       implica autoplay) pero aceptan cue+play manual. */
-    if (tr.videoId !== currentVideoId) {
-        currentVideoId = tr.videoId;
-        hidePlaybackError();
-        EMBED_BLOCKED = false;
-        var startSec = Math.max(0, Math.floor(STATE.serverPos || 0));
-        try {
-            ytPlayer.cueVideoById({ videoId: currentVideoId, startSeconds: startSec });
-        } catch (_) {}
-        LAST_SEEK_TS = now();
-        if (STATE.isPlaying) {
-            /* playVideo() a los 300ms — dar tiempo a que cueVideoById
-               registre el videoId en el player. */
-            setTimeout(function(){
-                if (!ytPlayer || currentVideoId !== tr.videoId) return;
-                try { ytPlayer.playVideo(); } catch (_) {}
-            }, 300);
-        }
-        return;
-    }
-
-    /* Si la pista actual tiene embed bloqueado, no insistimos —
-       seguimos en modo visual hasta que el móvil pase a la siguiente. */
-    if (EMBED_BLOCKED) return;
-
-    var ps = -1;
-    try { ps = ytPlayer.getPlayerState(); } catch (_) {}
-
-    /* Posición esperada del móvil AHORA = última snapshot + tiempo
-       transcurrido. */
-    var dur      = (typeof STATE.duration === 'number' && STATE.duration > 0) ? STATE.duration : 0;
-    var elapsed  = (now() - STATE.serverTs) / 1000;
-    var expected = STATE.serverPos + elapsed;
-
-    /* CLAVE anti-bucle: si `expected` supera la duración, la canción ya
-       debería haber terminado. Cuando el móvil deja de emitir (pantalla
-       bloqueada, app en 2º plano → los timers JS se estrangulan) la
-       snapshot se CONGELA y `expected` se dispara sin fin. Antes, al
-       terminar el vídeo, la detección de atasco forzaba playVideo() que
-       REBOBINA desde 0 → se reproducía un tramo en bucle y nunca se
-       cambiaba de pista. Ahora, si se pasó del final: dejamos el vídeo
-       quieto (pausado) y esperamos a que llegue la siguiente pista
-       (cambio de videoId en el poll). Nada de replays ni seeks. */
-    if (dur > 0 && expected >= dur - 0.5) {
-        if (ps === YT_PLAYING) { try { ytPlayer.pauseVideo(); } catch (_) {} }
-        STUCK_SINCE = 0;
-        return;
-    }
-
-    /* Misma pista: play/pause son baratos, los hacemos siempre. */
-    if (STATE.isPlaying && ps !== YT_PLAYING && ps !== YT_BUFFERING) {
-        try { ytPlayer.playVideo(); } catch (_) {}
-    } else if (!STATE.isPlaying && ps === YT_PLAYING) {
-        try { ytPlayer.pauseVideo(); } catch (_) {}
-    }
-
-    /* Detección de atasco: el servidor pide play pero el player no
-       arranca. Escalamos cada vez que pasamos por syncPlayer:
-         <1s   → solo intentamos playVideo (lo de arriba).
-         1-4s  → mute-trick (bypass del autoplay policy).
-         4-8s  → recargamos el video desde su posición.
-         >8s   → recreamos el player desde cero (último recurso).  */
-    if (STATE.isPlaying && ps !== YT_PLAYING && ps !== YT_BUFFERING) {
-        if (!STUCK_SINCE) STUCK_SINCE = now();
-        var stuckFor = now() - STUCK_SINCE;
-        if (stuckFor > 8000) {
-            try { ytPlayer.destroy(); } catch (_) {}
-            ytPlayer = null;
-            currentVideoId = null;
-            STUCK_SINCE = 0;
-            LAST_SEEK_TS = 0;
-            createPlayer();
-            return;
-        }
-        if (stuckFor > 4000 && now() - LAST_SEEK_TS > 1500) {
-            try {
-                ytPlayer.cueVideoById({
-                    videoId: currentVideoId,
-                    startSeconds: Math.max(0, Math.floor(expected))
-                });
-                setTimeout(function(){
-                    if (ytPlayer) { try { ytPlayer.playVideo(); } catch (_) {} }
-                }, 300);
-            } catch (_) {}
-            LAST_SEEK_TS = now();
-        } else if (stuckFor > 1000) {
-            forcePlayWithMuteTrick();
-        }
-    } else if (ps === YT_PLAYING || ps === YT_BUFFERING) {
-        STUCK_SINCE = 0;
-    }
-
-    /* Resync de posición SOLO si:
-       1. Está reproduciendo (no tiene sentido seekear en pausa).
-       2. El estado del player ya no está buffering (seekear en mitad
-          de un buffer empeora el corte).
-       3. Pasaron >3s desde el último seek/load (deja al buffer estabilizarse).
-       4. La diferencia con el servidor supera el umbral (banda muerta de
-          2s → ignora desfases pequeños y evita micro-cortes).
-       Después de un buffer >1.5s (no provocado por nuestro propio seek),
-       el TV se sabe atrasado: corregimos con umbral 1s. El target se
-       limita a la duración para no seekear más allá del final. */
-    if (!STATE.isPlaying) return;
-    if (ps === YT_BUFFERING) return;
-
-    var target = dur > 0 ? Math.min(expected, dur - 0.5) : expected;
-    var actual = 0;
-    try { actual = ytPlayer.getCurrentTime() || 0; } catch (_) {}
-    var diff = Math.abs(actual - target);
-
-    var threshold;
-    if (POST_BUFFER_RESYNC) {
-        threshold = 1;
-        POST_BUFFER_RESYNC = false;
-    } else {
-        if (now() - LAST_SEEK_TS < 3000) return;
-        threshold = 2;
-    }
-
-    if (diff > threshold) {
-        try { ytPlayer.seekTo(target, true); } catch (_) {}
-        LAST_SEEK_TS = now();
-    }
-}
-
-/* Engancha syncPlayer al render solo para cambios DISCRETOS (pista
-   distinta o cambio de estado). Para los seeks de drift confiamos en
-   el setInterval(syncPlayer, 1500) — llamarlo cada poll provocaba
-   demasiados seekTo, que cortan el audio. */
-var _origRender = render;
-var _lastSyncedVid     = null;
-var _lastSyncedPlaying = null;
-render = function() {
-    _origRender();
-    var tr = STATE.track;
-    var vid = tr && tr.videoId ? tr.videoId : null;
-    var pl  = !!STATE.isPlaying;
-    if (vid !== _lastSyncedVid || pl !== _lastSyncedPlaying) {
-        _lastSyncedVid     = vid;
-        _lastSyncedPlaying = pl;
-        syncPlayer();
-    }
-};
-
-/* Carga la API de YouTube. El callback global onYouTubeIframeAPIReady
-   se dispara cuando el script esté listo. */
-(function loadYtApi() {
+/* ── Arranque ──
+   1. Las órdenes que ya había no se repiten: se empieza tras la última.
+   2. Si la TV estaba sonando (recarga, se fue la luz…), sigue donde iba.
+   3. A mirar órdenes y avisar al móvil de que está encendida. */
+(function cargarYT() {
     var s = document.createElement('script');
     s.src = 'https://www.youtube.com/iframe_api';
     document.getElementsByTagName('head')[0].appendChild(s);
 })();
-
-/* Polling serial — el siguiente poll se programa al terminar el actual
-   (ver schedulePoll), no con setInterval. Esto evita acumulación de
-   scripts pendientes cuando el browser de la TV no permite más de N
-   conexiones simultáneas. */
-function schedulePoll() {
-    setTimeout(fetchNowPlaying, POLL_DELAY);
+leerRt(RT.ordenes, function(d){
+    var cmds = (d && d.cmds) || [];
+    for (var i = 0; i < cmds.length; i++) if (cmds[i] && cmds[i].n > ULTIMA) ULTIMA = cmds[i].n;
+    leerRt(RT.estado, function(st){
+        if (st && st.on && st.track && st.track.videoId) {
+            leerRt(RT.cola, function(c){
+                if (c && c.queue && c.queue.length) {
+                    Q = c.queue;
+                    QV = c.qv || '';
+                    var i = (Q[st.idx] && Q[st.idx].videoId === st.track.videoId) ? st.idx : -1;
+                    for (var k = 0; i < 0 && k < Q.length; k++) if (Q[k].videoId === st.track.videoId) i = k;
+                    if (i >= 0) {
+                        ON = true;
+                        PL = st.pl || '';
+                        SHUFFLE = !!st.shuffle;
+                        QUIERE_SONAR = !!st.playing;
+                        var pos = st.pos || 0;
+                        if (st.playing && st.t) pos += Math.max(0, (now() + RELOJ - st.t) / 1000);
+                        cargar(i, pos);
+                    }
+                }
+                arrancar();
+            });
+        } else {
+            arrancar();
+        }
+    });
+});
+function arrancar() {
+    render();
+    contarEstado(true);
+    mirarOrdenes();
 }
-fetchNowPlaying();
-setInterval(tickProgress,  300);
-setInterval(syncPlayer,    900);   /* antes 1500 — chequeo de drift más frecuente */
+setInterval(tickProgress, 500);
+setInterval(render, 2000);
 </script>
 
 <?php endif; ?>

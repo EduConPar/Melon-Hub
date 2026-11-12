@@ -16,6 +16,7 @@
    ────────────────────────────────────────────── */
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__) . '/tienda/catalogo.php';   /* haros y mascotas: salen de assets/tienda/catalogo.json */
 
 $u      = requireAuth();
 $userKey = $u['key'];
@@ -30,63 +31,16 @@ $uid = (function() use ($pdo, $userKey) {
 })();
 if (!$uid) jsonError('Usuario no encontrado en BD', 500);
 
-/* ── Setup idempotente ──
-   Añade columna `slug` a tienda_items si no existe — la usamos para
-   mapear el item a sus archivos (gif/png/audio). Y siembra el primer
-   haro base ("Verde") asociado al greenHaro existente. */
-function ensureSchema(PDO $pdo): void {
-    static $done = false;
-    if ($done) return;
-
-    /* slug column */
-    try {
-        $col = $pdo->query("SHOW COLUMNS FROM tienda_items LIKE 'slug'")->fetch();
-        if (!$col) {
-            $pdo->exec("ALTER TABLE tienda_items ADD COLUMN slug VARCHAR(60) NOT NULL DEFAULT '' AFTER nombre");
-        }
-    } catch (Throwable $e) { /* sin permisos ALTER → seguimos, fallback en nombre */ }
-
-    /* Seed para una categoría arbitraria de tienda_items.
-       Convención de nombres por slug:
-         haros    → assets/vids/{slug}Haro.gif (+ -last.png + .mp3)
-         mascotas → assets/mascota/skins/{slug}/shimeN.png */
-    $seed = function(string $categoria, string $slug, string $nombre, string $desc, int $precio, int $orden) use ($pdo) {
-        try {
-            $stmt = $pdo->prepare("SELECT id FROM tienda_items WHERE categoria = ? AND slug = ? LIMIT 1");
-            $stmt->execute([$categoria, $slug]);
-            if ($stmt->fetchColumn()) return;
-            $ins = $pdo->prepare("INSERT INTO tienda_items (nombre, slug, descripcion, precio, icono, activo, orden, categoria)
-                                  VALUES (?, ?, ?, ?, '', 1, ?, ?)");
-            $ins->execute([$nombre, $slug, $desc, $precio, $orden, $categoria]);
-        } catch (Throwable $e) { /* slug column quizá no existe — ignoramos */ }
-    };
-
-    try {
-        /* Migra cualquier seed anterior con slug='verde' a 'green' y
-           vacía iconos emoji previos — los haros usan el PNG del slug
-           como icono visible (la convención manda). */
-        $pdo->exec("UPDATE tienda_items SET slug = 'green' WHERE categoria = 'haros' AND slug = 'verde'");
-        $pdo->exec("UPDATE tienda_items SET icono = '' WHERE categoria = 'haros' AND icono <> ''");
-    } catch (Throwable $e) {}
-
-    /* Haros */
-    $seed('haros', 'green',  'Verde',    'Haro verde clásico. Lo tienes por defecto.', 0,  1);
-    $seed('haros', 'yellow', 'Amarillo', 'Haro amarillo',                              50, 2);
-    /* Mascotas — la skin se aplica a la PRÓXIMA mascota que crees
-       (la actual mantiene su skin original). */
-    $seed('mascotas', 'gabriel', 'Gabriel', 'Mascota Gabriel — angel shimeji con 46 frames.', 0, 1);
-
-    $done = true;
-}
-
-/* Items que el usuario posee de una categoría (base + comprados). */
+/* Items que el usuario posee de una categoría (base + comprados). Los
+   base solo si siguen activos; los comprados aunque se hayan quitado del
+   catálogo (assets/tienda/catalogo.json): quien lo compró lo conserva. */
 function loadOwnedItems(PDO $pdo, int $uid, string $categoria): array {
     $sql = "SELECT i.id, i.nombre, i.slug, i.icono, i.precio, i.descripcion,
                    (i.precio = 0) AS is_base,
                    EXISTS (SELECT 1 FROM tienda_compras c WHERE c.user_id = ? AND c.item_id = i.id) AS owned
             FROM tienda_items i
-            WHERE i.activo = 1 AND i.categoria = ?
-              AND (i.precio = 0
+            WHERE i.categoria = ?
+              AND ((i.precio = 0 AND i.activo = 1)
                    OR EXISTS (SELECT 1 FROM tienda_compras c WHERE c.user_id = ? AND c.item_id = i.id))
             ORDER BY i.orden ASC, i.id ASC";
     $stmt = $pdo->prepare($sql);
@@ -121,19 +75,19 @@ function setActiveItemId(PDO $pdo, int $uid, string $keyName, int $itemId): void
 }
 
 /* Verifica que el usuario posea el ítem (base o comprado) antes de
-   permitir activarlo. */
+   permitir activarlo. Uno comprado vale aunque ya no se venda. */
 function userOwnsItem(PDO $pdo, int $uid, int $itemId, string $categoria): bool {
-    $stmt = $pdo->prepare("SELECT id, precio FROM tienda_items WHERE id = ? AND categoria = ? AND activo = 1");
+    $stmt = $pdo->prepare("SELECT id, precio, activo FROM tienda_items WHERE id = ? AND categoria = ?");
     $stmt->execute([$itemId, $categoria]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) return false;
-    if ((int)$row['precio'] === 0) return true; /* base */
+    if ((int)$row['precio'] === 0) return (bool)$row['activo']; /* base */
     $stmt = $pdo->prepare("SELECT 1 FROM tienda_compras WHERE user_id = ? AND item_id = ?");
     $stmt->execute([$uid, $itemId]);
     return (bool) $stmt->fetchColumn();
 }
 
-ensureSchema($pdo);
+tiendaSyncCatalogo($pdo);
 
 switch ($action) {
 
@@ -245,6 +199,38 @@ case 'set-icon-pack': {
                            ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP");
     $stmt->execute([$uid, 'icon_pack:' . $iface, json_encode($pack)]);
     jsonResponse(['ok' => true]);
+}
+
+/* ── FUENTES (assets/php/fuentes.php) ──
+   fonts: todas las del catálogo con si las tienes, la puesta en la
+   interfaz activa y la de serie. set-font {slug, interface}: la guarda
+   para esa interfaz y, si es la activa, pone la cookie melonFuente (la
+   página recarga después). */
+case 'fonts':
+case 'set-font': {
+    require_once dirname(__DIR__) . '/php/fuentes.php';
+    if ($action === 'set-font') {
+        $body  = jsonBody();
+        $slug  = (string)($body['slug'] ?? '');
+        $iface = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($body['interface'] ?? '')) ?: getActiveInterface();
+        if (!isset(melonFuentes()[$slug])) jsonError('Fuente no encontrada', 404);
+        if (!isset(melonFuentesPoseidas($pdo, $uid)[$slug])) jsonError('No tienes esta fuente', 403);
+        $stmt = $pdo->prepare("INSERT INTO user_settings (user_id, key_name, value)
+                               VALUES (?, ?, ?)
+                               ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP");
+        $stmt->execute([$uid, 'fuente:' . $iface, json_encode($slug)]);
+        if ($iface === getActiveInterface()) melonFuenteCookie($slug === melonFuenteDefecto($iface) ? '' : $slug);
+        jsonResponse(['ok' => true]);
+    }
+    $iface = getActiveInterface();
+    $tiene = melonFuentesPoseidas($pdo, $uid);
+    $out = [];
+    foreach (melonFuentes() as $slug => $f) {
+        $out[] = ['slug' => $slug, 'nombre' => $f['nombre'], 'familia' => $f['familia'],
+                  'url' => melonFuenteUrl($f), 'tiene' => isset($tiene[$slug])];
+    }
+    jsonResponse(['ok' => true, 'interfaz' => $iface, 'fuentes' => $out,
+                  'activa' => melonFuenteActiva($pdo, $uid, $iface), 'defecto' => melonFuenteDefecto($iface)]);
 }
 
 /* ── GET LOOK ──

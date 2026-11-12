@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Melon Hub</string>
+    <string name="title_activity_main">Melon Hub</string>
+    <string name="package_name">es.melonhub.MelonHub</string>
+    <string name="custom_url_scheme">es.melonhub.MelonHub</string>
+
+    <!-- Widget de música -->
+    <string name="widget_description">Lo que suena y tus playlists</string>
+    <string name="widget_title">Melon Hub</string>
+    <string name="widget_idle">Nada sonando</string>
+    <string name="widget_my_playlists">Mis playlists</string>
+    <string name="widget_play_all">Reproducir</string>
+    <string name="widget_playlists">Playlists</string>
+    <string name="widget_back">Atrás</string>
+    <string name="widget_cover">Carátula</string>
+    <string name="widget_prev">Anterior</string>
+    <string name="widget_toggle">Reproducir / pausar</string>
+    <string name="widget_next">Siguiente</string>
+    <string name="widget_shuffle">Aleatorio</string>
+    <string name="widget_loading">Cargando…</string>
+    <string name="widget_login">Abre Melon Hub e inicia sesión</string>
+    <string name="widget_offline">No se pudieron cargar las playlists</string>
+    <string name="widget_no_playlists">No tienes playlists</string>
+    <string name="widget_empty_playlist">Esta playlist está vacía</string>
+
+    <!-- Widgets de calendario -->
+    <string name="cal_month_label">Calendario</string>
+    <string name="cal_month_description">El mes con tus momentos y recordatorios</string>
+    <string name="cal_agenda_label">Próximos</string>
+    <string name="cal_agenda_description">Tus próximos recordatorios y eventos</string>
+    <string name="cal_title_agenda">Próximos</string>
+    <string name="cal_prev_month">Mes anterior</string>
+    <string name="cal_next_month">Mes siguiente</string>
+    <string name="cal_open">Abrir el calendario</string>
+    <string name="cal_nothing">No hay nada próximo</string>
+    <string name="cal_today">Hoy</string>
+    <string name="cal_reminder">Recordatorio</string>
+    <string name="cal_event">Evento</string>
+    <string name="cal_every_week">cada semana</string>
+    <string name="cal_every_month">cada mes</string>
+    <string name="cal_every_year">cada año</string>
+</resources>

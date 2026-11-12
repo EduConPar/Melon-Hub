@@ -1,0 +1,4 @@
+# Nada de esta carpeta se pide por web: son archivos que incluyen las
+# APIs (send-push.php, webpush.php), claves (VAPID, cuenta de servicio de
+# Firebase) y el access token de FCM (fcm-token.cache).
+Require all denied

@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<!--
+    REPRODUCTOR FLOTANTE de la app de escritorio (electron/mini-player.js).
+    Reproductor vertical en una ventana Win98: carátula, título y artista,
+    progreso y la fila letra · anterior · play/pausa · siguiente · aleatorio.
+    Dos paneles que ocupan su sitio: playlists (≡, con el buscador de
+    canciones, álbumes y artistas del menú de playlists del escritorio) y
+    letra (🎤). El clic derecho tiene las mismas opciones que el del
+    reproductor del escritorio.
+
+    No reproduce nada: la música sigue en la ventana principal, escondida.
+    Esta solo enseña lo que suena (window.melonDesktop.mini.onState) y le
+    manda los botones (mini.command → apps/reproductor.php). Playlists,
+    búsquedas, álbumes, artistas y letra los pide a la API como el
+    reproductor del escritorio.
+    El tema y la interfaz (Win98 / Melon Kawaii) los copia de la ventana
+    principal al abrirse (mini.onLook): todo el CSS de aquí usa sus tokens.
+-->
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Melon Hub</title>
+    <base href="../">
+    <link rel="stylesheet" href="assets/css/98.css">
+    <link rel="stylesheet" href="assets/css/tokens.css">
+    <script src="assets/js/icon-pack.js"></script>
+    <script src="assets/js/melon-links.js"></script>
+    <!-- Va siempre la última: el CSS del escritorio que se copia de la
+         ventana principal se inserta delante. -->
+    <style id="mini-overrides">
+        html, body { margin: 0; padding: 0; background: none !important; overflow: hidden; }
+        #mp { position: relative; margin: 0; width: 300px; }
+        #mp .title-bar { -webkit-app-region: drag; user-select: none; }
+        #mp .title-bar button { -webkit-app-region: no-drag; }
+        #mp .title-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        #mp-body { padding: 8px; }
+        /* Solo los del cuerpo: los de la barra de título no tienen otro
+           tamaño que el mínimo de 98.css. */
+        #mp-body button { min-width: 0; min-height: 0; }
+
+        /* Las tres vistas ocupan el mismo sitio: el reproductor marca el
+           tamaño y los paneles lo cubren por encima. */
+        .mp-views { position: relative; }
+        .mp-view { display: flex; flex-direction: column; }
+        .mp-view:not(.active) { visibility: hidden; }
+        .mp-panel { position: absolute; inset: 0; }
+
+        /* ── Reproductor ── */
+        .mp-cover {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: var(--inset-bg);
+            box-shadow:
+                -1px -1px 0 var(--bezel-dark-1),  1px  1px 0 var(--bezel-light-1),
+                -2px -2px 0 var(--bezel-dark-2),  2px  2px 0 var(--bezel-light-2);
+            overflow: hidden;
+        }
+        .mp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .mp-info { position: relative; margin: 12px 0 8px; padding: 0 30px; text-align: center; }
+        .mp-title-box { overflow: hidden; white-space: nowrap; }
+        #mp-song { display: inline-block; font-weight: bold; color: var(--text); margin: 0; }
+        #mp-artist { margin: 3px 0 0; font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        #mp-lists-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 24px; height: 22px; padding: 0; font-size: 11px; }
+
+        #mp-progress {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 14px;
+            margin: 0;
+            padding: 0;
+            display: block;
+            background: linear-gradient(to right, var(--accent) var(--p, 0%), var(--input-bg) var(--p, 0%));
+            box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1),
+                        inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2);
+            outline: none;
+        }
+        /* Sin el surco de 98.css por el medio: solo el relleno del color de acento. */
+        #mp-progress::-webkit-slider-runnable-track { background: none; border: 0; box-shadow: none; }
+        #mp-progress::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 11px;
+            height: 20px;
+            background: var(--btn-bg);
+            box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2);
+        }
+        .mp-time { display: flex; justify-content: space-between; margin: 4px 0 10px; font-size: 10px; color: var(--text); }
+
+        .mp-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .mp-controls .button { width: 34px; height: 26px; padding: 0; font-size: 10px; }
+        .mp-controls #mp-play { width: 48px; height: 38px; }
+        /* 98.css pinta el texto de los botones con color transparente y
+           sombra; los iconos van con el color de texto del tema. */
+        .mp-controls svg { display: block; margin: auto; fill: var(--btn-text); shape-rendering: crispEdges; }
+        .mp-controls svg.mp-stroke { fill: none; stroke: var(--btn-text); shape-rendering: auto; }
+        /* Volumen: la barra deslizante Win98 de 98.css (o la de la interfaz). */
+        .mp-volume { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+        #mp-vol-icon { width: 26px; flex-shrink: 0; font-size: 11px; color: var(--text); white-space: nowrap; }
+        #mp-volume { flex: 1; min-width: 0; margin: 0; }
+
+        /* ── Paneles (playlists y letra) ── */
+        .mp-panel-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .mp-panel-head .button { padding: 0 8px; height: 22px; }
+        .mp-panel-title { flex: 1; font-weight: bold; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .mp-box {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            background: var(--input-bg);
+            color: var(--input-text);
+            box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1),
+                        inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2);
+            padding: 3px;
+        }
+        /* Buscador del panel de playlists (el campo de texto de 98.css). */
+        #mp-search { width: 100%; box-sizing: border-box; margin: 0 0 6px; flex-shrink: 0; }
+        #mp-search[hidden] { display: none; }
+        .mp-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: default; }
+        .mp-row:hover, .mp-row.current { background: var(--accent); color: var(--accent-text); }
+        .mp-row.disabled { opacity: 0.5; pointer-events: none; }
+        .mp-row-num { flex-shrink: 0; min-width: 16px; text-align: right; font-size: 10px; opacity: 0.7; }
+        .mp-thumb { width: 32px; height: 32px; flex-shrink: 0; object-fit: cover; background: var(--inset-bg); }
+        .mp-thumb.round { border-radius: 50%; }
+        .mp-thumb.icon { padding: 6px; box-sizing: border-box; object-fit: contain; image-rendering: pixelated; }
+        .mp-row-info { flex: 1; min-width: 0; }
+        .mp-row-info > * { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .mp-row-sub { opacity: 0.7; font-size: 10px; }
+        .mp-row-time { flex-shrink: 0; font-size: 10px; opacity: 0.7; }
+        .mp-row .button { width: 20px; height: 18px; padding: 0; font-size: 11px; flex-shrink: 0; }
+        .mp-group { padding: 6px 4px 2px; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: var(--text-faint); }
+        /* Secciones de la página de artista (.aw-section-title del escritorio). */
+        .mp-group.mp-section { padding: 8px 4px 3px; font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--input-text); }
+        /* Cabecera de las páginas de álbum y de artista. */
+        .mp-page-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 6px; }
+        .mp-page-head img { width: 64px; height: 64px; flex-shrink: 0; object-fit: cover; background: var(--inset-bg); }
+        .mp-page-head img.round { border-radius: 50%; }
+        .mp-page-head .mp-row-info > * + * { margin-top: 2px; }
+        .mp-page-head .button { width: auto; height: 22px; padding: 0 8px; font-size: 11px; }
+        .mp-page-name { font-weight: bold; }
+        .mp-link { color: var(--link-text); text-decoration: underline; cursor: pointer; }
+        .mp-msg { padding: 8px; text-align: center; color: var(--text-muted); }
+        .mp-lyric { padding: 3px 6px; text-align: center; color: var(--text-muted); }
+        .mp-lyric.active { color: var(--accent); font-weight: bold; }
+        .mp-lyrics-plain { padding: 4px 6px; text-align: center; white-space: pre-line; }
+
+        /* ── Paneles de Corregir y Escuchar juntos (los diálogos del
+           reproductor del escritorio) ── */
+        .mp-form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .mp-form input[type=text] { width: 100%; box-sizing: border-box; flex-shrink: 0; }
+        .mp-label { flex-shrink: 0; margin: 6px 0 2px; font-weight: bold; color: var(--text); }
+        .mp-hint { flex-shrink: 0; margin: 0 0 4px; font-size: 10px; line-height: 1.4; color: var(--text); opacity: 0.85; }
+        .mp-form .mp-box { min-height: 48px; margin-top: 4px; }
+        #mp-fix-chosen:not(:empty) { flex-shrink: 0; margin-top: 4px; }
+        .mp-form-msg { flex-shrink: 0; min-height: 14px; margin-top: 4px; font-size: 10px; color: var(--text); }
+        .mp-form-buttons { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+        .mp-form-buttons .button { height: 23px; padding: 0 10px; }
+        .mp-form select { width: 100%; flex-shrink: 0; }
+        /* 98.css cambia la flecha al pulsar (select:active) y el CSS del tema
+           le quita el no-repeat: salía una fila de flechas. */
+        .mp-form select, .mp-form select:active { background-repeat: no-repeat; background-position: top 2px right 2px; }
+        .mp-lt-status { flex-shrink: 0; color: var(--text); line-height: 1.4; }
+        .mp-row .button.mp-wide { width: auto; padding: 0 8px; }
+
+        /* Invitación a escuchar juntos: encima de la carátula, sin cambiar
+           el tamaño de la ventana. */
+        #mp-invites { position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
+        .mp-invite { margin-bottom: 4px; padding: 6px; background: var(--win-bg); color: var(--text);
+            box-shadow: inset -1px -1px var(--bezel-dark-2), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-1), inset 2px 2px var(--bezel-light-2); }
+        .mp-invite-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mp-invite .mp-form-buttons { margin-top: 4px; }
+
+        /* ── Tirador de la esquina (tamaño del flotante) ── */
+        #mp-grip {
+            position: absolute;
+            right: 2px;
+            bottom: 2px;
+            width: 12px;
+            height: 12px;
+            cursor: nwse-resize;
+            touch-action: none;
+        }
+        /* Rayas del tirador de Win98 (dos grises y una blanca, tres veces),
+           dibujadas píxel a píxel: con degradados salían borrosas. */
+        #mp-grip svg { display: block; pointer-events: none; }
+
+        /* ── Menú del clic derecho ── */
+        #mp-menu {
+            position: fixed;
+            display: none;
+            z-index: 10;
+            min-width: 170px;
+            padding: 2px;
+            background: var(--win-bg);
+            box-shadow: inset -1px -1px var(--bezel-dark-2), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-1), inset 2px 2px var(--bezel-light-2);
+        }
+        .mp-menu-item { padding: 4px 16px 4px 8px; white-space: nowrap; color: var(--text); }
+        .mp-menu-item:hover { background: var(--accent); color: var(--accent-text); }
+        .mp-menu-item.disabled { opacity: 0.5; pointer-events: none; }
+    </style>
+</head>
+<body>
+<div class="window" id="mp">
+    <div class="title-bar">
+        <div class="title-bar-text"><img src="assets/img/appIcons/musicaIcon.png" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;" alt=""><span id="mp-window-title">Reproductor</span></div>
+        <div class="title-bar-controls">
+            <button aria-label="Minimize" id="mp-min" title="Minimizar"></button>
+            <button aria-label="Maximize" id="mp-open" title="Abrir Melon Hub"></button>
+            <button aria-label="Close" id="mp-close" title="Cerrar el reproductor"></button>
+        </div>
+    </div>
+    <div class="window-body" id="mp-body">
+        <div class="mp-views">
+            <div id="mp-invites"></div>
+            <!-- Reproductor -->
+            <div class="mp-view active" id="mp-player">
+                <div class="mp-cover"><img id="mp-cover" src="" alt=""></div>
+                <div class="mp-info">
+                    <div class="mp-title-box"><p id="mp-song">Sin título</p></div>
+                    <p id="mp-artist">—</p>
+                    <button class="button" id="mp-lists-btn" title="Playlists">≡</button>
+                </div>
+                <input type="range" id="mp-progress" min="0" max="100" value="0" step="0.1">
+                <div class="mp-time"><span id="mp-current">0:00</span><span id="mp-duration">0:00</span></div>
+                <div class="mp-controls">
+                    <button class="button" id="mp-lyrics-btn" title="Letra"><svg class="mp-stroke" viewBox="0 0 24 24" width="13" height="13" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
+                    <button class="button" id="mp-prev" title="Anterior"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="2" y="3" width="2" height="10"/><polygon points="13,3 13,13 5,8"/></svg></button>
+                    <button class="button" id="mp-play" title="Reproducir / pausar"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><polygon points="4,2 4,14 13,8"/></svg></button>
+                    <button class="button" id="mp-next" title="Siguiente"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><polygon points="3,3 3,13 11,8"/><rect x="12" y="3" width="2" height="10"/></svg></button>
+                    <button class="button" id="mp-shuffle" title="Reproducción aleatoria">⇄</button>
+                </div>
+                <div class="mp-volume">
+                    <span id="mp-vol-icon">◄))</span>
+                    <input type="range" id="mp-volume" min="0" max="100" step="1" value="100" title="Volumen">
+                </div>
+            </div>
+            <!-- Playlists y búsqueda: playlists / resultados → canciones de
+                 una playlist, álbum o artista -->
+            <div class="mp-view mp-panel" id="mp-lists">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lists-back">◄ Volver</button>
+                    <span class="mp-panel-title" id="mp-lists-title">Playlists</span>
+                </div>
+                <input type="text" id="mp-search" autocomplete="off" spellcheck="false">
+                <div class="mp-box" id="mp-lists-box"></div>
+            </div>
+            <!-- Letra -->
+            <div class="mp-view mp-panel" id="mp-lyrics">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lyrics-back">◄ Volver</button>
+                    <span class="mp-panel-title">Letra</span>
+                </div>
+                <div class="mp-box" id="mp-lyrics-box"></div>
+            </div>
+            <!-- Corregir canción (reportWrongAlbum del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-fix">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-fix-back">◄ Volver</button>
+                    <span class="mp-panel-title">Corregir canción</span>
+                </div>
+                <div class="mp-form">
+                    <p class="mp-hint">Corrige los datos de esta canción. Se guardan para siempre: cuando la añadas a otra playlist o la importes, se usarán estos valores.</p>
+                    <label class="mp-label" for="mp-fix-title">Título</label>
+                    <input type="text" id="mp-fix-title" autocomplete="off" placeholder="Título de la canción">
+                    <label class="mp-label" for="mp-fix-artist">Artista</label>
+                    <input type="text" id="mp-fix-artist" autocomplete="off" placeholder="Nombre del artista">
+                    <label class="mp-label" for="mp-fix-link">Link de YouTube</label>
+                    <input type="text" id="mp-fix-link" autocomplete="off" placeholder="Pega un enlace de YouTube (opcional)">
+                    <label class="mp-label" for="mp-fix-album">Álbum</label>
+                    <input type="text" id="mp-fix-album" autocomplete="off" placeholder="Escribe el nombre del álbum (opcional)…">
+                    <div id="mp-fix-chosen"></div>
+                    <div class="mp-box" id="mp-fix-results"></div>
+                    <div class="mp-form-msg" id="mp-fix-msg">Para el álbum, escribe y elige un resultado de la lista.</div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-fix-cancel">Cancelar</button>
+                        <button class="button" id="mp-fix-save">Guardar</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Descargar la canción (openDownloadDialog del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-dl">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-dl-back">◄ Volver</button>
+                    <span class="mp-panel-title">Descargar canción</span>
+                </div>
+                <div class="mp-form">
+                    <div class="mp-page-head">
+                        <img id="mp-dl-cover" alt="">
+                        <div class="mp-row-info"><span class="mp-page-name" id="mp-dl-title"></span><span class="mp-row-sub" id="mp-dl-artist"></span></div>
+                    </div>
+                    <label class="mp-label" for="mp-dl-format">Formato</label>
+                    <select id="mp-dl-format"><option value="mp3">MP3</option><option value="m4a">M4A (original)</option><option value="wav">WAV</option></select>
+                    <label class="mp-label" for="mp-dl-kbps">Calidad</label>
+                    <select id="mp-dl-kbps"><option value="128">128 kbps</option><option value="192" selected>192 kbps</option><option value="320">320 kbps</option></select>
+                    <p class="mp-hint" style="margin-top:8px;">Se guarda en Descargas como</p>
+                    <p class="mp-hint" id="mp-dl-name" style="font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></p>
+                    <div class="progress-indicator" id="mp-dl-bar" style="height:20px;padding:3px;display:none;flex-shrink:0;"><span class="progress-indicator-bar" style="width:0%;background-color:var(--accent);"></span></div>
+                    <div class="mp-form-msg" id="mp-dl-msg"></div>
+                    <div style="flex:1"></div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-dl-cancel">Cancelar</button>
+                        <button class="button" id="mp-dl-go">Descargar</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Escuchar juntos (el modal lt-modal del escritorio) -->
+            <div class="mp-view mp-panel" id="mp-lt">
+                <div class="mp-panel-head">
+                    <button class="button" id="mp-lt-back">◄ Volver</button>
+                    <span class="mp-panel-title">🎧 Escuchar juntos</span>
+                </div>
+                <div class="mp-form">
+                    <div class="mp-label">Estado</div>
+                    <div class="mp-lt-status" id="mp-lt-status"></div>
+                    <div class="mp-label">Invitar a:</div>
+                    <div class="mp-box" id="mp-lt-users"></div>
+                    <div class="mp-form-buttons">
+                        <button class="button" id="mp-lt-end">Cerrar sesión</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="mp-grip" title="Arrastra para cambiar el tamaño"><svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path fill="var(--bezel-light-1)" d="M0 11h1v1h-1zM1 10h1v1h-1zM2 9h1v1h-1zM3 8h1v1h-1zM4 7h1v1h-1zM4 11h1v1h-1zM5 6h1v1h-1zM5 10h1v1h-1zM6 5h1v1h-1zM6 9h1v1h-1zM7 4h1v1h-1zM7 8h1v1h-1zM8 3h1v1h-1zM8 7h1v1h-1zM8 11h1v1h-1zM9 2h1v1h-1zM9 6h1v1h-1zM9 10h1v1h-1zM10 1h1v1h-1zM10 5h1v1h-1zM10 9h1v1h-1zM11 0h1v1h-1zM11 4h1v1h-1zM11 8h1v1h-1z"/><path fill="var(--bezel-dark-2)" d="M1 11h1v1h-1zM2 10h1v1h-1zM2 11h1v1h-1zM3 9h1v1h-1zM3 10h1v1h-1zM4 8h1v1h-1zM4 9h1v1h-1zM5 7h1v1h-1zM5 8h1v1h-1zM5 11h1v1h-1zM6 6h1v1h-1zM6 7h1v1h-1zM6 10h1v1h-1zM6 11h1v1h-1zM7 5h1v1h-1zM7 6h1v1h-1zM7 9h1v1h-1zM7 10h1v1h-1zM8 4h1v1h-1zM8 5h1v1h-1zM8 8h1v1h-1zM8 9h1v1h-1zM9 3h1v1h-1zM9 4h1v1h-1zM9 7h1v1h-1zM9 8h1v1h-1zM9 11h1v1h-1zM10 2h1v1h-1zM10 3h1v1h-1zM10 6h1v1h-1zM10 7h1v1h-1zM10 10h1v1h-1zM10 11h1v1h-1zM11 1h1v1h-1zM11 2h1v1h-1zM11 5h1v1h-1zM11 6h1v1h-1zM11 9h1v1h-1zM11 10h1v1h-1z"/></svg></div>
+</div>
+<div id="mp-menu"></div>
+<script>
+(function() {
+    var md = window.melonDesktop;
+    if (!md || !md.mini) return;   /* solo tiene sentido dentro de la app */
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function fmt(s) {
+        s = Math.max(0, Math.floor(s || 0));
+        return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }
+    var cmd = md.mini.command;
+    var state = {};
+    var ICON_PLAY  = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><polygon points="4,2 4,14 13,8"/></svg>';
+    var ICON_PAUSE = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="3" y="2" width="4" height="12"/><rect x="9" y="2" width="4" height="12"/></svg>';
+
+    /* ── Vistas ── */
+    var view = 'player';
+    function show(name) {
+        view = name;
+        ['player', 'lists', 'lyrics', 'fix', 'lt', 'dl'].forEach(function(v) { $('mp-' + v).classList.toggle('active', v === name); });
+        $('mp-lyrics-btn').classList.toggle('btn-active', name === 'lyrics');
+        if (name === 'lists') openPlaylists();
+        if (name === 'lyrics') loadLyrics();
+        if (name === 'fix') openFix();
+        if (name === 'lt') openListenTogether();
+        if (name === 'dl') openDownload(dlSong);
+    }
+
+    /* ── La ventana se ajusta a la ventana Win98 dibujada. Se mide sin
+       esperar a requestAnimationFrame: al volver a salir la página se
+       recarga con la ventana escondida, que no pinta ningún frame. ── */
+    function fit() {
+        var r = $('mp').getBoundingClientRect();
+        md.mini.fit(Math.ceil(r.width), Math.ceil(r.height));
+    }
+
+    /* ── Tamaño: el tirador de la esquina cambia `scale` y fit() ajusta la
+       ventana a lo que ocupa. Va todo en la página para que también
+       funcione con apps instaladas sin IPC nuevo. Se recuerda en
+       localStorage (es de este equipo, no de la cuenta).
+       Al AGRANDAR (scale > 1) crece todo con zoom, mismo diseño.
+       Al ENCOGER (decidido así) lo primero es la carátula:
+         1) la ventana se estrecha con la carátula (ancho = 300 × scale)
+            y botones, textos y barras se quedan de su tamaño;
+         2) cuando los botones ya no caben más estrechos (anchoMin), la
+            ventana no se estrecha más y la carátula sigue encogiendo
+            sola, centrada, hasta COVER_MIN;
+         3) a partir de ahí encoge todo junto con zoom (hasta ZOOM_MIN). ── */
+    var SCALE_KEY = 'reproductor:mini-scale', MAX_SCALE = 1.6;
+    var BASE_W = 300, BODY_PAD = 16, COVER_MIN = 64, ZOOM_MIN = 0.6;
+    var S_COVER_MIN = (COVER_MIN + BODY_PAD) / BASE_W;   /* scale en que la carátula llega al mínimo */
+    var MIN_SCALE = S_COVER_MIN * ZOOM_MIN;
+    var scale = 1;
+    /* Ancho mínimo de la ventana sin encoger nada más que la carátula: la
+       fila de botones (la más ancha que no se puede recortar) + el marco
+       y el relleno de la ventana. Se mide cada vez: depende de la
+       interfaz y del tamaño de letra. */
+    function anchoMin() {
+        var bs = document.querySelectorAll('.mp-controls > *');
+        if (!bs.length) return 240;
+        var fila = bs[bs.length - 1].getBoundingClientRect().right - bs[0].getBoundingClientRect().left;
+        var cuerpo = $('mp-body').clientWidth - BODY_PAD;
+        var marco = $('mp').getBoundingClientRect().width - cuerpo;
+        return Math.ceil(fila + marco);
+    }
+    function setScale(s) {
+        scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s || 1));
+        var mp = $('mp'), cov = document.querySelector('.mp-cover');
+        if (scale >= 1) {
+            mp.style.width = ''; cov.style.width = ''; cov.style.margin = '';
+            document.body.style.zoom = scale === 1 ? '' : String(scale);
+            return;
+        }
+        document.body.style.zoom = '';
+        var min = anchoMin();
+        if (scale >= S_COVER_MIN) {
+            var w = BASE_W * scale;
+            mp.style.width = Math.max(min, Math.round(w)) + 'px';
+            cov.style.width = Math.max(COVER_MIN, Math.round(w - BODY_PAD)) + 'px';
+        } else {
+            mp.style.width = min + 'px';
+            cov.style.width = COVER_MIN + 'px';
+            document.body.style.zoom = String(Math.round(scale / S_COVER_MIN * 100) / 100);
+        }
+        cov.style.margin = '0 auto';
+    }
+    try { setScale(parseFloat(localStorage.getItem(SCALE_KEY))); } catch (_) {}
+    (function() {
+        var grip = $('mp-grip');
+        grip.addEventListener('pointerdown', function(e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            grip.setPointerCapture(e.pointerId);
+            /* screenX/Y: la ventana cambia de tamaño bajo el ratón y las
+               coordenadas de la página se moverían con ella. */
+            var x0 = e.screenX, y0 = e.screenY;
+            var r = $('mp').getBoundingClientRect();
+            /* El tamaño no es proporcional a scale (al encoger, primero solo
+               la carátula): se busca la escala que deja la ventana a la
+               altura pedida. La altura crece siempre con scale (en las tres
+               fases), el ancho no (en la 2.ª se queda fijo). Si el ratón se
+               mueve más en horizontal, se pasa a altura con la forma. */
+            function altoCon(s) { setScale(s); return $('mp').getBoundingClientRect().height; }
+            function move(ev) {
+                var dx = ev.screenX - x0, dy = ev.screenY - y0;
+                var objetivo = r.height + (Math.abs(dx) > Math.abs(dy) ? dx * r.height / r.width : dy);
+                var lo = MIN_SCALE, hi = MAX_SCALE, antes = scale;
+                for (var k = 0; k < 14; k++) {
+                    var mid = (lo + hi) / 2;
+                    if (altoCon(mid) < objetivo) lo = mid; else hi = mid;
+                }
+                var next = Math.round(lo * 100) / 100;
+                setScale(next);
+                if (next !== antes) fit();
+            }
+            function end() {
+                grip.removeEventListener('pointermove', move);
+                grip.removeEventListener('pointerup', end);
+                grip.removeEventListener('lostpointercapture', end);
+                try { localStorage.setItem(SCALE_KEY, String(scale)); } catch (_) {}
+            }
+            grip.addEventListener('pointermove', move);
+            grip.addEventListener('pointerup', end);
+            grip.addEventListener('lostpointercapture', end);
+        });
+    })();
+
+    /* Mismo desplazamiento del título largo que el reproductor del
+       escritorio (marqueeScroll de apps/reproductor.php). */
+    function marqueeScroll(el, parent, speed, pauseMs) {
+        el.style.transform = 'translateX(0)';
+        var pos = 0, last = null, fromRight = false, raf = null, timer = null;
+        var W = el.offsetWidth, C = parent.clientWidth;
+        if (W <= C) return function() {};
+        function tick(ts) {
+            if (!last) last = ts;
+            var dt = Math.min(ts - last, 50);
+            last = ts;
+            pos -= speed * dt / 1000;
+            if (pos < -W) { pos = C + (pos + W); fromRight = true; }
+            if (fromRight && pos <= 0) {
+                pos = 0; fromRight = false;
+                el.style.transform = 'translateX(0)';
+                last = null;
+                timer = setTimeout(function() { raf = requestAnimationFrame(tick); }, pauseMs);
+                return;
+            }
+            el.style.transform = 'translateX(' + pos + 'px)';
+            raf = requestAnimationFrame(tick);
+        }
+        timer = setTimeout(function() { raf = requestAnimationFrame(tick); }, pauseMs);
+        return function() { clearTimeout(timer); if (raf) cancelAnimationFrame(raf); el.style.transform = ''; };
+    }
+
+    /* Carátula grande: las miniaturas de YouTube del reproductor son de
+       320×180; se pide la de 1280×720 y, si el vídeo no la tiene, la otra. */
+    function bigCover(src) {
+        return String(src || '').replace(/\/(mq|hq|sd)default\.jpg/, '/maxresdefault.jpg');
+    }
+    $('mp-cover').addEventListener('error', function() {
+        if (this.dataset.fallback && this.src !== this.dataset.fallback) this.src = this.dataset.fallback;
+    });
+
+    /* ── Estado que manda el reproductor ── */
+    var duration = 0, seeking = false, lastTitle = null, lastCover = '', lastVideo = '', stopMarquee = null;
+    function render(s) {
+        if (!s) return;
+        state = s;
+        $('mp-window-title').textContent = s.playlist || 'Reproductor';
+        var title = s.hasTrack ? (s.title || 'Sin título') : 'Sin título';
+        if (title !== lastTitle) {
+            lastTitle = title;
+            $('mp-song').textContent = title;
+            if (stopMarquee) { stopMarquee(); stopMarquee = null; }
+            setTimeout(function() { stopMarquee = marqueeScroll($('mp-song'), $('mp-song').parentElement, 50, 1000); }, 50);
+        }
+        $('mp-artist').textContent = s.artist || '—';
+        /* La original (coverUrl), no `cover`: el reproductor del escritorio
+           pixela su carátula al 25 % y, si el estado llega después de eso,
+           `cover` es un data: diminuto que aquí se estiraba a todo el ancho. */
+        var coverSrc = s.coverUrl || (/^data:/.test(s.cover || '') ? '' : s.cover)
+            || (s.videoId ? 'https://i.ytimg.com/vi/' + s.videoId + '/mqdefault.jpg' : s.cover);
+        if (coverSrc && coverSrc !== lastCover) {
+            lastCover = coverSrc;
+            $('mp-cover').dataset.fallback = coverSrc;
+            $('mp-cover').src = bigCover(coverSrc);
+        }
+        $('mp-play').innerHTML = s.playing ? ICON_PAUSE : ICON_PLAY;
+        $('mp-shuffle').classList.toggle('btn-active', !!s.shuffle);
+        duration = s.duration || 0;
+        if (!seeking) setProgress(duration > 0 ? (s.position / duration) * 100 : 0);
+        $('mp-current').textContent = fmt(s.position);
+        $('mp-duration').textContent = fmt(duration);
+        if (!draggingVolume && typeof s.volume === 'number') setVolumeUI(s.volume);
+        if (s.videoId !== lastVideo) {
+            lastVideo = s.videoId;
+            lyrics = null;
+            if (view === 'lyrics') loadLyrics();
+            if (view === 'lists') markCurrent();
+        }
+        if (view === 'lyrics') highlightLyric();
+        if (view === 'lt') renderListenTogether();
+        renderInvites();
+    }
+    function setProgress(p) {
+        $('mp-progress').value = p;
+        $('mp-progress').style.setProperty('--p', p + '%');
+    }
+    /* Mismo icono de altavoz que el reproductor del escritorio. */
+    var draggingVolume = false;
+    function setVolumeUI(v) {
+        $('mp-volume').value = v;
+        $('mp-vol-icon').textContent = v === 0 ? '◄✕' : v < 50 ? '◄)' : '◄))';
+    }
+
+    /* ── Botones ── */
+    $('mp-prev').addEventListener('click', function() { cmd('previoustrack'); });
+    $('mp-play').addEventListener('click', function() { cmd('toggle'); });
+    $('mp-next').addEventListener('click', function() { cmd('nexttrack'); });
+    $('mp-shuffle').addEventListener('click', function() { cmd('shuffle'); });
+    $('mp-lyrics-btn').addEventListener('click', function() { show(view === 'lyrics' ? 'player' : 'lyrics'); });
+    $('mp-lists-btn').addEventListener('click', function() { show('lists'); });
+    $('mp-lyrics-back').addEventListener('click', function() { show('player'); });
+    $('mp-lists-back').addEventListener('click', function() { back(); });
+    $('mp-volume').addEventListener('pointerdown', function() { draggingVolume = true; });
+    $('mp-volume').addEventListener('pointerup', function() { draggingVolume = false; });
+    $('mp-volume').addEventListener('input', function() {
+        var v = parseInt(this.value, 10);
+        setVolumeUI(v);
+        cmd('volume', v);
+    });
+    $('mp-progress').addEventListener('input', function() { seeking = true; setProgress(this.value); });
+    $('mp-progress').addEventListener('change', function() {
+        if (duration > 0) cmd('seekto', (this.value / 100) * duration);
+        seeking = false;
+    });
+    /* El botón _ necesita la app 0.3.2 o posterior: en las anteriores no sale. */
+    if (md.mini.minimize) $('mp-min').addEventListener('click', function() { md.mini.minimize(); });
+    else $('mp-min').style.display = 'none';
+    $('mp-open').addEventListener('click', function() { md.mini.openMain(); });
+    $('mp-close').addEventListener('click', function() { md.mini.close(); });
+
+    /* ── Panel de playlists, como el menú de playlists del escritorio:
+       tus playlists con el buscador de canciones, álbumes y artistas
+       encima, y las páginas de una playlist (con su filtro), de un álbum
+       y de un artista. Las páginas se apilan: "◄ Volver" (o Esc) deshace
+       un paso y, desde la primera, vuelve al reproductor. Lo que se elige
+       para escuchar suena en el reproductor de la ventana principal
+       (melonTrackAction) y el flotante vuelve a su vista. ── */
+    var ICON = 'assets/img/appIcons/musicaIcon.png';
+    var playlists = null;   /* null = cargando, false = error */
+    var page = null, pages = [];
+    function api(qs) {
+        return fetch('assets/music/api.php?action=' + qs, { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .catch(function() { return null; });
+    }
+    function setBox(html) {
+        coverWatch.disconnect();
+        $('mp-lists-box').innerHTML = html || '';
+    }
+    function note(text) { return '<div class="mp-msg">' + esc(text) + '</div>'; }
+    function group(text, section) {
+        $('mp-lists-box').insertAdjacentHTML('beforeend', '<div class="mp-group' + (section ? ' mp-section' : '') + '">' + esc(text) + '</div>');
+    }
+    /* Fila: [nº] [imagen] nombre / subtítulo [tiempo]. */
+    function addRow(o) {
+        var r = document.createElement('div');
+        r.className = 'mp-row' + (o.current ? ' current' : '');
+        r.title = o.name + (o.sub ? ' · ' + o.sub : '');
+        if (o.num != null) r.insertAdjacentHTML('beforeend', '<span class="mp-row-num">' + o.num + '</span>');
+        if (o.img != null) {
+            var img = document.createElement('img');
+            img.className = 'mp-thumb' + (o.round ? ' round' : '') + (o.icon ? ' icon' : '');
+            img.alt = '';
+            img.onerror = function() {
+                if (o.fallback && this.getAttribute('src') !== o.fallback) { this.src = o.fallback; this.className = 'mp-thumb icon'; }
+                else this.style.visibility = 'hidden';
+            };
+            if (o.img) img.src = o.img;
+            r.appendChild(img);
+            r.thumb = img;
+        }
+        r.insertAdjacentHTML('beforeend', '<span class="mp-row-info"><span>' + esc(o.name) + '</span>' +
+            (o.sub ? '<span class="mp-row-sub">' + esc(o.sub) + '</span>' : '') + '</span>' +
+            (o.time ? '<span class="mp-row-time">' + o.time + '</span>' : ''));
+        if (o.onClick) r.addEventListener('click', o.onClick);
+        $('mp-lists-box').appendChild(r);
+        return r;
+    }
+    /* Compara nombres de distintas fuentes (iTunes/Deezer/YouTube repiten). */
+    function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+    function hasImg(x) { return !!(x && x.image); }
+    /* Quita repetidos por clave; con hasImg se queda con el que tiene imagen. */
+    function dedupe(list, key, img) {
+        var idx = {}, out = [];
+        (list || []).forEach(function(it) {
+            var k = key(it);
+            if (!k) return;
+            if (!(k in idx)) { idx[k] = out.length; out.push(it); }
+            else if (img && !img(out[idx[k]]) && img(it)) out[idx[k]] = it;
+        });
+        return out;
+    }
+    function play(action, value) { cmd(action, value); show('player'); }
+
+    function openPlaylists() {
+        pages = [];
+        page = { kind: 'home', q: '' };
+        renderPage();
+        $('mp-search').focus();
+        loadPlaylists();
+    }
+    function loadPlaylists() {
+        api('get-playlists').then(function(d) {
+            playlists = Array.isArray(d) ? d : false;
+            if (page && page.kind === 'home' && page.q.trim().length < 2) renderHome();
+        });
+    }
+    function go(p) {
+        page.scroll = $('mp-lists-box').scrollTop;
+        pages.push(page);
+        page = p;
+        renderPage();
+    }
+    function back() {
+        if (!pages.length) { show('player'); return; }
+        page = pages.pop();
+        renderPage();
+        $('mp-lists-box').scrollTop = page.scroll || 0;
+    }
+    function renderPage() {
+        var search = $('mp-search');
+        search.hidden = page.kind !== 'home' && page.kind !== 'playlist';
+        search.placeholder = page.kind === 'playlist' ? 'Filtrar canciones de esta playlist…' : 'Buscar canciones, álbumes o artistas…';
+        search.value = page.q || '';
+        $('mp-lists-title').textContent = page.title || 'Playlists';
+        $('mp-lists-box').scrollTop = 0;
+        ({ home: renderHome, playlist: renderSongs, album: renderAlbum, artist: renderArtist })[page.kind]();
+    }
+    /* La canción que suena, resaltada en la playlist o el álbum abiertos. */
+    function markCurrent() {
+        if (!page || (page.kind !== 'playlist' && page.kind !== 'album')) return;
+        var samePl = page.kind === 'playlist' && String(page.pl.id) === String(state.playlistId);
+        $('mp-lists-box').querySelectorAll('.mp-row').forEach(function(r) {
+            r.classList.toggle('current', page.kind === 'playlist'
+                ? samePl && Number(r.dataset.i) === state.trackIndex
+                : !!r.dataset.vid && r.dataset.vid === state.videoId);
+        });
+    }
+
+    var searchTimer = null;
+    $('mp-search').addEventListener('input', function() {
+        var p = page;
+        p.q = this.value;
+        clearTimeout(searchTimer);
+        if (p.kind === 'playlist') renderSongs();
+        else if (p.q.trim().length < 2) renderHome();
+        else searchTimer = setTimeout(function() { if (page === p) renderHome(); }, 350);
+    });
+
+    /* Inicio: tus playlists. La fila abre sus canciones; su "+" añade la
+       canción que suena. Con 2 letras o más en el buscador, resultados. */
+    function renderHome() {
+        var q = page.q.trim();
+        if (q.length >= 2) { renderResults(q); return; }
+        if (playlists === null) { setBox(note('Cargando…')); return; }
+        if (playlists === false) { setBox(note('No se pudieron cargar las playlists.')); return; }
+        if (!playlists.length) { setBox(note('No tienes playlists.')); return; }
+        setBox();
+        playlists.forEach(function(pl) {
+            var n = (pl.tracks || []).length;
+            var r = addRow({
+                img: pl.image || ICON, icon: !pl.image, fallback: ICON,
+                name: pl.name, sub: n + (n === 1 ? ' canción' : ' canciones'),
+                current: String(pl.id) === String(state.playlistId),
+                onClick: function() { go({ kind: 'playlist', title: pl.name, pl: pl, q: '' }); },
+            });
+            var add = document.createElement('button');
+            add.className = 'button';
+            add.textContent = '+';
+            add.title = state.hasTrack ? 'Añadir «' + state.title + '» a esta playlist' : 'No suena nada';
+            add.disabled = !state.hasTrack;
+            add.addEventListener('click', function(e) {
+                e.stopPropagation();
+                cmd('add-to-playlist', pl.id);
+                add.textContent = '✓';
+                setTimeout(loadPlaylists, 1200);
+            });
+            r.appendChild(add);
+        });
+    }
+
+    /* Resultados del buscador, en el orden del escritorio: artistas,
+       álbumes y canciones (artistas y álbumes sin imagen se descartan). */
+    function renderResults(q) {
+        var p = page, res = p.results;
+        if (!res || res.q !== q) {
+            setBox(note('Buscando…'));
+            Promise.all(['yt-search', 'search-albums', 'search-artists'].map(function(a) {
+                return api(a + '&q=' + encodeURIComponent(q));
+            })).then(function(d) {
+                if (p.q.trim() !== q) return;   /* respuesta de una búsqueda anterior */
+                p.results = {
+                    q: q,
+                    songs: dedupe((d[0] && d[0].results) || [], function(s) { return norm(s.title) + '|' + norm(s.artist); }),
+                    albums: dedupe((d[1] && d[1].results) || [], function(a) { return norm(a.name) + '|' + norm(a.artist); }, hasImg).filter(hasImg),
+                    artists: dedupe((d[2] && d[2].results) || [], function(a) { return norm(a.name); }, hasImg).filter(hasImg),
+                };
+                if (page === p) renderResults(q);
+            });
+            return;
+        }
+        setBox();
+        if (res.artists.length) group('Artistas');
+        res.artists.forEach(function(a) {
+            addRow({ img: a.image, round: true, name: a.name, sub: 'Artista', onClick: function() { openArtist(a.name); } });
+        });
+        if (res.albums.length) group('Álbumes');
+        res.albums.forEach(function(a) {
+            addRow({
+                img: a.image, name: a.name, sub: a.artist || 'Álbum',
+                onClick: function() { openAlbum({ key: a.albumKey, name: a.name, artist: a.artist || '', image: a.image }); },
+            });
+        });
+        if (res.songs.length) group('Canciones');
+        res.songs.forEach(function(s) {
+            var r = addRow({
+                img: ytThumb(s.videoId), name: s.title, sub: s.artist, time: s.duration ? fmt(s.duration) : '',
+                onClick: function() { play('play-song', { videoId: s.videoId, title: s.title || '', artist: s.artist || '', duration: parseInt(s.duration, 10) || 0 }); },
+            });
+            r.song = { videoId: s.videoId, title: s.title || '', artist: s.artist || '' };
+            songCover(r.thumb, s);
+        });
+        if (!res.artists.length && !res.albums.length && !res.songs.length) setBox(note('Sin resultados.'));
+    }
+
+    /* Canciones de una playlist. El filtro solo oculta filas: el índice
+       sigue siendo el real, así que suena con la playlist entera en cola. */
+    function renderSongs() {
+        var pl = page.pl, tracks = pl.tracks || [];
+        if (!tracks.length) { setBox(note('Esta playlist está vacía.')); return; }
+        var q = (page.q || '').trim().toLowerCase();
+        var samePl = String(pl.id) === String(state.playlistId);
+        setBox();
+        var shown = 0;
+        tracks.forEach(function(t, i) {
+            if (q && ((t.title || '') + ' ' + (t.artist || '')).toLowerCase().indexOf(q) === -1) return;
+            shown++;
+            var r = addRow({
+                num: i + 1, img: ytThumb(t.videoId), name: t.title, sub: t.artist,
+                time: t.duration ? fmt(t.duration) : '',
+                current: samePl && i === state.trackIndex,
+                onClick: function() { play('play-playlist', { playlistId: pl.id, index: i }); },
+            });
+            r.song = t.videoId ? { videoId: t.videoId, title: t.title || '', artist: t.artist || '' } : null;
+            r.dataset.i = i;
+            songCover(r.thumb, t);
+        });
+        if (!shown) setBox(note('Ninguna canción coincide.'));
+    }
+
+    /* Álbum (album-tracks): sus canciones se buscan en YouTube
+       (yt-search-batch) y las que no aparecen quedan apagadas. */
+    function openAlbum(a) { go({ kind: 'album', title: a.name || 'Álbum', album: a }); }
+    function renderAlbum() {
+        var p = page, a = p.album;
+        if (p.meta === undefined) {
+            p.meta = null;
+            var qs = (String(a.key).indexOf(':') !== -1 ? 'key=' : 'id=') + encodeURIComponent(a.key) +
+                     '&name=' + encodeURIComponent(a.name || '') + '&artist=' + encodeURIComponent(a.artist || '');
+            api('album-tracks&' + qs).then(function(meta) {
+                p.meta = meta && meta.tracks && meta.tracks.length ? meta : false;
+                if (page === p) renderAlbum();
+                if (!p.meta) return;
+                fetch('assets/music/api.php?action=yt-search-batch', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tracks: p.meta.tracks }),
+                })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        var byTitle = {};
+                        ((d && d.tracks) || []).forEach(function(t) { if (t && t.title) byTitle[t.title] = t.videoId || null; });
+                        return byTitle;
+                    })
+                    .catch(function() { return {}; })
+                    .then(function(byTitle) {
+                        p.resolved = p.meta.tracks.map(function(t) {
+                            return { title: t.title, artist: t.artist || p.meta.artist || '', duration: t.duration || 0, videoId: byTitle[t.title] || null };
+                        });
+                        if (page === p) albumResolved();
+                    });
+            });
+        }
+        if (!p.meta) { setBox(note(p.meta === false ? 'No se pudieron cargar las canciones de este álbum.' : 'Cargando…')); return; }
+        var m = p.meta, artist = m.artist || a.artist || '';
+        var total = 0;
+        m.tracks.forEach(function(t) { total += t.duration || 0; });
+        var info = m.tracks.length + ' canciones' + (total ? ' · ' + (total >= 3600 ? Math.floor(total / 3600) + 'h ' : '') + Math.floor((total % 3600) / 60) + 'm' : '');
+        setBox('<div class="mp-page-head"><img src="' + esc(m.image || a.image || '') + '" alt="">' +
+            '<div class="mp-row-info"><span class="mp-page-name">' + esc(m.name || a.name) + '</span>' +
+            (artist ? '<span class="mp-link" id="mp-album-artist">' + esc(artist) + '</span>' : '') +
+            '<span class="mp-row-sub">' + esc(info) + '</span>' +
+            '<span><button class="button" id="mp-album-play" disabled>▶ Reproducir álbum</button></span></div></div>');
+        if (artist) $('mp-album-artist').addEventListener('click', function() {
+            /* Si se llegó desde la página de ese artista, se vuelve a ella. */
+            var prev = pages[pages.length - 1];
+            if (prev && prev.kind === 'artist' && norm(prev.name) === norm(artist)) back();
+            else openArtist(artist);
+        });
+        $('mp-album-play').addEventListener('click', function() { playAlbum(p, 0); });
+        m.tracks.forEach(function(t, i) {
+            addRow({
+                num: i + 1, name: t.title, sub: t.artist && t.artist !== artist ? t.artist : '',
+                time: t.duration ? fmt(t.duration) : '',
+                onClick: function() { playAlbum(p, i); },
+            });
+        });
+        albumResolved();
+    }
+    function albumResolved() {
+        var p = page;
+        if (!p.resolved) return;
+        var playable = p.resolved.some(function(t) { return t.videoId; });
+        var btn = $('mp-album-play');
+        btn.disabled = !playable;
+        if (!playable) btn.textContent = 'No disponible';
+        $('mp-lists-box').querySelectorAll('.mp-row').forEach(function(r, i) {
+            var t = p.resolved[i];
+            if (t && t.videoId) { r.dataset.vid = t.videoId; r.song = { videoId: t.videoId, title: t.title, artist: t.artist }; }
+            else { r.classList.add('disabled'); r.title = 'Esta canción no se encontró en YouTube'; }
+        });
+        markCurrent();
+    }
+    /* Mismo reparto que _playAlbumFrom del escritorio: en cola solo las que
+       están en YouTube y, si la elegida no está, empieza por la siguiente. */
+    function playAlbum(p, from) {
+        if (!p.resolved) return;
+        var playable = p.resolved.filter(function(t) { return t.videoId; });
+        if (!playable.length) return;
+        var start = 0;
+        for (var i = from; i < p.resolved.length; i++) {
+            if (p.resolved[i].videoId) { start = playable.indexOf(p.resolved[i]); break; }
+        }
+        play('play-album', {
+            albumKey: p.album.key, name: p.meta.name || p.album.name || '', artist: p.meta.artist || p.album.artist || '',
+            image: p.meta.image || p.album.image || '', tracks: playable, index: start,
+        });
+    }
+
+    /* Artista, como su ventana del escritorio: se busca por nombre
+       (search-artists) y se enseñan sus populares (artist-top) y su
+       discografía (artist-albums). */
+    function openArtist(name) {
+        name = String(name || '').replace(/\s*-\s*topic$/i, '').trim();
+        if (name && name !== '—') go({ kind: 'artist', title: name, name: name });
+    }
+    function renderArtist() {
+        var p = page;
+        if (!p.started) {
+            p.started = true;
+            api('search-artists&q=' + encodeURIComponent(p.name)).then(function(d) {
+                var arts = (d && d.ok && d.results) || [], nn = norm(p.name), chosen = null;
+                arts.forEach(function(a) { if (!chosen && norm(a.name) === nn && a.image) chosen = a; });
+                arts.forEach(function(a) { if (!chosen && norm(a.name) === nn) chosen = a; });
+                chosen = chosen || arts[0];
+                if (!chosen) { p.error = 'No se encontró el artista.'; if (page === p) renderArtist(); return; }
+                return Promise.all([
+                    api('artist-top&name=' + encodeURIComponent(chosen.name)),
+                    api('artist-albums&source=' + encodeURIComponent(chosen.source) + '&artistId=' + encodeURIComponent(chosen.artistId)),
+                ]).then(function(res) {
+                    p.artist = chosen;
+                    p.top = (res[0] && res[0].tracks) || [];
+                    p.albums = dedupe(((res[1] && res[1].ok && res[1].albums) || []).filter(hasImg), function(a) { return norm(a.name) + '|' + (a.year || ''); });
+                    if (page === p) renderArtist();
+                });
+            });
+        }
+        if (p.error) { setBox(note(p.error)); return; }
+        if (!p.artist) { setBox(note('Cargando…')); return; }
+        var ar = p.artist;
+        p.title = ar.name;
+        $('mp-lists-title').textContent = ar.name;
+        setBox('<div class="mp-page-head"><img class="round" src="' + esc(ar.imageBig || ar.image || '') + '" alt="">' +
+            '<div class="mp-row-info"><span class="mp-page-name">' + esc(ar.name) + '</span>' +
+            (ar.fans ? '<span class="mp-row-sub">' + (parseInt(ar.fans, 10) || 0).toLocaleString('es-ES') + ' oyentes</span>' : '') +
+            '</div></div>');
+        if (p.top.length) group('Popular', true);
+        p.top.forEach(function(t, i) {
+            addRow({
+                num: i + 1, img: t.image || '', name: t.title, time: t.duration ? fmt(t.duration) : '',
+                onClick: function() { play('play-artist-track', { title: t.title, artist: t.artist || ar.name }); },
+            });
+        });
+        if (p.albums.length) group('Discografía', true);
+        var KIND = { single: 'Sencillo', ep: 'EP' };
+        p.albums.forEach(function(a) {
+            addRow({
+                img: a.image, name: a.name, sub: [a.year, KIND[a.type] || 'Álbum'].filter(Boolean).join(' · '),
+                onClick: function() { openAlbum({ key: a.albumKey, name: a.name, artist: ar.name, image: a.image }); },
+            });
+        });
+        if (!p.top.length && !p.albums.length) $('mp-lists-box').insertAdjacentHTML('beforeend', note('No se encontraron canciones ni álbumes.'));
+    }
+
+    /* Miniatura de canción: la de YouTube y, en cuanto se sabe, la
+       carátula de su álbum (find-album), como las filas del escritorio.
+       Comparte con el reproductor su caché del navegador (es la misma web)
+       y solo pregunta por las filas que llegan a verse, de tres en tres. */
+    var ALBUM_CACHE = 'reproductor:album-cache:v7';
+    var albumCache = null, coverByKey = {}, coverJobs = [], coverBusy = 0;
+    function ytThumb(videoId) {
+        return videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/mqdefault.jpg' : '';
+    }
+    /* Solo álbumes de iTunes/Deezer (_normalizeAlbumPayload del escritorio). */
+    function realAlbum(d) {
+        return d && !d.notFound && typeof d.albumKey === 'string' &&
+            d.albumKey.indexOf('spotify:') !== 0 && d.albumKey.indexOf('synthetic:') !== 0 ? d : null;
+    }
+    function readAlbumCache() {
+        try { return JSON.parse(localStorage.getItem(ALBUM_CACHE) || '{}') || {}; } catch (_) { return {}; }
+    }
+    function saveAlbum(videoId, album) {
+        albumCache[videoId] = album;
+        /* Se relee antes de escribir: el reproductor también la va llenando. */
+        try {
+            var c = readAlbumCache();
+            c[videoId] = album;
+            localStorage.setItem(ALBUM_CACHE, JSON.stringify(c));
+        } catch (_) { /* localStorage lleno: el servidor también cachea */ }
+    }
+    function coverJob(img) {
+        return function() {
+            if (!img.isConnected) return Promise.resolve();
+            var t = img.track;
+            if (!albumCache) albumCache = readAlbumCache();
+            var known = realAlbum(albumCache[t.videoId]);
+            var found = known ? Promise.resolve(known)
+                : api('find-album&' + new URLSearchParams({ title: t.title || '', artist: t.artist || '', videoId: t.videoId }).toString())
+                    .then(function(d) {
+                        var album = realAlbum(d);
+                        if (album) { album.spotifyAlbumId = ''; saveAlbum(t.videoId, album); }
+                        return album;
+                    });
+            return found.then(function(album) {
+                if (!album) return;
+                if (album.albumImage) { img.src = album.albumImage; return; }
+                if (coverByKey[album.albumKey]) { img.src = coverByKey[album.albumKey]; return; }
+                return api('album-tracks&key=' + encodeURIComponent(album.albumKey)).then(function(d) {
+                    if (d && d.image) { coverByKey[album.albumKey] = d.image; img.src = d.image; }
+                });
+            });
+        };
+    }
+    function pumpCovers() {
+        while (coverBusy < 3 && coverJobs.length) {
+            coverBusy++;
+            coverJobs.shift()().catch(function() {}).then(function() { coverBusy--; pumpCovers(); });
+        }
+    }
+    var coverWatch = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+            if (!e.isIntersecting) return;
+            coverWatch.unobserve(e.target);
+            coverJobs.push(coverJob(e.target));
+        });
+        pumpCovers();
+    }, { root: $('mp-lists-box'), rootMargin: '64px' });
+    function songCover(img, track) {
+        if (!img || !track || !track.videoId) return;
+        img.track = track;
+        coverWatch.observe(img);
+    }
+
+    /* ── Letra: la misma API que el reproductor (get-lyrics). Si viene
+       sincronizada (LRC), se resalta la línea que suena. ── */
+    var lyrics = null;   /* { lines: [{t, text}] } | { plain } | { msg } */
+    function parseLRC(lrc) {
+        var out = [];
+        String(lrc || '').split('\n').forEach(function(line) {
+            var re = /\[(\d+):(\d+(?:\.\d+)?)\]/g, m, times = [];
+            while ((m = re.exec(line))) times.push(parseInt(m[1], 10) * 60 + parseFloat(m[2]));
+            var text = line.replace(/\[[^\]]*\]/g, '').trim();
+            times.forEach(function(t) { out.push({ t: t, text: text }); });
+        });
+        return out.sort(function(a, b) { return a.t - b.t; });
+    }
+    function loadLyrics() {
+        var box = $('mp-lyrics-box');
+        if (!state.hasTrack) { lyrics = { msg: 'No suena nada.' }; renderLyrics(); return; }
+        if (lyrics && lyrics.video === state.videoId) return;
+        var video = state.videoId;
+        lyrics = { video: video, msg: 'Buscando letra…' };
+        renderLyrics();
+        var qs = new URLSearchParams({ title: state.title || '', artist: state.artist || '', duration: String(Math.floor(state.duration || 0)) });
+        fetch('assets/music/api.php?action=get-lyrics&' + qs.toString(), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (state.videoId !== video) return;   /* cambió la canción mientras tanto */
+                var lines = d && d.synced ? parseLRC(d.synced) : [];
+                if (lines.length) lyrics = { video: video, lines: lines };
+                else if (d && d.plain) lyrics = { video: video, plain: d.plain };
+                else lyrics = { video: video, msg: '🥲 No se encontró letra para esta canción.' };
+                renderLyrics();
+            })
+            .catch(function() { if (state.videoId === video) { lyrics = { video: video, msg: 'Error de red al buscar la letra.' }; renderLyrics(); } });
+        box.scrollTop = 0;
+    }
+    var activeLyric = -1;
+    function renderLyrics() {
+        var box = $('mp-lyrics-box');
+        activeLyric = -1;
+        if (lyrics.lines) {
+            box.innerHTML = lyrics.lines.map(function(l, i) { return '<div class="mp-lyric" data-i="' + i + '">' + (esc(l.text) || '♪') + '</div>'; }).join('');
+            highlightLyric();
+        } else if (lyrics.plain) {
+            box.innerHTML = '<div class="mp-lyrics-plain">' + esc(lyrics.plain) + '</div>';
+        } else {
+            box.innerHTML = '<div class="mp-msg">' + esc(lyrics.msg) + '</div>';
+        }
+    }
+    function highlightLyric() {
+        if (!lyrics || !lyrics.lines) return;
+        var pos = state.position || 0, idx = -1;
+        for (var i = 0; i < lyrics.lines.length && lyrics.lines[i].t <= pos + 0.3; i++) idx = i;
+        if (idx === activeLyric) return;
+        var box = $('mp-lyrics-box');
+        var prev = box.querySelector('.mp-lyric.active');
+        if (prev) prev.classList.remove('active');
+        activeLyric = idx;
+        var el = box.querySelector('.mp-lyric[data-i="' + idx + '"]');
+        if (el) {
+            el.classList.add('active');
+            box.scrollTop = el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
+        }
+    }
+
+    /* ── Corregir canción: el mismo formulario que el reproductor del
+       escritorio (título, artista, link de YouTube y álbum). Se guarda
+       aquí (report-album) y la ventana principal aplica el resultado
+       (melonTrackAction 'fixed'). ── */
+    var fixTrack = null, fixAlbum = null, fixTimer = null, fixQ = null;
+    function openFix() {
+        fixTrack = { videoId: state.videoId, title: state.title || '', artist: state.artist || '' };
+        fixAlbum = null;
+        fixQ = null;
+        $('mp-fix-title').value = fixTrack.title;
+        $('mp-fix-artist').value = fixTrack.artist;
+        $('mp-fix-link').value = '';
+        $('mp-fix-album').value = '';
+        $('mp-fix-results').innerHTML = '';
+        $('mp-fix-msg').textContent = 'Para el álbum, escribe y elige un resultado de la lista.';
+        $('mp-fix-save').disabled = false;
+        renderFixAlbum();
+        $('mp-fix-title').focus();
+        $('mp-fix-title').select();
+    }
+    function renderFixAlbum() {
+        var box = $('mp-fix-chosen');
+        box.innerHTML = '';
+        if (!fixAlbum) return;
+        var r = document.createElement('div');
+        r.className = 'mp-row';
+        r.innerHTML = '<img class="mp-thumb" alt=""><span class="mp-row-info"><span></span><span class="mp-row-sub"></span></span>';
+        r.querySelector('img').src = fixAlbum.image || '';
+        r.querySelector('img').onerror = function() { this.style.visibility = 'hidden'; };
+        r.querySelector('.mp-row-info > span').textContent = fixAlbum.name;
+        r.querySelector('.mp-row-sub').textContent = fixAlbum.artist;
+        var rm = document.createElement('button');
+        rm.className = 'button mp-wide';
+        rm.textContent = 'Quitar';
+        rm.addEventListener('click', function() { fixAlbum = null; renderFixAlbum(); });
+        r.appendChild(rm);
+        box.appendChild(r);
+    }
+    function searchFixAlbum() {
+        var q = $('mp-fix-album').value.trim(), box = $('mp-fix-results');
+        if (q === fixQ) return;
+        fixQ = q;
+        if (q.length < 2) { box.innerHTML = ''; return; }
+        api('search-albums&q=' + encodeURIComponent(q) + '&artist=' + encodeURIComponent($('mp-fix-artist').value.trim() || fixTrack.artist || ''))
+            .then(function(d) {
+                if ($('mp-fix-album').value.trim() !== q) return;   /* respuesta obsoleta */
+                box.innerHTML = '';
+                ((d && d.ok && d.results) || []).forEach(function(a) {
+                    var r = document.createElement('div');
+                    r.className = 'mp-row';
+                    r.innerHTML = '<img class="mp-thumb" alt=""><span class="mp-row-info"><span></span><span class="mp-row-sub"></span></span>';
+                    r.querySelector('img').src = a.image || '';
+                    r.querySelector('img').onerror = function() { this.style.visibility = 'hidden'; };
+                    r.querySelector('.mp-row-info > span').textContent = a.name || '';
+                    r.querySelector('.mp-row-sub').textContent = a.artist || '';
+                    /* Se elige; se manda con el resto al pulsar Guardar. */
+                    r.addEventListener('click', function() {
+                        fixAlbum = { albumKey: a.albumKey, name: a.name || '', artist: a.artist || '', image: a.image || '' };
+                        renderFixAlbum();
+                        $('mp-fix-album').value = '';
+                        box.innerHTML = '';
+                        fixQ = null;
+                    });
+                    box.appendChild(r);
+                });
+                if (!box.firstChild) box.innerHTML = note('Sin resultados.');
+            });
+    }
+    $('mp-fix-album').addEventListener('input', function() { clearTimeout(fixTimer); fixTimer = setTimeout(searchFixAlbum, 300); });
+    $('mp-fix-album').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(fixTimer); searchFixAlbum(); }
+    });
+    $('mp-fix-back').addEventListener('click', function() { show('player'); });
+    $('mp-fix-cancel').addEventListener('click', function() { show('player'); });
+    $('mp-fix-save').addEventListener('click', function() {
+        var t = fixTrack, btn = this;
+        if (!t || !t.videoId) return;
+        var payload = { videoId: t.videoId, title: $('mp-fix-title').value.trim(), artist: $('mp-fix-artist').value.trim(), videoLink: $('mp-fix-link').value.trim() };
+        if (fixAlbum) {
+            payload.albumKey = fixAlbum.albumKey || '';
+            payload.albumName = fixAlbum.name;
+            payload.albumArtist = fixAlbum.artist;
+            payload.albumImage = fixAlbum.image;
+        }
+        btn.disabled = true;
+        $('mp-fix-msg').textContent = 'Guardando…';
+        fetch('assets/music/api.php?action=report-album', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+            .then(function(r) { return r.json(); })
+            .catch(function() { return { error: 'Error de red: no se pudo guardar la corrección' }; })
+            .then(function(d) {
+                btn.disabled = false;
+                if (!d || !d.ok) { $('mp-fix-msg').textContent = '✕ ' + ((d && d.error) || 'No se pudo guardar la corrección'); return; }
+                cmd('fixed', { videoId: t.videoId, title: t.title, artist: t.artist, result: d });
+                $('mp-fix-msg').textContent = '✓ Canción corregida' + (d.album && d.album.albumName ? ' · Álbum: ' + d.album.albumName : '');
+                setTimeout(function() { if (view === 'fix') show('player'); }, 1200);
+            });
+    });
+
+    /* ── Escuchar juntos: estado de la sesión, invitar a tus amigos y
+       cerrarla, como el modal del escritorio. Invitar lo hace la ventana
+       principal (crea la sesión si hace falta) y el resultado vuelve con
+       el estado (ltInvited). ── */
+    var LT_API = 'assets/listen/api.php';
+    var ltUsers = null, ltAsked = {};
+    function openListenTogether() {
+        ltUsers = null;
+        ltAsked = {};
+        renderListenTogether();
+        fetch(LT_API + '?action=users', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .catch(function() { return null; })
+            .then(function(d) {
+                ltUsers = d && d.ok && d.users ? d.users : [];
+                renderListenTogether();
+            });
+    }
+    var LT_STATUS = {
+        host: '🎤 <strong>Hosteando</strong> una sesión. Invita usuarios para que se unan.',
+        guest: '🎧 Estás escuchando como invitado.',
+    };
+    var ltShown = '';
+    function renderListenTogether() {
+        $('mp-lt-status').innerHTML = LT_STATUS[state.ltRole] || 'No estás en ninguna sesión. Invita a alguien para empezar una.';
+        $('mp-lt-end').style.display = state.ltRole ? '' : 'none';
+        var invited = state.ltInvited || {};
+        /* Solo se repinta la lista si cambia algo (llega el estado cada 500 ms). */
+        var key = JSON.stringify([ltUsers, invited, ltAsked]);
+        if (key === ltShown) return;
+        ltShown = key;
+        var box = $('mp-lt-users');
+        if (ltUsers === null) { box.innerHTML = note('Cargando usuarios…'); return; }
+        if (!ltUsers.length) {
+            box.innerHTML = '<div class="mp-msg">Aún no tienes amigos que invitar.<br><span class="mp-row-sub">Seguíos entre vosotros para haceros amigos.</span></div>';
+            return;
+        }
+        box.innerHTML = '';
+        ltUsers.forEach(function(u) {
+            var res = invited[u.user_key];
+            var r = document.createElement('div');
+            r.className = 'mp-row';
+            r.innerHTML = '<span class="mp-row-info"><span></span>' +
+                (res && res !== 'ok' && ltAsked[u.user_key] ? '<span class="mp-row-sub"></span>' : '') + '</span>';
+            r.querySelector('.mp-row-info > span').textContent = u.label || u.user_key;
+            if (r.querySelector('.mp-row-sub')) r.querySelector('.mp-row-sub').textContent = '✕ ' + res;
+            var b = document.createElement('button');
+            b.className = 'button mp-wide';
+            var waiting = ltAsked[u.user_key] && !res;
+            b.textContent = res === 'ok' ? '✓ Invitado' : waiting ? '…' : 'Invitar';
+            b.disabled = res === 'ok' || waiting;
+            b.addEventListener('click', function() {
+                ltAsked[u.user_key] = true;
+                cmd('lt-invite', u.user_key);
+                renderListenTogether();
+            });
+            r.appendChild(b);
+            box.appendChild(r);
+        });
+    }
+    $('mp-lt-back').addEventListener('click', function() { show('player'); });
+    $('mp-lt-end').addEventListener('click', function() { cmd('leave-session'); show('player'); });
+
+    /* Invitaciones recibidas mientras la ventana principal está escondida:
+       un aviso encima de la carátula con Aceptar / Rechazar. */
+    var invitesShown = '', answered = {};
+    function renderInvites() {
+        var list = (state.ltInvites || []).filter(function(i) { return !answered[i.id]; });
+        var key = JSON.stringify(list);
+        if (key === invitesShown) return;
+        invitesShown = key;
+        var box = $('mp-invites');
+        box.innerHTML = '';
+        list.forEach(function(inv) {
+            var el = document.createElement('div');
+            el.className = 'mp-invite';
+            el.innerHTML = '<div class="mp-invite-text">🎧 <strong></strong> te invita</div>' +
+                '<div class="mp-invite-text mp-row-sub"></div>' +
+                '<div class="mp-form-buttons"><button class="button">Rechazar</button><button class="button">Aceptar</button></div>';
+            el.querySelector('strong').textContent = inv.from;
+            el.querySelector('.mp-row-sub').textContent = 'Escuchar juntos: ' + (inv.track || 'una canción');
+            var btns = el.querySelectorAll('button');
+            [false, true].forEach(function(accept, i) {
+                btns[i].addEventListener('click', function() {
+                    answered[inv.id] = true;
+                    cmd('lt-answer', { id: inv.id, accept: accept });
+                    renderInvites();
+                });
+            });
+            box.appendChild(el);
+        });
+    }
+
+    /* ── Descargar la canción: formato (MP3 con su calidad, M4A original o
+       WAV) y progreso, como la ventana del escritorio. La descarga la hace
+       la app (electron/download.js) y se guarda en Descargas. ── */
+    var dlInfo = null, dlJob = null, dlSong = null;
+    function dlName(f) {
+        var base = [dlInfo.artist, dlInfo.title].filter(Boolean).join(' - ')
+            .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Canción';
+        return '"' + base + '.' + f + '"';
+    }
+    function dlRefresh() {
+        var f = $('mp-dl-format').value;
+        $('mp-dl-kbps').disabled = !!dlJob || f !== 'mp3';
+        $('mp-dl-format').disabled = !!dlJob;
+        $('mp-dl-go').disabled = !!dlJob;
+        $('mp-dl-name').textContent = dlName(f);
+    }
+    /* song: una fila del panel (playlist, búsqueda, álbum); sin ella, la que
+       suena. Carátula y álbum solo se saben de la que suena. */
+    function openDownload(song) {
+        dlSong = null;
+        if (dlJob) return;   /* hay una en marcha: se ve su progreso */
+        var playing = !song || song.videoId === state.videoId;
+        song = song || { videoId: state.videoId, title: state.title, artist: state.artist };
+        dlInfo = {
+            videoId: song.videoId, title: song.title || '', artist: song.artist || '',
+            album: playing ? state.album || '' : '',
+            cover: (playing && (state.coverUrl || state.cover)) || 'https://i.ytimg.com/vi/' + song.videoId + '/mqdefault.jpg',   /* sin franjas negras */
+        };
+        $('mp-dl-cover').src = dlInfo.cover;
+        $('mp-dl-title').textContent = dlInfo.title;
+        $('mp-dl-artist').textContent = dlInfo.artist;
+        $('mp-dl-bar').style.display = 'none';
+        $('mp-dl-msg').textContent = '';
+        dlRefresh();
+    }
+    function dlStep(p, f) {
+        var pc = p.percent == null ? '' : ' ' + p.percent + ' %';
+        if (p.stage === 'setup') return 'Preparando el descargador (solo la primera vez)…' + pc;
+        if (p.stage === 'update') return 'Actualizando el descargador…';
+        if (p.stage === 'download') return 'Descargando…' + pc;
+        return f === 'm4a' ? 'Guardando…' : 'Convirtiendo a ' + f.toUpperCase() + '…';
+    }
+    if (md.onDownloadProgress) md.onDownloadProgress(function(p) {
+        if (!dlJob || p.id !== dlJob.id) return;
+        $('mp-dl-bar').firstChild.style.width = (p.percent == null ? 100 : p.percent) + '%';
+        $('mp-dl-msg').textContent = dlStep(p, dlJob.format);
+    });
+    $('mp-dl-format').addEventListener('change', dlRefresh);
+    $('mp-dl-back').addEventListener('click', function() { show('player'); });
+    $('mp-dl-cancel').addEventListener('click', function() {
+        if (dlJob) md.cancelDownload(dlJob.id);
+        show('player');
+    });
+    $('mp-dl-go').addEventListener('click', function() {
+        var f = $('mp-dl-format').value;
+        dlJob = { id: 'dl-' + Date.now(), format: f };
+        var job = dlJob;
+        dlRefresh();
+        $('mp-dl-bar').style.display = '';
+        $('mp-dl-bar').firstChild.style.width = '0%';
+        $('mp-dl-msg').textContent = 'Empezando…';
+        md.download(Object.assign({ id: job.id, format: f, kbps: Number($('mp-dl-kbps').value) }, dlInfo)).then(function(r) {
+            dlJob = null;
+            dlRefresh();
+            $('mp-dl-bar').style.display = 'none';
+            if (r && r.ok) $('mp-dl-msg').textContent = '✓ Guardada en Descargas: ' + r.name;
+            else $('mp-dl-msg').textContent = r && r.cancelled ? '' : '✕ ' + ((r && r.error) || 'No se pudo descargar');
+        });
+    });
+
+    /* ── Clic derecho: las mismas opciones que el reproductor del
+       escritorio (showTrackCtxMenu de apps/reproductor.php). ── */
+    var menu = $('mp-menu');
+    function menuItem(html, onClick, disabled) {
+        var it = document.createElement('div');
+        it.className = 'mp-menu-item' + (disabled ? ' disabled' : '');
+        it.innerHTML = html;
+        it.addEventListener('click', function() { hideMenu(); onClick(); });
+        menu.appendChild(it);
+    }
+    function hideMenu() { menu.style.display = 'none'; }
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        menu.innerHTML = '';
+        /* Sobre una canción del panel (playlist, búsqueda, álbum): descargar
+           esa canción. */
+        var row = e.target.closest && e.target.closest('#mp-lists-box .mp-row');
+        if (row && row.song && (md.download || window.melonCopyLink)) {
+            if (md.download) menuItem('⬇ Descargar…', function() { dlSong = row.song; show('dl'); });
+            var rowVid = row.song.videoId;
+            if (rowVid && window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', rowVid); });
+            placeMenu(e);
+            return;
+        }
+        var noTrack = !state.hasTrack;
+        menuItem('➕ Añadir', function() { show('lists'); }, noTrack);
+        menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
+                 function() { show('fix'); }, noTrack);
+        menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
+        /* Descargar: la app de escritorio 0.3.5 o posterior. */
+        if (md.download) menuItem('⬇ Descargar…', function() { show('dl'); }, noTrack);
+        /* Enlace para compartir la que suena (enlace.php?cancion=…). */
+        if (window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', state.videoId); }, noTrack || !state.videoId);
+        var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
+               : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
+               : '🎧 Escuchar juntos…';
+        menuItem(lt, function() { show('lt'); });
+        if (state.ltRole) menuItem('✕ Salir de la sesión', function() { cmd('leave-session'); });
+        placeMenu(e);
+    });
+    function placeMenu(e) {
+        menu.style.display = 'block';
+        /* Con el zoom del tamaño, left/top van en px sin escalar: se mide
+           lo que ocupa de verdad y se divide entre la escala. */
+        var m = menu.getBoundingClientRect();
+        var x = Math.min(e.clientX, window.innerWidth - m.width - 2);
+        var y = Math.min(e.clientY, window.innerHeight - m.height - 2);
+        menu.style.left = Math.max(2, x) / scale + 'px';
+        menu.style.top = Math.max(2, y) / scale + 'px';
+    }
+    document.addEventListener('click', function(e) { if (!menu.contains(e.target)) hideMenu(); });
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        if (menu.style.display === 'block') hideMenu();
+        else if (view === 'lists') back();
+        else if (view !== 'player') show('player');
+    });
+
+    /* ── Aspecto del usuario, copiado de la ventana principal: CSS del
+       tema y la interfaz (delante de los overrides de esta página),
+       clases y tamaño de letra del tema. Los iconos ya salen con su pack:
+       icon-pack.js lee la misma cookie y localStorage que el escritorio.
+       La ventana no se enseña (fit) hasta tener todo aplicado. ── */
+    var lookApplied = false, shown = false;
+    function applyLook(look) {
+        if (!look || lookApplied) return;
+        lookApplied = true;
+        var overrides = $('mini-overrides');
+        var pending = (look.css || []).length;
+        /* Las fuentes de la interfaz (la pixel de Kawaii viene de Google
+           Fonts) llegan después del CSS: se mide cuando ya están (y se
+           vuelve a aplicar el tamaño: el ancho mínimo depende de ellas). */
+        function ready() { document.fonts.ready.then(function() { shown = true; setScale(scale); fit(); }); }
+        function done() {
+            if (--pending > 0) return;
+            if (look.fontScaleDelta) {
+                window.__fontScaleDelta = look.fontScaleDelta;
+                var s = document.createElement('script');
+                s.src = 'assets/js/font-scale.js';
+                s.onload = s.onerror = ready;
+                document.head.appendChild(s);
+            } else {
+                ready();
+            }
+        }
+        (look.css || []).forEach(function(href) {
+            var l = document.createElement('link');
+            l.rel = 'stylesheet';
+            l.href = href;
+            l.setAttribute('data-look', '');
+            l.onload = l.onerror = done;
+            overrides.parentNode.insertBefore(l, overrides);
+        });
+        document.documentElement.className = look.htmlClass || '';
+        document.body.className = look.bodyClass || '';
+        if (!pending) { pending = 1; done(); }
+    }
+    /* Si la ventana principal no contestara, se enseña con el aspecto base. */
+    setTimeout(function() { if (!lookApplied) { shown = true; setScale(scale); fit(); } }, 2500);
+    /* Lo que cambie el tamaño después de enseñarse (una fuente que llega
+       tarde, las pasadas del escalado de letra…) reajusta la ventana. */
+    new ResizeObserver(function() { if (shown) fit(); }).observe($('mp'));
+
+    md.mini.onLook(applyLook);
+    md.mini.onState(render);
+})();
+</script>
+</body>
+</html>

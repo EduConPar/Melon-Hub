@@ -29,15 +29,20 @@ function cachePdo(): PDO {
 function cacheEnsureTable(PDO $pdo): void {
     static $done = false;
     if ($done) return;
-    $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS app_cache (
-            cache_key   VARCHAR(191) NOT NULL PRIMARY KEY,
-            cache_value LONGTEXT     NOT NULL,
-            expires_at  INT          NULL,
-            updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX (expires_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
+    /* Una vez por versión de este archivo (melon_esquema), no en cada
+       petición: ver .claude/notas/rendimiento.md. */
+    require_once __DIR__ . '/php/esquema.php';
+    melon_esquema($pdo, 'cache', __FILE__, function (PDO $pdo) {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS app_cache (
+                cache_key   VARCHAR(191) NOT NULL PRIMARY KEY,
+                cache_value LONGTEXT     NOT NULL,
+                expires_at  INT          NULL,
+                updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    }, true);
     $done = true;
 }
 

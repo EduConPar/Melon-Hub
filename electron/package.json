@@ -1,0 +1,82 @@
+{
+  "name": "melonhub-desktop",
+  "productName": "Melon Hub",
+  "version": "0.3.11",
+  "description": "Melon Hub como aplicación de escritorio",
+  "author": "Melon Hub",
+  "main": "main.js",
+  "private": true,
+  "desktopName": "es.melonhub.MelonHub.desktop",
+  "melonhub": {
+    "url": "https://melonhubdev.melonhub.es/",
+    "updateFeed": "https://github.com/EduConPar/Scrapbook-Online/releases/download/escritorio-dev/"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist:linux": "electron-builder --linux AppImage --publish never",
+    "dist:win": "electron-builder --win nsis --publish never"
+  },
+  "build": {
+    "appId": "es.melonhub.MelonHub",
+    "productName": "Melon Hub",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "updater.js",
+      "flatpak-update.js",
+      "tray.js",
+      "mini-player.js",
+      "discord.js",
+      "download.js",
+      "convert.html",
+      "desktop-extras.js",
+      "links.js",
+      "icons/**",
+      "settings.js",
+      "icon.png",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/EduConPar/Scrapbook-Online/releases/download/escritorio-dev/"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Melon Hub",
+        "schemes": ["melonhub"]
+      }
+    ],
+    "linux": {
+      "target": "AppImage",
+      "executableName": "melonhub",
+      "icon": "icon.png",
+      "category": "Network"
+    },
+    "appImage": {
+      "artifactName": "MelonHub.${ext}"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "shortcutName": "Melon Hub",
+      "artifactName": "MelonHub-Setup.${ext}"
+    }
+  },
+  "dependencies": {
+    "dbus-next": "^0.10.2",
+    "electron-updater": "^6.8.11",
+    "lamejs": "^1.2.1"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  }
+}

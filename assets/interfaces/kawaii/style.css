@@ -2350,7 +2350,8 @@ body:has(#dnd-toolbar) {
 }
 
 /* === Tooltip === */
-.has-tip:hover::after {
+.has-tip:hover::after,
+.melon-link-tip {
     background: var(--border) !important;
     color: var(--accent-text, var(--accent-text, #FFFFFF)) !important;
     border: 1px solid var(--shadow-color, #2D2052) !important;

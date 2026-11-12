@@ -114,6 +114,10 @@ try {
             tipo    = VALUES(tipo)
     ');
     $stmt->execute([$nombre, $avatar, $mensaje, $importe, $tipo, $txId]);
+    /* Timbre (assets/php/timbre.php): las tiendas abiertas miran
+       rt/donantes.json y solo piden la lista cuando cambia (antes, cada 30 s). */
+    require_once dirname(__DIR__) . '/php/timbre.php';
+    rt_escribir('rt/donantes.json', ['v' => rt_version()]);
     http_response_code(200);
     echo 'ok';
 } catch (Throwable $e) {

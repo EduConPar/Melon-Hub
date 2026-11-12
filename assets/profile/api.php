@@ -18,9 +18,29 @@
    POST  ?action=add-post              { text }
    POST  ?action=delete-post           { id }
    POST  ?action=save-quote            { quote }
-   POST  ?action=save-info             { bio, pronouns, age, country, steam, ... }
+   POST  ?action=wall-comment          { user, text }        (perfil nuevo: perfil2.php)
+   POST  ?action=delete-wall-comment   { id }
+   POST  ?action=save-showcases        { showcases: [{type, config}] }
+   GET   ?action=game-catalog&q=…[&cat=movies|series|books]
+   GET   ?action=my-playlists          (Playlist destacada)
+   GET   ?action=steam-game-match&title=…   (Juego destacado)
+   GET   ?action=my-screenshots
+   POST  ?action=gallery-screenshots   { items: [{ driveId, caption, game }] }
+   POST  ?action=steam-disconnect      {}                    (Steam: steam.php)
+   POST  ?action=steam-link-start      {}                    → { url } de Steam con un código de un solo uso (móvil)
+   GET   ?action=steam-games
+   GET   ?action=frames                                    (marcos: marcos.php)
+   GET   ?action=my-frames
+   POST  ?action=set-frame             { slug }            ('' = sin marco)
+   POST  ?action=streak-claim          {}                  (racha: racha.php)
+   GET   ?action=invites                                   (invitaciones: racha.php)
+   GET   ?action=steam-game-achievements&appid=N
+   POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
-   POST  ?action=toggle-follow         { targetUser }
+   POST  ?action=toggle-follow         { targetUser }  (ahora solicitudes, ver amigos.php)
+   GET   ?action=friends / friend-search&q=…
+   GET   ?action=friend-avisos         → solicitudes pendientes y aceptadas sin avisar (haro)
+   POST  ?action=friend-request|friend-accept|friend-reject|friend-cancel|friend-remove { user }
    POST  ?action=toggle-post-like      { targetUser, postId }
    POST  ?action=mark-notifs-read      {}
    POST  ?action=send-message          { to, text }
@@ -41,119 +61,152 @@
 
    El SSE item-notifications-stream.php lee directamente de item_invites.
    ─────────────────────────────────────────────────────────── */
+/* Lo que el escritorio pide solo cada pocos segundos (chats sin leer,
+   presencia, notificaciones, heartbeat): si la BD está saturada, un solo
+   reintento corto (melon_pdo en assets/config.php) en vez de ocupar un
+   proceso PHP esperando; ya volverá a preguntar. */
+if (in_array($_GET['action'] ?? $_POST['action'] ?? '', ['get-unread-chats', 'presence', 'get-profile-notifs', 'heartbeat', 'friend-avisos'], true)) {
+    define('MELON_DB_RAPIDO', true);
+}
 require_once dirname(__DIR__) . '/auth.php';
 require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__) . '/php/esquema.php';   /* melon_esquema */
+require_once dirname(__DIR__) . '/php/timbre.php';    /* rt_usuario: avisos al escritorio */
+require_once __DIR__ . '/presencia.php';                /* pf_presencia, pf_presenciaArchivo */
+melon_esquemaVigilar();
 
 $u       = requireAuth();
 $userKey = $u['key'];
 $action  = $_GET['action'] ?? $_POST['action'] ?? '';
 
-/* Auto-migración: tabla user_presence — un row por usuario, last_at
-   actualizado vía heartbeat cada 30s desde la shell. Online = last_at
-   en los últimos 60s. `state` = 'online' | 'away' — el cliente lo
-   manda en cada heartbeat según inactividad / pantalla bloqueada. */
-try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS user_presence (
-            user_id INT PRIMARY KEY,
-            last_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            state   VARCHAR(10) NOT NULL DEFAULT 'online',
-            INDEX idx_last_at (last_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-    /* ALTER idempotente para BDs antiguas que tenían la tabla sin
-       la columna `state`. */
+/* Amigos estilo Steam (solicitudes): assets/profile/amigos.php. */
+require_once __DIR__ . '/amigos.php';
+amigos_ensure($pdo);
+
+/* Tablas y columnas de la API del perfil: una vez por versión de este
+   archivo (melon_esquema, assets/php/esquema.php), no en cada petición.
+   Eran ~13 sentencias (CREATE, SHOW COLUMNS y ALTER que fallan porque la
+   columna ya existe) en cada llamada, y el escritorio llama a esta API
+   ~20 veces por minuto (chats sin leer, presencia, notificaciones). */
+melon_esquema($pdo, 'perfil', __FILE__, function (PDO $pdo) {
+    /* Auto-migración: tabla user_presence — un row por usuario, last_at
+       actualizado vía heartbeat cada 30s desde la shell. Online = last_at
+       en los últimos 60s. `state` = 'online' | 'away' — el cliente lo
+       manda en cada heartbeat según inactividad / pantalla bloqueada. */
     try {
-        $hasState = $pdo->query("SHOW COLUMNS FROM user_presence LIKE 'state'")->fetch();
-        if (!$hasState) {
-            $pdo->exec("ALTER TABLE user_presence ADD COLUMN state VARCHAR(10) NOT NULL DEFAULT 'online' AFTER last_at");
-        }
-    } catch (Throwable $_) {}
-} catch (Throwable $e) { /* silencio */ }
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS user_presence (
+                user_id INT PRIMARY KEY,
+                last_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                state   VARCHAR(10) NOT NULL DEFAULT 'online',
+                INDEX idx_last_at (last_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        /* ALTER idempotente para BDs antiguas que tenían la tabla sin
+           la columna `state`. */
+        try {
+            $hasState = $pdo->query("SHOW COLUMNS FROM user_presence LIKE 'state'")->fetch();
+            if (!$hasState) {
+                $pdo->exec("ALTER TABLE user_presence ADD COLUMN state VARCHAR(10) NOT NULL DEFAULT 'online' AFTER last_at");
+            }
+        } catch (Throwable $_) {}
+    } catch (Throwable $e) { /* silencio */ }
 
-/* Auto-migración: tabla chat_mutes — silenciado de notificaciones de un
-   chat. mute_until = timestamp futuro (o muy lejano para indefinido). */
-try {
+    /* Auto-migración: tabla chat_mutes — silenciado de notificaciones de un
+       chat. mute_until = timestamp futuro (o muy lejano para indefinido). */
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS chat_mutes (
+                user_id      INT NOT NULL,
+                with_user_id INT NOT NULL,
+                mute_until   TIMESTAMP NOT NULL,
+                PRIMARY KEY (user_id, with_user_id),
+                INDEX idx_until (mute_until)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $e) { /* silencio */ }
+
+    /* Auto-migración: tabla chat_nicknames — apodo que MI usuario asignó al
+       otro lado del chat. Reemplaza el label visible (label original oculto). */
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS chat_nicknames (
+                user_id      INT NOT NULL,
+                with_user_id INT NOT NULL,
+                nickname     VARCHAR(60) NOT NULL,
+                PRIMARY KEY (user_id, with_user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $e) { /* silencio */ }
+
+    /* Auto-migración: columnas edited_at + deleted_at en messages para
+       soportar editar (con indicador "(editado)") y borrado soft. Se
+       intentan ALTER por separado — si ya existen lanza SQLSTATE 42S21
+       que ignoramos. */
+    try { $pdo->exec("ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    try { $pdo->exec("ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* runtime del item: minutos (pelis) o nº de capítulos (series/libros).
+       Se pone AL CREAR el item (autorrellenable). La moda entre los items
+       del mismo título (varios usuarios) es la que se muestra en reseñas. */
+    try { $pdo->exec("ALTER TABLE list_items ADD COLUMN runtime INT NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* Cumpleaños del perfil (fecha completa). La edad sale de aquí; la
+       columna `age` (edad escrita a mano) solo queda para quien aún no ha
+       puesto el cumpleaños. Los amigos mutuos lo ven como recordatorio
+       anual en el calendario (assets/couple/api.php, cumplesDeAmigos). */
+    try { $pdo->exec("ALTER TABLE profile ADD COLUMN birthday DATE NULL DEFAULT NULL"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* Avisos push: 'web' = PWA/navegador (VAPID); 'fcm' = app de Android
+       (token de Firebase en `endpoint`, p256dh y auth vacíos). Ver
+       assets/push/send-push.php. */
+    try { $pdo->exec("ALTER TABLE push_subscriptions ADD COLUMN tipo VARCHAR(8) NOT NULL DEFAULT 'web'"); }
+    catch (Throwable $e) { /* ya existe */ }
+    /* Capítulos de series — COMPARTIDOS por título (series_key = título en
+       minúsculas). Cualquier usuario añade/quita capítulos. La duración va
+       en minutos. El estado (visto + reseña) es POR USUARIO. */
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS chat_mutes (
-            user_id      INT NOT NULL,
-            with_user_id INT NOT NULL,
-            mute_until   TIMESTAMP NOT NULL,
-            PRIMARY KEY (user_id, with_user_id),
-            INDEX idx_until (mute_until)
+        CREATE TABLE IF NOT EXISTS series_episodes (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            series_key  VARCHAR(200) NOT NULL,
+            position    INT NOT NULL DEFAULT 0,
+            title       VARCHAR(255) NOT NULL,
+            image       VARCHAR(2000) NULL,
+            duration    INT NULL,            /* minutos */
+            created_by  INT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_series (series_key, position)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-} catch (Throwable $e) { /* silencio */ }
-
-/* Auto-migración: tabla chat_nicknames — apodo que MI usuario asignó al
-   otro lado del chat. Reemplaza el label visible (label original oculto). */
-try {
+    /* Temporadas: cada capítulo pertenece a una temporada (entero, por defecto
+       1). Compartidas por título igual que los capítulos. */
+    try { $pdo->exec("ALTER TABLE series_episodes ADD COLUMN season INT NOT NULL DEFAULT 1"); }
+    catch (Throwable $e) { /* ya existe */ }
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS chat_nicknames (
-            user_id      INT NOT NULL,
-            with_user_id INT NOT NULL,
-            nickname     VARCHAR(60) NOT NULL,
-            PRIMARY KEY (user_id, with_user_id)
+        CREATE TABLE IF NOT EXISTS series_episode_state (
+            episode_id  INT NOT NULL,
+            user_id     INT NOT NULL,
+            watched     TINYINT NOT NULL DEFAULT 0,
+            stars       DECIMAL(2,1) NULL,
+            comment     TEXT NULL,
+            reviewed_at TIMESTAMP NULL,
+            PRIMARY KEY (episode_id, user_id),
+            INDEX idx_ep (episode_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-} catch (Throwable $e) { /* silencio */ }
-
-/* Auto-migración: columnas edited_at + deleted_at en messages para
-   soportar editar (con indicador "(editado)") y borrado soft. Se
-   intentan ALTER por separado — si ya existen lanza SQLSTATE 42S21
-   que ignoramos. */
-try { $pdo->exec("ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-try { $pdo->exec("ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-/* runtime del item: minutos (pelis) o nº de capítulos (series/libros).
-   Se pone AL CREAR el item (autorrellenable). La moda entre los items
-   del mismo título (varios usuarios) es la que se muestra en reseñas. */
-try { $pdo->exec("ALTER TABLE list_items ADD COLUMN runtime INT NULL DEFAULT NULL"); }
-catch (Throwable $e) { /* ya existe */ }
-/* Capítulos de series — COMPARTIDOS por título (series_key = título en
-   minúsculas). Cualquier usuario añade/quita capítulos. La duración va
-   en minutos. El estado (visto + reseña) es POR USUARIO. */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS series_episodes (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        series_key  VARCHAR(200) NOT NULL,
-        position    INT NOT NULL DEFAULT 0,
-        title       VARCHAR(255) NOT NULL,
-        image       VARCHAR(2000) NULL,
-        duration    INT NULL,            /* minutos */
-        created_by  INT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_series (series_key, position)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-/* Temporadas: cada capítulo pertenece a una temporada (entero, por defecto
-   1). Compartidas por título igual que los capítulos. */
-try { $pdo->exec("ALTER TABLE series_episodes ADD COLUMN season INT NOT NULL DEFAULT 1"); }
-catch (Throwable $e) { /* ya existe */ }
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS series_episode_state (
-        episode_id  INT NOT NULL,
-        user_id     INT NOT NULL,
-        watched     TINYINT NOT NULL DEFAULT 0,
-        stars       DECIMAL(2,1) NULL,
-        comment     TEXT NULL,
-        reviewed_at TIMESTAMP NULL,
-        PRIMARY KEY (episode_id, user_id),
-        INDEX idx_ep (episode_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-/* Libros: enlace a un PDF COMPARTIDO por título (book_key = título en
-   minúsculas). Cualquier usuario lo pone y todos los que tengan ese libro
-   lo abren con el botón "Leer". */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS book_pdfs (
-        book_key   VARCHAR(200) PRIMARY KEY,
-        url        VARCHAR(2000) NOT NULL,
-        set_by     INT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+    /* Libros: enlace a un PDF COMPARTIDO por título (book_key = título en
+       minúsculas). Cualquier usuario lo pone y todos los que tengan ese libro
+       lo abren con el botón "Leer". */
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS book_pdfs (
+            book_key   VARCHAR(200) PRIMARY KEY,
+            url        VARCHAR(2000) NOT NULL,
+            set_by     INT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+});
 
 /* ── user_key → usuarios.id (cacheado por petición) ──────── */
 function pf_uid(PDO $pdo, string $userKey): ?int {
@@ -167,14 +220,14 @@ function pf_uid(PDO $pdo, string $userKey): ?int {
 
 /* Plantillas para mantener compat con el contrato JSON original */
 function pf_emptyProfile(): array {
-    return ['quote'=>'','posts'=>[],'bio'=>'','pronouns'=>'','age'=>'','country'=>'',
+    return ['quote'=>'','posts'=>[],'bio'=>'','pronouns'=>'','age'=>'','birthday'=>'','country'=>'',
             'steam'=>'','discord'=>'','twitter'=>'','instagram'=>'','following'=>[]];
 }
 function pf_emptyLists(): array { return ['movies'=>[],'series'=>[],'books'=>[],'games'=>[],'music'=>[]]; }
 
 /* Lee la fila de profile o devuelve plantilla vacía. */
 function pf_loadProfileRow(PDO $pdo, int $uid): array {
-    $stmt = $pdo->prepare("SELECT quote, bio, pronouns, age, country,
+    $stmt = $pdo->prepare("SELECT quote, bio, pronouns, age, birthday, country,
                                    steam, discord, twitter, instagram
                            FROM profile WHERE user_id = ?");
     $stmt->execute([$uid]);
@@ -249,7 +302,22 @@ function pf_buildFullProfile(PDO $pdo, int $uid): array {
     $p['following'] = pf_loadFollowing($pdo, $uid);
     /* age viene como int en BD, el frontend lo trataba como string */
     $p['age'] = ($p['age'] === '' || $p['age'] === null) ? '' : (string)$p['age'];
+    /* Con cumpleaños, la edad se calcula (la escrita a mano ya no se
+       edita). Fechas raras de filas viejas ('0000-00-00') = sin cumpleaños. */
+    $bd = pf_birthdayOrNull((string)$p['birthday']);
+    $p['birthday'] = $bd ?? '';
+    if ($bd !== null) {
+        $p['age'] = (string)(new DateTimeImmutable($bd))->diff(new DateTimeImmutable('today'))->y;
+    }
     return $p;
+}
+
+/* 'AAAA-MM-DD' válida, desde 1900 y no en el futuro; si no, null. */
+function pf_birthdayOrNull(string $s): ?string {
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) return null;
+    if (!checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return null;
+    if ((int)$m[1] < 1900 || $s > date('Y-m-d')) return null;
+    return $s;
 }
 
 /* Devuelve un item de lista (sin id, sin owner) en formato API.
@@ -389,12 +457,15 @@ function pf_loadAllLists(PDO $pdo, int $uid): array {
     return $lists;
 }
 
-/* Inserta una notificación en `notifications`. fromUser puede ser null. */
+/* Inserta una notificación en `notifications`. fromUser puede ser null.
+   Timbre 'notif': su escritorio pide get-profile-notifs al verlo
+   (assets/php/timbre.php; antes lo pedía cada 30 s). */
 function pf_addNotif(PDO $pdo, int $toUid, string $type, ?int $fromUid, array $extra = []): void {
     if ($fromUid !== null && $fromUid === $toUid) return; /* no auto-notifs */
     $pdo->prepare("INSERT INTO notifications (user_id, type, from_user_id, payload, is_read)
                    VALUES (?, ?, ?, ?, 0)")
         ->execute([$toUid, $type, $fromUid, json_encode($extra ?: new stdClass(), JSON_UNESCAPED_UNICODE)]);
+    rt_usuario($toUid, 'notif');
 }
 
 /* Borra notifs que matcheen un tipo + payload parcial. Útil para deshacer
@@ -418,13 +489,16 @@ function pf_deleteNotifsMatching(PDO $pdo, int $toUid, string $type, ?int $fromU
     if (!empty($toDelete)) {
         $place = implode(',', array_fill(0, count($toDelete), '?'));
         $pdo->prepare("DELETE FROM notifications WHERE id IN ($place)")->execute($toDelete);
+        rt_usuario($toUid, 'notif');
     }
 }
 
 /* Inserta un item_invites de tipo "status" (item-accepted, collab-left,
-   collab-removed, item-rejected) para que el SSE lo entregue al cliente. */
+   collab-removed, item-rejected) para que le llegue al cliente (timbre
+   'items': su escritorio pide item-invites al verlo). */
 function pf_pushItemStatus(PDO $pdo, int $toUid, int $fromUid, ?int $itemId, string $type, array $itemMeta): void {
     if ($toUid === $fromUid) return;
+    rt_usuario($toUid, 'items');
     $pdo->prepare("INSERT INTO item_invites
         (to_user_id, from_user_id, type, item_id, category, item_title, item_image, item_music_type, item_artist)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -457,6 +531,7 @@ function pf_pushItemEdited(PDO $pdo, int $itemId, int $ownerUid, int $editorUid,
         (to_user_id, from_user_id, type, item_id, category, item_title, item_image, item_music_type, item_artist)
         VALUES (?, ?, 'item-edited', ?, ?, ?, ?, ?, ?)");
     foreach (array_keys($recips) as $rid) {
+        rt_usuario($rid, 'items');
         $del->execute([$rid, $itemId]);
         $ins->execute([
             $rid, $editorUid, $itemId,
@@ -470,6 +545,15 @@ function pf_pushItemEdited(PDO $pdo, int $itemId, int $ownerUid, int $editorUid,
 }
 
 /* Resuelve/crea el chat entre dos usuarios. Canoniza pair_id por orden. */
+/* Mensaje editado o borrado: timbre 'chat' del otro del chat, para que
+   lo vea cambiar si lo tiene abierto. */
+function pf_avisarChat(PDO $pdo, int $mid, int $yo): void {
+    $st = $pdo->prepare("SELECT c.user_a, c.user_b FROM messages m JOIN chats c ON c.id = m.chat_id WHERE m.id = ?");
+    $st->execute([$mid]);
+    $c = $st->fetch(PDO::FETCH_NUM);
+    if ($c) rt_usuario((int)$c[0] === $yo ? (int)$c[1] : (int)$c[0], 'chat');
+}
+
 function pf_chatId(PDO $pdo, int $a, int $b): int {
     if ($a > $b) { $tmp = $a; $a = $b; $b = $tmp; }
     $stmt = $pdo->prepare("SELECT id FROM chats WHERE user_a = ? AND user_b = ?");
@@ -498,10 +582,6 @@ function pf_userHasMuteFlag(PDO $pdo, int $uid, string $key): bool {
    fallo se silencia — el mensaje ya está persistido. */
 function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): void {
     global $loginUsers;
-    $libPath = dirname(__DIR__) . '/push/webpush.php';
-    if (!file_exists($libPath)) return;     /* no instalado todavía */
-    $keysPath = dirname(__DIR__) . '/push/vapid-keys.php';
-    if (!file_exists($keysPath)) return;    /* corre generate-vapid.php primero */
 
     /* Modo "no molestar": el destinatario desactivó la categoría
        Mensajes en sus prefs → no enviamos push (la conversación
@@ -520,16 +600,15 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
         if ($st->fetchColumn()) return;
     }
 
-    $stmt = $pdo->prepare("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?");
+    /* SELECT *: incluye `tipo` (web / fcm de la app de Android). */
+    $stmt = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ?");
     $stmt->execute([$toUid]);
     $subs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$subs) return;
 
-    require_once $libPath;
-    /* Helper pushNotifBaseUrl() para construir URLs portables (localhost
-       y producción usan bases distintas). Vive en send-push.php. */
+    /* pushNotifBaseUrl() y melonPushEnviar() (Web Push + FCM) viven en
+       send-push.php. */
     require_once dirname(__DIR__) . '/push/send-push.php';
-    try { $wp = new WebPush(); } catch (Throwable $e) { return; }
 
     $fromLabel = $loginUsers[$fromKey]['label'] ?? $fromKey;
     /* Avatar del remitente como icono de la notificación. Si no hay
@@ -537,7 +616,7 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
     $fromAvatarRel = getUserImage($fromLabel);
     $base = pushNotifBaseUrl();
     $iconUrl = $fromAvatarRel !== '' ? ($base . $fromAvatarRel) : null;
-    $payload = json_encode([
+    $payload = [
         'type'  => 'chat',
         'title' => '💬 ' . $fromLabel,
         'body'  => mb_substr($text, 0, 120),
@@ -551,21 +630,15 @@ function pf_tryWebPush(PDO $pdo, int $toUid, string $fromKey, string $text): voi
            openWindow() abre una pestaña del navegador en vez del
            contenedor standalone. La base es dinámica (localhost vs prod). */
         'url'   => $base . 'mobile.php?pwa=1#chat=' . $fromKey,
-    ], JSON_UNESCAPED_UNICODE);
+        /* Nombre de quien escribe: la app de Android lo pone en el
+           estilo conversación (MelonNotifs). */
+        'fromName' => $fromLabel,
+        /* En la app de Android, avisos del mismo chat se sustituyen. */
+        'tag'   => 'chat:' . $fromKey,
+    ];
 
-    foreach ($subs as $s) {
-        try {
-            list($code, $_resp) = $wp->send([
-                'endpoint' => $s['endpoint'],
-                'p256dh'   => $s['p256dh'],
-                'auth'     => $s['auth'],
-            ], $payload, 60);
-            /* 201/202/204 = OK; 404/410 = sub muerta. */
-            if ($code === 404 || $code === 410) {
-                $pdo->prepare("DELETE FROM push_subscriptions WHERE id = ?")->execute([$s['id']]);
-            }
-        } catch (Throwable $e) { /* silencio */ }
-    }
+    /* Borra solas las suscripciones muertas (404/410, token caducado). */
+    melonPushEnviar($pdo, $subs, $payload);
 }
 
 switch ($action) {
@@ -575,7 +648,8 @@ switch ($action) {
 case 'get-profile': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonResponse(pf_emptyProfile());
-    jsonResponse(pf_buildFullProfile($pdo, $uid));
+    require_once __DIR__ . '/perfil2.php';
+    jsonResponse(pf_buildFullProfile($pdo, $uid) + ['v2' => pf2_profile($pdo, $uid, $uid)]);
 }
 
 case 'add-post': {
@@ -879,14 +953,27 @@ case 'save-info': {
     $discord   = mb_substr(trim($b['discord']   ?? ''), 0, 100);
     $twitter   = mb_substr(trim($b['twitter']   ?? ''), 0, 100);
     $instagram = mb_substr(trim($b['instagram'] ?? ''), 0, 100);
-    $pdo->prepare("INSERT INTO profile
-        (user_id, bio, pronouns, age, country, steam, discord, twitter, instagram)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            bio=VALUES(bio), pronouns=VALUES(pronouns), age=VALUES(age),
-            country=VALUES(country), steam=VALUES(steam), discord=VALUES(discord),
-            twitter=VALUES(twitter), instagram=VALUES(instagram)")
-        ->execute([$uid, $bio, $pronouns, $age, $country, $steam, $discord, $twitter, $instagram]);
+    $cols = ['bio' => $bio, 'pronouns' => $pronouns, 'country' => $country,
+             'steam' => $steam, 'discord' => $discord, 'twitter' => $twitter,
+             'instagram' => $instagram];
+    /* Los editores nuevos ya no mandan `age` (sale del cumpleaños): sin
+       la clave no se toca, para no borrar la edad de quien aún no ha
+       puesto el cumpleaños. Las páginas viejas en caché sí la mandan. */
+    if (array_key_exists('age', $b)) $cols['age'] = $age;
+    if (array_key_exists('birthday', $b)) {
+        $bdIn = trim((string)$b['birthday']);
+        $bd   = pf_birthdayOrNull($bdIn);
+        if ($bdIn !== '' && $bd === null) jsonError('La fecha de cumpleaños no es válida');
+        $cols['birthday'] = $bd;
+        /* Con cumpleaños la edad escrita a mano sobra. */
+        if ($bd !== null) $cols['age'] = null;
+    }
+    $names = array_keys($cols);
+    $pdo->prepare("INSERT INTO profile (user_id, " . implode(', ', $names) . ")
+        VALUES (?" . str_repeat(', ?', count($names)) . ")
+        ON DUPLICATE KEY UPDATE " .
+        implode(', ', array_map(fn($c) => "$c=VALUES($c)", $names)))
+        ->execute(array_merge([$uid], array_values($cols)));
     jsonResponse(['ok' => true]);
 }
 
@@ -1401,6 +1488,8 @@ case 'send-item-invite': {
             $category === 'music' ? ($item['music_type'] ?: 'song') : null,
             $category === 'music' ? ($item['artist'] ?? '') : null,
         ]);
+    $newInviteId = (int)$pdo->lastInsertId();
+    rt_usuario($toUid, 'items');
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
     $fromLabel = $loginUsers[$userKey]['label'] ?? $userKey;
@@ -1408,6 +1497,8 @@ case 'send-item-invite': {
         'item',
         '➕ ' . $fromLabel . ' te invita',
         'Colaborar en "' . ($item['title'] ?? '') . '"',
+        melonPushFoto($fromLabel),
+        ['from' => $userKey, 'fromName' => $fromLabel, 'inviteId' => $newInviteId],
     ));
     jsonResponse(['ok' => true]);
 }
@@ -1512,35 +1603,72 @@ case 'leave-collab': {
 /* ─── Seguimiento / likes / notifs ───────────────────────── */
 
 case 'toggle-follow': {
+    /* Ya no hay "seguir": ahora son solicitudes de amistad (amigos.php).
+       Se mantiene para páginas viejas (el móvil): sin relación → envía
+       solicitud; enviada → la cancela; recibida → la acepta; amigos →
+       elimina la amistad. `following` = amigos o solicitud enviada. */
     global $loginUsers;
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
     $target = preg_replace('/[^a-z0-9_]/i', '', jsonBody()['targetUser'] ?? '');
     if (!$target || !isset($loginUsers[$target])) jsonError('Usuario no encontrado');
-    if ($target === $userKey)                     jsonError('No puedes seguirte');
+    if ($target === $userKey)                     jsonError('No puedes agregarte a ti');
     $tid = pf_uid($pdo, $target);
     if (!$tid) jsonError('Usuario no encontrado');
-
-    $stmt = $pdo->prepare("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?");
-    $stmt->execute([$uid, $tid]);
-    $alreadyFollowing = (bool)$stmt->fetch();
-
-    if ($alreadyFollowing) {
-        $pdo->prepare("DELETE FROM follows WHERE follower_id = ? AND followee_id = ?")
-            ->execute([$uid, $tid]);
-        pf_deleteNotifsMatching($pdo, $tid, 'follow', $uid);
-        $following = false;
-    } else {
-        $pdo->prepare("INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)")
-            ->execute([$uid, $tid]);
-        pf_addNotif($pdo, $tid, 'follow', $uid);
-        $following = true;
-    }
-
+    $e = amigos_estado($pdo, $uid, $tid);
+    if ($e === 'ninguna')      $e = amigos_enviar($pdo, $uid, $tid);
+    elseif ($e === 'enviada')  $e = amigos_cancelar($pdo, $uid, $tid);
+    elseif ($e === 'recibida') $e = amigos_aceptar($pdo, $uid, $tid);
+    else                       $e = amigos_eliminar($pdo, $uid, $tid);
     jsonResponse([
-        'ok' => true, 'following' => $following,
+        'ok' => true, 'following' => in_array($e, ['amigos', 'enviada'], true), 'amistad' => $e,
         'list' => pf_loadFollowing($pdo, $uid),
     ]);
+}
+
+/* ─── Amigos (amigos.php) ─── */
+case 'friends': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + amigos_lista($pdo, $uid));
+}
+
+/* Haro del escritorio (pollAmigos en desktop-base.php): solicitudes
+   pendientes y amistades aceptadas sin avisar (amigos_avisos). */
+case 'friend-avisos': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + amigos_avisos($pdo, $uid));
+}
+
+case 'friend-search': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true, 'resultados' => amigos_buscar($pdo, $uid, (string)($_GET['q'] ?? ''))]);
+}
+
+case 'friend-request':
+case 'friend-accept':
+case 'friend-reject':
+case 'friend-cancel':
+case 'friend-remove': {
+    global $loginUsers;
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $target = preg_replace('/[^a-z0-9_]/i', '', jsonBody()['user'] ?? '');
+    $tid = $target !== '' ? pf_uid($pdo, $target) : 0;
+    if (!$tid) jsonError('Usuario no encontrado');
+    try {
+        if ($action === 'friend-request')     $e = amigos_enviar($pdo, $uid, $tid);
+        elseif ($action === 'friend-accept')  $e = amigos_aceptar($pdo, $uid, $tid);
+        elseif ($action === 'friend-reject')  $e = amigos_rechazar($pdo, $uid, $tid);
+        elseif ($action === 'friend-cancel')  $e = amigos_cancelar($pdo, $uid, $tid);
+        else                                  $e = amigos_eliminar($pdo, $uid, $tid);
+    } catch (InvalidArgumentException $ex) {
+        jsonResponse(['ok' => false, 'error' => $ex->getMessage()]);
+    }
+    jsonResponse(['ok' => true, 'amistad' => $e, 'list' => pf_loadFollowing($pdo, $uid)] + amigos_lista($pdo, $uid));
 }
 
 case 'toggle-post-like': {
@@ -1633,105 +1761,17 @@ case 'heartbeat': {
             ON DUPLICATE KEY UPDATE last_at = NOW()
         ")->execute([$uid]);
     }
+    /* El archivo de la presencia que leen los perfiles (como mucho cada
+       10 s, entre todos). */
+    pf_presenciaArchivo($pdo);
     jsonResponse(['ok' => true]);
 }
 
 case 'presence': {
-    /* Devuelve los user_keys ONLINE (heartbeat en los últimos 60s),
-       un mapa de "última vez visto" para TODOS los que tienen row en
-       user_presence, y la lista de user_keys en "no molestar" (DND).
-       DND = preferencia `mute_messages` activa → indicador rojo en el
-       UI en lugar del verde habitual. La app de chat también la usa
-       para silenciar el ping de mensajes entrantes en el receptor. */
-    /* Tolerante a BDs sin columna `state` (migración pendiente).
-       Devolvemos el flag `isOnlineRecent` (heartbeat < 60s) y el flag
-       `isAwayWindow` (heartbeat < 3 min) por separado. Los usuarios en
-       state='away' cuentan como visibles si su último ping está dentro
-       de la ventana extendida — porque navegadores móviles throttlean
-       setInterval cuando la pantalla está bloqueada y un ping puede
-       llegar tarde sin que el usuario haya cerrado realmente la app. */
-    try {
-        $st = $pdo->query("
-            SELECT u.user_key,
-                   UNIX_TIMESTAMP(p.last_at) AS lastAt,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 60 SECOND))  AS isOnlineRecent,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 180 SECOND)) AS isAwayWindow,
-                   p.state AS state
-              FROM user_presence p
-              JOIN usuarios u ON u.id = p.user_id
-        ");
-    } catch (Throwable $_) {
-        $st = $pdo->query("
-            SELECT u.user_key,
-                   UNIX_TIMESTAMP(p.last_at) AS lastAt,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 60 SECOND))  AS isOnlineRecent,
-                   (p.last_at > DATE_SUB(NOW(), INTERVAL 180 SECOND)) AS isAwayWindow,
-                   'online' AS state
-              FROM user_presence p
-              JOIN usuarios u ON u.id = p.user_id
-        ");
-    }
-    $online   = [];
-    $away     = [];
-    $lastSeen = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $state    = $r['state'] ?? '';
-        $isAway   = ($state === 'away' && (int)$r['isAwayWindow']);
-        $isOnline = (int)$r['isOnlineRecent'] || $isAway;
-        if ($isOnline) {
-            $online[] = $r['user_key'];
-            if ($isAway) $away[] = $r['user_key'];
-        }
-        $lastSeen[$r['user_key']] = (int)$r['lastAt'];
-    }
-    /* DND set: user_keys con `mute_messages = true` en user_settings.
-       El endpoint `notif-settings` (POST) guarda con json_encode(bool)
-       → el valor SQL es la string literal `true` SIN comillas (es JSON
-       de un boolean, no de un string). Por eso comparamos con `'true'`,
-       NO con `'\"true\"'` (que sería el JSON de un STRING).
-       try/catch para no romper si la tabla user_settings no existe. */
-    $dnd = [];
-    try {
-        $st2 = $pdo->query("
-            SELECT u.user_key
-              FROM user_settings s
-              JOIN usuarios u ON u.id = s.user_id
-             WHERE s.key_name = 'mute_messages' AND s.value = 'true'
-        ");
-        foreach ($st2->fetchAll(PDO::FETCH_COLUMN) as $k) $dnd[] = $k;
-    } catch (Throwable $_) {}
-    /* Now-playing: mapa user_key → {title, artist} de los que están
-       reproduciendo música en estos momentos. La tabla `now_playing`
-       la mantiene el reproductor (save-now-playing). Solo incluimos
-       updates de los últimos 90s para no mostrar canciones obsoletas
-       si el usuario cerró el reproductor sin pausar. */
-    $nowPlaying = [];
-    try {
-        $stN = $pdo->query("
-            SELECT u.user_key, np.track_json
-              FROM now_playing np
-              JOIN usuarios u ON u.id = np.user_id
-             WHERE np.is_playing = 1
-               AND np.updated_at > DATE_SUB(NOW(), INTERVAL 90 SECOND)
-        ");
-        foreach ($stN->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $tr = json_decode((string)$r['track_json'], true);
-            if (!is_array($tr)) continue;
-            $title  = trim((string)($tr['title']  ?? ''));
-            $artist = trim((string)($tr['artist'] ?? ''));
-            if ($title === '' && $artist === '') continue;
-            $nowPlaying[$r['user_key']] = ['title' => $title, 'artist' => $artist];
-        }
-    } catch (Throwable $_) { /* tabla puede no existir */ }
-
-    jsonResponse([
-        'ok'         => true,
-        'online'     => $online,
-        'away'       => $away,
-        'lastSeen'   => $lastSeen,
-        'dnd'        => $dnd,
-        'nowPlaying' => $nowPlaying,
-    ]);
+    /* La cuenta está en assets/profile/presencia.php (la misma que se deja
+       en el archivo estático que leen los perfiles); esto queda para
+       cuando el archivo no responde y para quien aún no lo lee. */
+    jsonResponse(pf_presencia($pdo));
 }
 
 case 'notif-settings': {
@@ -1752,6 +1792,8 @@ case 'notif-settings': {
                     ->execute([$uid, $k, json_encode($v === 'true', JSON_UNESCAPED_UNICODE)]);
             } catch (Throwable $_) { /* tabla ausente → ignorar */ }
         }
+        /* "No molestar" sale en la presencia: el archivo, al momento. */
+        pf_presenciaArchivo($pdo, true);
         jsonResponse(['ok' => true]);
     }
     $out = ['mute_profile' => false, 'mute_social' => false, 'mute_messages' => false];
@@ -1770,9 +1812,39 @@ case 'notif-settings': {
 case 'mark-notifs-read': {
     $uid = pf_uid($pdo, $userKey);
     if (!$uid) jsonError('Usuario no encontrado', 500);
-    $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0")
-        ->execute([$uid]);
+    $st = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
+    $st->execute([$uid]);
+    /* Sus otros escritorios / el móvil quitan el contador. */
+    if ($st->rowCount() > 0) rt_usuario($uid, 'notif');
     jsonResponse(['ok' => true]);
+}
+
+/* Invitaciones y avisos de listas (item_invites) del usuario: lo mismo
+   que empujaba item-notifications-stream.php, que ocupaba un proceso PHP
+   y una conexión todo el rato por escritorio. Ahora el escritorio lo pide
+   cuando cambia 'items' en su archivo del timbre (assets/php/timbre.php). */
+case 'item-invites': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $st = $pdo->prepare(
+        "SELECT i.id, i.type, i.category, i.item_id AS itemId,
+                i.item_title AS itemTitle, i.item_image AS itemImage,
+                i.item_music_type AS itemMusicType, i.item_artist AS itemArtist,
+                fu.user_key AS fromUser, fu.label AS fromLabel,
+                UNIX_TIMESTAMP(i.created_at) AS sentAt
+         FROM item_invites i
+         JOIN usuarios fu ON i.from_user_id = fu.id
+         WHERE i.to_user_id = ?
+         ORDER BY i.created_at ASC");
+    $st->execute([$uid]);
+    $invites = $st->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($invites as &$row) {
+        $row['id']     = (int)$row['id'];
+        $row['itemId'] = $row['itemId'] !== null ? (int)$row['itemId'] : null;
+        $row['sentAt'] = (int)$row['sentAt'];
+    }
+    unset($row);
+    jsonResponse(['ok' => true, 'invites' => $invites]);
 }
 
 case 'get-followers': {
@@ -1855,7 +1927,16 @@ case 'get-messages': {
 
     /* Actualizar mi last_seen */
     $col = ($uid < $withUid) ? 'last_seen_a' : 'last_seen_b';
+    /* ¿Había mensajes suyos sin leer? Solo entonces se avisa por el
+       timbre: al otro (ve el "leído") y a mí (mis otros escritorios y el
+       móvil quitan el contador). Avisar siempre sería un bucle: cada
+       aviso hace que el otro pida sus mensajes, que avisaría de vuelta. */
+    $st = $pdo->prepare("SELECT EXISTS(SELECT 1 FROM messages m JOIN chats c ON c.id = m.chat_id
+                          WHERE m.chat_id = ? AND m.from_user_id = ? AND m.sent_at > COALESCE(c.$col, '1970-01-01'))");
+    $st->execute([$chatId, $withUid]);
+    $habiaSinLeer = (bool)$st->fetchColumn();
     $pdo->prepare("UPDATE chats SET $col = NOW() WHERE id = ?")->execute([$chatId]);
+    if ($habiaSinLeer) { rt_usuario($withUid, 'chat'); rt_usuario($uid, 'chat'); }
 
     /* last_seen del OTRO usuario en este chat → necesario para read receipts. */
     $otherCol = ($uid < $withUid) ? 'last_seen_b' : 'last_seen_a';
@@ -1918,6 +1999,7 @@ case 'edit-message': {
     if ($row['deleted_at']) jsonError('No se puede editar un mensaje eliminado', 400);
     $pdo->prepare("UPDATE messages SET text = ?, edited_at = NOW() WHERE id = ?")
         ->execute([$txt, $mid]);
+    pf_avisarChat($pdo, $mid, $uid);
     jsonResponse(['ok' => true, 'id' => $mid, 'text' => $txt, 'editedAt' => time()]);
 }
 
@@ -1938,6 +2020,7 @@ case 'delete-message': {
     if ((int)$row['from_user_id'] !== $uid) jsonError('No autorizado', 403);
     $pdo->prepare("UPDATE messages SET deleted_at = NOW() WHERE id = ?")
         ->execute([$mid]);
+    pf_avisarChat($pdo, $mid, $uid);
     jsonResponse(['ok' => true, 'id' => $mid]);
 }
 
@@ -2152,6 +2235,9 @@ case 'send-message': {
     $pdo->prepare("INSERT INTO messages (chat_id, from_user_id, text) VALUES (?, ?, ?)")
         ->execute([$chatId, $uid, $text]);
     $msgId = (int)$pdo->lastInsertId();
+    /* Timbre 'chat': su escritorio pide el contador (y el chat, si lo
+       tiene abierto) al verlo; antes lo pedía cada 4 s y cada 1,5 s. */
+    rt_usuario($toUid, 'chat');
     /* Mi last_seen también se actualiza al mandar */
     $col = ($uid < $toUid) ? 'last_seen_a' : 'last_seen_b';
     $pdo->prepare("UPDATE chats SET $col = NOW() WHERE id = ?")->execute([$chatId]);
@@ -2184,6 +2270,50 @@ case 'save-push-subscription': {
                    ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), p256dh=VALUES(p256dh), auth=VALUES(auth)")
         ->execute([$uid, $ep, $p2, $au]);
     jsonResponse(['ok' => true]);
+}
+
+/* Token de FCM de la app de Android (mobile.php, setupNativePush). Va
+   en la misma tabla que las suscripciones Web Push, con tipo 'fcm'. Si
+   otro usuario inicia sesión en ese móvil, el token pasa a ser suyo. */
+case 'save-fcm-token': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $b  = jsonBody();
+    $tk = trim($b['token'] ?? '');
+    if (!preg_match('#^[A-Za-z0-9_:\-]{20,400}$#', $tk)) jsonError('Token inválido');
+    /* v 2: la APK monta los avisos ella con su estilo (AvisosService,
+       1.10+) y recibe mensajes de datos ('fcm2'); las anteriores, el
+       aviso ya hecho ('fcm'). Ver melonFcmEnviar en send-push.php. */
+    $tipo = ((int)($b['v'] ?? 1) >= 2) ? 'fcm2' : 'fcm';
+    $pdo->prepare("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, tipo)
+                   VALUES (?, ?, '', '', ?)
+                   ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), tipo=VALUES(tipo)")
+        ->execute([$uid, $tk, $tipo]);
+    jsonResponse(['ok' => true]);
+}
+
+/* Prueba de los avisos de la app: manda uno a MIS tokens de FCM y
+   devuelve lo que contesta Google (o por qué no se pudo). Para depurar
+   desde el navegador con la sesión iniciada:
+   assets/profile/api.php?action=test-push */
+case 'test-push': {
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    require_once dirname(__DIR__) . '/push/send-push.php';
+    $st = $pdo->prepare("SELECT * FROM push_subscriptions WHERE user_id = ? AND tipo IN ('fcm', 'fcm2')");
+    $st->execute([$uid]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $s) {
+        $GLOBALS['melonFcmUltimo'] = '';
+        $r = melonFcmEnviar((string)$s['endpoint'], [
+            'type' => 'test', 'title' => 'Melon Hub', 'body' => 'Aviso de prueba',
+            'url'  => pushNotifBaseUrl() . 'mobile.php',
+        ], $s['tipo'] === 'fcm2');
+        $out[] = ['token' => substr((string)$s['endpoint'], 0, 12) . '…',
+                  'resultado' => $r, 'detalle' => $GLOBALS['melonFcmUltimo']];
+    }
+    jsonResponse(['ok' => true, 'clave' => (bool)melonFcmCuenta(),
+                  'curl' => function_exists('curl_init'), 'tokens' => $out]);
 }
 
 case 'delete-push-subscription': {
@@ -2227,14 +2357,208 @@ case 'view-user': {
     $stmt->execute([$uid, $tid]);
     $isFollowing = (bool)$stmt->fetch();
 
+    require_once __DIR__ . '/perfil2.php';
     jsonResponse([
         'userKey'     => $target,
         'label'       => $loginUsers[$target]['label'],
         'profile'     => $profile,
         'lists'       => $lists,
         'isFollowing' => $isFollowing,
+        'amistad'     => amigos_estado($pdo, $uid, $tid),
+        'v2'          => pf2_profile($pdo, $tid, $uid),
     ]);
 }
+
+/* ─── Perfil nuevo (perfil2.php): muro, expositores, capturas ───── */
+
+/* Comentario en el muro de alguien (cualquiera con cuenta; el dueño
+   también escribe en el suyo). */
+case 'wall-comment': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $b = jsonBody();
+    $target = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($b['user'] ?? ''));
+    $tid = $target !== '' ? pf_uid($pdo, $target) : null;
+    if (!$tid) jsonError('Usuario no encontrado', 404);
+    $text = mb_substr(trim((string)($b['text'] ?? '')), 0, 500);
+    if ($text === '') jsonError('El comentario está vacío');
+    $pdo->prepare("INSERT INTO profile_comments (profile_user_id, author_id, text) VALUES (?, ?, ?)")
+        ->execute([$tid, $uid, $text]);
+    jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, $tid, $uid)]);
+}
+
+/* Borrar: el dueño del muro (cualquiera) o quien lo escribió. Borrado en
+   blando para que el paso de posts a comentarios no lo vuelva a crear. */
+case 'delete-wall-comment': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    $id  = (int)(jsonBody()['id'] ?? 0);
+    $st = $pdo->prepare("SELECT profile_user_id, author_id FROM profile_comments WHERE id = ? AND deleted_at IS NULL");
+    $st->execute([$id]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c) jsonError('Comentario no encontrado', 404);
+    if ((int)$c['profile_user_id'] !== $uid && (int)$c['author_id'] !== $uid) jsonError('No puedes borrar este comentario', 403);
+    $pdo->prepare("UPDATE profile_comments SET deleted_at = NOW() WHERE id = ?")->execute([$id]);
+    jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, (int)$c['profile_user_id'], $uid)]);
+}
+
+/* Racha diaria (racha.php): pulsar el fueguito del perfil propio. */
+case 'streak-claim': {
+    require_once __DIR__ . '/racha.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $r = racha_pulsar($pdo, $uid);
+    if (!$r['ok']) jsonError($r['error'], 409);
+    jsonResponse($r);
+}
+
+/* Invitaciones (racha.php): las mías, para la ventana "Invitar". */
+case 'invites': {
+    require_once __DIR__ . '/racha.php';
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + invita_lista($pdo, $uid));
+}
+
+/* Guarda los expositores propios (tipo + configuración, en orden). */
+/* Marcos de perfil (assets/profile/marcos.php): "frames" lo pide
+   melon-marcos.js en cada página que pinta fotos; "my-frames" y
+   "set-frame" son de Personalizar. */
+case 'frames': {
+    require_once __DIR__ . '/marcos.php';
+    jsonResponse(['ok' => true] + marcos_todos($pdo));
+}
+case 'my-frames': {
+    require_once __DIR__ . '/marcos.php';
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true] + marcos_propios($pdo, $uid));
+}
+case 'set-frame': {
+    require_once __DIR__ . '/marcos.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $slug = (string)(jsonBody()['slug'] ?? '');
+    if ($slug !== '' && !preg_match('/^[a-z0-9_-]{1,60}$/', $slug)) jsonError('Marco no válido');
+    if (!marcos_poner($pdo, $uid, $slug)) jsonError('No tienes ese marco', 403);
+    jsonResponse(['ok' => true, 'active' => marcos_activo($pdo, $uid)]);
+}
+
+case 'save-showcases': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $r = pf2_saveShowcases($pdo, $uid, (array)(jsonBody()['showcases'] ?? []));
+    if (!$r['ok']) jsonError($r['error']);
+    jsonResponse(['ok' => true, 'showcases' => pf2_showcases($pdo, $uid), 'slots' => pf2_slots($pdo, $uid), 'perks' => pf2_perks($pdo, $uid)]);
+}
+
+/* Juegos registrados en las listas/reseñas de todos (para "Juegos
+   favoritos"), con búsqueda por título. Con &cat=movies|series|books, lo
+   mismo para películas, series y libros favoritos. */
+case 'game-catalog': {
+    require_once __DIR__ . '/perfil2.php';
+    $cat = (string)($_GET['cat'] ?? 'games');
+    jsonResponse(['ok' => true, 'games' => pf2_gameCatalog($pdo, (string)($_GET['q'] ?? ''), 30, $cat)]);
+}
+
+/* Mis playlists (propias y en las que colaboro), para "Playlist destacada". */
+case 'my-playlists': {
+    require_once __DIR__ . '/perfil2.php';
+    jsonResponse(['ok' => true, 'playlists' => pf2_myPlaylists($pdo, pf_uid($pdo, $userKey))]);
+}
+
+/* Juego destacado: el juego de mi Steam que corresponde a un título del
+   catálogo (para elegir sus logros). */
+case 'steam-game-match': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '' || steam_key() === '') jsonResponse(['ok' => true, 'steam' => null]);
+    jsonResponse(['ok' => true, 'steam' => steam_featured($sid, steam_owned($sid), (string)($_GET['title'] ?? ''), [])]);
+}
+
+/* Mis capturas (para elegir las del expositor). */
+case 'my-screenshots': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    $st = $pdo->prepare("SELECT id, caption, game_title, drive_id, url FROM profile_screenshots WHERE user_id = ? ORDER BY created_at DESC, id DESC");
+    $st->execute([$uid]);
+    jsonResponse(['ok' => true, 'shots' => array_map(fn($r) => [
+        'id' => (int)$r['id'], 'url' => pf2_shotUrl($r), 'driveId' => (string)($r['drive_id'] ?? ''),
+        'caption' => $r['caption'], 'game' => $r['game_title'],
+    ], $st->fetchAll(PDO::FETCH_ASSOC))]);
+}
+
+/* Capturas elegidas de la Galería (Google Drive): el navegador ya las ha
+   hecho públicas; aquí se guardan el enlace, el pie y el juego. */
+case 'gallery-screenshots': {
+    require_once __DIR__ . '/perfil2.php';
+    pf2_ensure($pdo);
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    jsonResponse(['ok' => true, 'shots' => pf2_saveGalleryShots($pdo, $uid, (array)(jsonBody()['items'] ?? []))]);
+}
+
+/* ─── Steam (perfil nuevo, fase 2: steam.php) ─────────────────────
+   Vincular: steam-login.php (inicio de sesión de Steam). */
+/* Conectar Steam desde el móvil: en la app de Android el inicio de
+   sesión de Steam se abre en el navegador del teléfono, sin la sesión de
+   aquí; la vuelta lleva un código de un solo uso (steam.php). */
+case 'steam-link-start': {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
+    require_once __DIR__ . '/perfil2.php';
+    if (steam_key() === '') jsonError('Steam no está configurado en la web');
+    $app = strpos($_SERVER['HTTP_USER_AGENT'] ?? '', 'MelonHubApp') !== false;
+    jsonResponse(['ok' => true, 'url' => steam_loginUrl('t', steam_vinculoNuevo($pdo, $userKey, $app))]);
+}
+
+case 'steam-disconnect': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    $pdo->prepare("UPDATE usuarios SET steam_id = NULL WHERE id = ?")->execute([$uid]);
+    /* El icono de Steam que puso el vincular, fuera (uno escrito a mano se queda). */
+    if ($sid !== '') {
+        $pdo->prepare("UPDATE profile SET steam = '' WHERE user_id = ? AND steam = ?")
+            ->execute([$uid, 'https://steamcommunity.com/profiles/' . $sid]);
+    }
+    jsonResponse(['ok' => true, 'steam' => steam_state($pdo, $uid)]);
+}
+
+/* Mi biblioteca de Steam (para elegir logros), de más a menos jugado. */
+case 'steam-games': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '') jsonError('No tienes Steam vinculado');
+    $owned = steam_owned($sid);
+    if ($owned === null) jsonError('Tu perfil de Steam (o "Detalles del juego") es privado');
+    usort($owned, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
+    jsonResponse(['ok' => true, 'games' => array_map(fn($g) => [
+        'appid' => $g['appid'], 'name' => $g['name'], 'hours' => round($g['minutes'] / 60, 1),
+    ], array_values($owned))]);
+}
+
+/* Logros que tengo de un juego (los desbloqueados). */
+case 'steam-game-achievements': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '') jsonError('No tienes Steam vinculado');
+    $app = (int)($_GET['appid'] ?? 0);
+    $all = steam_achievements($sid, $app);
+    jsonResponse(['ok' => true, 'total' => count($all),
+        'achievements' => array_values(array_filter($all, fn($a) => $a['achieved']))]);
+}
+
 
 /* ─── Capítulos de series (compartidos por título) ─────────────── */
 

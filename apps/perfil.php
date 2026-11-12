@@ -102,6 +102,11 @@ if ($_perfilStandalone) {
        el link correcto. Restauramos luego para no afectar más PHP. */
     $_origIfaceCookie = $_COOKIE['activeInterface'] ?? null;
     $_COOKIE['activeInterface'] = $_lookIface;
+    /* Y la fuente que esa persona tiene en esa interfaz (fuentes.php). */
+    require_once dirname(__DIR__) . '/assets/php/fuentes.php';
+    $_origFuenteCookie = $_COOKIE['melonFuente'] ?? null;
+    $_lookFuente = melonFuenteActiva($pdo, $_lookUid, $_lookIface);
+    $_COOKIE['melonFuente'] = $_lookFuente === melonFuenteDefecto($_lookIface) ? '' : $_lookFuente;
 
     /* Pareja del viewer (para keys de funciones que la usan). */
     $stmtP = $pdo->prepare("SELECT p.id FROM parejas p
@@ -155,9 +160,11 @@ if ($_perfilStandalone) {
     </script>
     <script src="assets/js/icon-pack.js"></script>
     <script src="assets/js/cover-fallback.js"></script>
+    <script src="assets/js/melon-links.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/melon-links.js'); ?>"></script>
     <link rel="stylesheet" href="assets/css/reproductor.css">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
+    <link rel="stylesheet" href="assets/css/marcos.css?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/css/marcos.css'); ?>">
     <?php if ($activeThemeCss): ?>
     <?php /* $activeThemeCss ya es root-relative (themeCssRelPath
               devuelve "assets/themes/..."). Con <base href="../"> se
@@ -171,6 +178,8 @@ if ($_perfilStandalone) {
            ya tomó el override. Evita afectar otros require's posteriores. */
         if ($_origIfaceCookie === null) unset($_COOKIE['activeInterface']);
         else $_COOKIE['activeInterface'] = $_origIfaceCookie;
+        if ($_origFuenteCookie === null) unset($_COOKIE['melonFuente']);
+        else $_COOKIE['melonFuente'] = $_origFuenteCookie;
     ?>
     <script src="assets/js/interface-loader.js?v=fs1"></script>
     <style>
@@ -323,14 +332,9 @@ if ($_perfilStandalone) {
                     </div>
                 </div>
             </div>
-            <div id="profile-social-section">
-                <div class="profile-sidebar-heading">Social</div>
-                <div id="profile-followed-nav"></div>
-                <div class="profile-nav-item" id="profile-nav-social" data-cat="social">
-                    <span class="profile-nav-icon">+</span>
-                    <span class="profile-nav-label">Explorar</span>
-                </div>
-            </div>
+            <?php /* El apartado Social de esta barra se quitó (decidido así): a la
+                     página de amigos se llega desde el título "Amigos" del
+                     bloque de amigos del perfil (perfil-v2.js → openAmigos). */ ?>
             <div id="profile-sidebar-footer">
                 <div id="profile-sidebar-back">
                     <button class="button" id="profile-catview-back">← Volver</button>
@@ -338,9 +342,6 @@ if ($_perfilStandalone) {
                 <?php /* Botón solo visible en standalone (iframe del perfil ajeno).
                           Resetea la vista al perfil principal del visitado. */ ?>
                 <button class="button" id="profile-go-home" style="display:none;">Volver al perfil</button>
-                <button class="button" id="profile-info-edit-btn">✏ Editar perfil</button>
-                <button class="button" id="profile-info-edit-save-btn" style="display:none;">💾 Guardar</button>
-                <button class="button" id="profile-info-edit-cancel-btn" style="display:none;">Cancelar</button>
                 <input type="file" id="profile-photo-input" accept="image/*" style="display:none;">
             </div>
         </div>
@@ -348,47 +349,58 @@ if ($_perfilStandalone) {
         <div id="profile-main">
             <!-- VISTA POR DEFECTO -->
             <div id="profile-view-default">
-                <div id="profile-top">
-                    <div id="profile-avatar-col">
-                        <div class="profile-avatar-frame">
-                            <?php $profileImg = getUserImage($desktopLabel); ?>
-                            <?php if ($profileImg): ?>
-                            <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
-                            <?php else: ?>
-                            <div class="profile-avatar-placeholder">👤</div>
-                            <?php endif; ?>
+                <!-- Perfil nuevo estilo Steam (fase 1): cabecera, expositores,
+                     comentarios del muro y columna lateral. Los datos nuevos
+                     (`v2` de get-profile / view-user) los pinta
+                     assets/js/perfil-v2.js; la cabecera reutiliza los mismos
+                     elementos de antes (foto, datos, bio, redes, seguir,
+                     campana y edición). -->
+                <div id="pf2-scroll">
+                    <div id="pf2-head">
+                        <div id="profile-avatar-col">
+                            <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
+                                <?php $profileImg = getUserImage($desktopLabel); ?>
+                                <?php if ($profileImg): ?>
+                                <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
+                                <?php else: ?>
+                                <div class="profile-avatar-placeholder">👤</div>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                        <div id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></div>
-                        <button class="button" id="profile-follow-btn" style="display:none;font-size:9px;margin-top:5px;">+ Seguir</button>
-                    </div>
-                    <div id="profile-info-col">
-                        <div id="profile-info-row">
+                        <div class="pf2-id">
+                            <div class="pf2-name"><span id="profile-username"><?php echo htmlspecialchars($desktopLabel); ?></span><span id="pf2-racha"></span></div>
+                            <div class="pf2-status" id="pf2-status"></div>
                             <div id="profile-info-meta"></div>
                             <div id="profile-info-bio" class="pinfo-bio"></div>
-                            <div id="profile-info-links"></div>
+                        </div>
+                        <div id="profile-info-links"></div>
+                        <div class="pf2-head-btns">
+                            <button type="button" id="profile-notif-btn" title="Notificaciones">
+                                <span class="profile-notif-icon"><img src="assets/img/appIcons/bellIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;display:block;margin:auto;"></span>
+                                <span class="profile-notif-badge" id="profile-notif-badge" style="display:none;">0</span>
+                            </button>
+                            <button class="button" id="profile-follow-btn" style="display:none;">+ Seguir</button>
+                            <!-- Invitar (solo en el perfil propio; perfil-v2.js lo enseña): enlace de invitación y estado de mis invitaciones (racha.php). -->
+                            <button class="button" id="pf2-invite-btn" style="display:none;">Invitar</button>
+                            <button class="button" id="profile-info-edit-btn"><img src="assets/img/appIcons/drawingIcon.png" alt="" class="pf2-ic" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;">Personalizar</button>
+                            <button class="button" id="profile-info-edit-save-btn" style="display:none;">✓ Guardar</button>
+                            <button class="button" id="profile-info-edit-cancel-btn" style="display:none;">Cancelar</button>
                         </div>
                     </div>
-                </div>
-                <div id="profile-posts-area">
-                    <div id="profile-posts-header">
-                        <span>Posts</span>
-                        <button type="button" id="profile-notif-btn" title="Notificaciones">
-                            <span class="profile-notif-icon"><img src="assets/img/appIcons/bellIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;display:block;margin:auto;"></span>
-                            <span class="profile-notif-badge" id="profile-notif-badge" style="display:none;">0</span>
-                        </button>
+                    <div class="pf2-body">
+                        <div class="pf2-col-l">
+                            <div id="pf2-showcases"></div>
+                            <div class="pf2-panel" id="pf2-comments"></div>
+                        </div>
+                        <div class="pf2-col-r" id="pf2-side"></div>
                     </div>
-                    <div id="profile-new-post">
-                        <textarea id="profile-post-input" placeholder="Escribe algo..."></textarea>
-                        <button class="button" id="profile-post-btn">Publicar</button>
-                    </div>
-                    <div id="profile-posts-list"></div>
                 </div>
             </div>
             <!-- VISTA DE CATEGORÍA -->
             <div id="profile-view-cat">
                 <div id="profile-catview-topbar">
                     <div id="profile-catview-avatar-wrap">
-                        <div class="profile-avatar-frame">
+                        <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
                             <?php if (isset($profileImg) && $profileImg): ?>
                             <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
                             <?php else: ?>
@@ -430,7 +442,7 @@ if ($_perfilStandalone) {
             <div id="profile-view-music">
                 <div id="music-catview-topbar">
                     <div id="music-catview-avatar-wrap">
-                        <div class="profile-avatar-frame">
+                        <div class="profile-avatar-frame" data-marco-user="<?php echo htmlspecialchars($desktopUserKey); ?>">
                             <?php if (isset($profileImg) && $profileImg): ?>
                             <img src="<?php echo htmlspecialchars($profileImg); ?>" alt="" class="profile-avatar-img">
                             <?php else: ?>
@@ -457,10 +469,37 @@ if ($_perfilStandalone) {
                 </div>
             </div>
             <!-- SOCIAL VIEW -->
+            <!-- Amigos estilo Steam (assets/profile/amigos.php): tus amigos
+                 (en línea arriba), agregar por nombre de perfil y solicitudes. -->
             <div id="profile-view-social" style="display:none;">
-                <div class="profile-social-head">👥 Explorar</div>
-                <div id="profile-social-body">
-                    <div id="profile-social-explore" class="profile-social-list"></div>
+                <div class="profile-social-head">Amigos</div>
+                <menu role="tablist" class="am-tabs">
+                    <li role="tab" aria-selected="true" data-tab="amigos"><a href="#">Tus amigos <span id="am-n-amigos"></span></a></li>
+                    <li role="tab" data-tab="agregar"><a href="#">Agregar amigo</a></li>
+                    <li role="tab" data-tab="solicitudes"><a href="#">Solicitudes <span id="am-n-sol"></span></a></li>
+                </menu>
+                <div class="window am-panelwin" role="tabpanel">
+                    <div class="window-body" id="profile-social-body">
+                        <div class="am-panel" data-panel="amigos">
+                            <input type="search" id="am-filtro" class="am-input" placeholder="Buscar entre tus amigos">
+                            <div id="am-lista"></div>
+                        </div>
+                        <div class="am-panel" data-panel="agregar" hidden>
+                            <div class="am-sec">Agregar un amigo</div>
+                            <div class="am-nota">Busca a alguien por el nombre de su perfil y envíale una solicitud de amistad. Cuando la acepte, seréis amigos.</div>
+                            <form class="am-buscar" id="am-buscar-form">
+                                <input type="search" id="am-q" class="am-input" placeholder="Nombre del perfil" autocomplete="off">
+                                <button type="submit" class="button">Buscar</button>
+                            </form>
+                            <div id="am-resultados"></div>
+                        </div>
+                        <div class="am-panel" data-panel="solicitudes" hidden>
+                            <div class="am-sec">Recibidas</div>
+                            <div id="am-recibidas"></div>
+                            <div class="am-sec">Enviadas</div>
+                            <div id="am-enviadas"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <!-- MELON REVIEWS VIEW -->
@@ -851,6 +890,22 @@ if ($_perfilStandalone) {
     </div>
 </div>
 
+<!-- Confirmar "Eliminar amigo" (amigos.php) -->
+<div class="window" id="am-confirm" style="display:none;position:fixed;z-index:10004;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;">
+    <div class="title-bar">
+        <div class="title-bar-text">Eliminar amigo</div>
+        <div class="title-bar-controls"><button aria-label="Close" id="am-confirm-x"></button></div>
+    </div>
+    <div class="window-body" style="padding:10px 12px 12px;">
+        <p id="am-confirm-msg" style="margin:0 0 12px;"></p>
+        <div class="field-row" style="justify-content:flex-end;gap:4px;">
+            <button class="button" id="am-confirm-no">Cancelar</button>
+            <button class="button" id="am-confirm-si">Eliminar</button>
+        </div>
+    </div>
+</div>
+<div id="am-menu" class="am-menu" style="display:none;"></div>
+
 <!-- PROFILE SOCIAL LINK ADD DIALOG (edit mode) -->
 <div class="window" id="profile-social-add-dialog" style="display:none;position:fixed;z-index:10002;width:280px;">
     <div class="title-bar">
@@ -945,10 +1000,20 @@ if ($_perfilStandalone) {
     <img id="profile-post-lightbox-img" src="" alt="" referrerpolicy="no-referrer">
 </div>
 
+<!-- Perfil nuevo (expositores, comentarios, columna lateral): window.PerfilV2. -->
+<script>
+/* Cliente de Google de la Galería: las capturas del perfil salen de su
+   Google Drive (perfil-v2.js). */
+window.__GOOGLE_CLIENT_ID = <?php echo json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : ''); ?>;
+</script>
+<script src="assets/js/melon-marcos.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/melon-marcos.js'); ?>"></script>
+<script src="assets/js/perfil-v2.js?v=<?php echo @filemtime(dirname(__DIR__) . '/assets/js/perfil-v2.js'); ?>"></script>
 <script>
 /* =========================
    PROFILE
 ========================= */
+/* Archivo estático de la presencia (assets/profile/presencia.php). */
+var PRESENCIA_URL = <?php require_once dirname(__DIR__) . '/assets/php/timbre.php'; echo json_encode(rt_urlPresencia()); ?>;
 var PROFILE_USERS = <?php
     $udata = [];
     foreach ($loginUsers as $k => $u) {
@@ -1350,6 +1415,7 @@ var PROFILE_USERS = <?php
                         if (!uInfo) return;
                         var avFrame = document.createElement('div');
                         avFrame.className = 'profile-avatar-frame';
+                        avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                         avFrame.title = uInfo.label;
                         if (uInfo.image) {
                             var avImg = document.createElement('img');
@@ -1474,7 +1540,7 @@ var PROFILE_USERS = <?php
     }
 
     /* ──── Invite system (usa notifSystem unificado) ──── */
-    var itemNotifEs        = null;
+    var itemNotifActivo    = false;
     var currentSessionUser = <?php echo json_encode($desktopUserKey); ?>;
 
     function postItemAction(id, action) {
@@ -1501,7 +1567,12 @@ var PROFILE_USERS = <?php
             if (typeof loadLists === 'function') loadLists(function() { if (typeof updateCounts === 'function') updateCounts(); if (typeof reloadCurrentView === 'function') reloadCurrentView(); });
             return;
         }
-        if (!window.notifSystem || window.notifSystem.isShown(notif.id) || window.notifSystem.isDismissed(notif.id)) return;
+        /* Id del aviso con prefijo: item_invites y playlist_invites
+           (reproductor.php, 'pl-') numeran cada una por su cuenta y, con
+           el número a secas, al cerrar una se daba por cerrada la otra
+           con el mismo número y no llegaba a salir. */
+        var avisoId = 'item-' + notif.id;
+        if (!window.notifSystem || window.notifSystem.isShown(avisoId) || window.notifSystem.isDismissed(avisoId)) return;
         /* SSE recibió una notif nueva → sonido inmediato (respetando
            el filtro por tipo). El throttle interno colapsa con el play
            del polling si llegan a la vez. */
@@ -1519,11 +1590,12 @@ var PROFILE_USERS = <?php
         if (isAction) {
             var senderImg = (notif.fromUser && PROFILE_USERS[notif.fromUser]) ? PROFILE_USERS[notif.fromUser].image : null;
             window.notifSystem.show({
-                id:          notif.id,
+                id:          avisoId,
                 type:        'action',
                 title:       ITEM_TITLES[notif.type] || 'Notificación',
                 message:     msg,
                 senderImage: senderImg,
+                senderKey:   notif.fromUser,          /* su marco */
                 sentAt:      notif.sentAt,
                 onAccept: function() {
                     postItemAction(notif.id, 'accept')
@@ -1540,7 +1612,7 @@ var PROFILE_USERS = <?php
                 loadLists(function() { updateCounts(); reloadCurrentView(); });
             }
             window.notifSystem.show({
-                id:      notif.id,
+                id:      avisoId,
                 type:    'info',
                 title:   ITEM_TITLES[notif.type] || 'Notificación',
                 message: msg,
@@ -1549,17 +1621,33 @@ var PROFILE_USERS = <?php
         }
     }
 
+    /* Invitaciones y avisos de listas (item_invites). Antes llegaban por un
+       SSE (item-notifications-stream.php) que ocupaba un proceso PHP y una
+       conexión a la BD todo el rato por escritorio. Ahora se piden
+       (item-invites) al empezar y cuando el timbre del escritorio dice
+       que han cambiado ('items', window.melonTimbre en desktop-base.php);
+       si no responde, cada 30 s. pushItemNotif no repite las ya vistas.
+       Nunca dos peticiones a la vez: si se pide mientras va una, se
+       repite al acabar. */
+    var itemNotifPidiendo = false, itemNotifOtra = false;
+    function cargarItemNotifs() {
+        if (itemNotifPidiendo) { itemNotifOtra = true; return; }
+        itemNotifPidiendo = true;
+        fetch('assets/profile/api.php?action=item-invites', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d && d.ok && Array.isArray(d.invites)) d.invites.forEach(pushItemNotif); })
+            .catch(function() {})
+            .then(function() {
+                itemNotifPidiendo = false;
+                if (itemNotifOtra) { itemNotifOtra = false; cargarItemNotifs(); }
+            });
+    }
     function startItemNotifStream() {
-        if (itemNotifEs) return;
-        var es = new EventSource('assets/profile/item-notifications-stream.php');
-        itemNotifEs = es;
-        es.onmessage = function(e) {
-            var items = [];
-            try { items = JSON.parse(e.data); } catch(err) { return; }
-            if (!Array.isArray(items)) return;
-            items.forEach(pushItemNotif);
-        };
-        es.onerror = function() { es.close(); itemNotifEs = null; setTimeout(startItemNotifStream, 5000); };
+        if (itemNotifActivo) return;
+        itemNotifActivo = true;
+        cargarItemNotifs();
+        if (window.melonTimbre) window.melonTimbre.on('items', cargarItemNotifs, 30000);
+        else setInterval(cargarItemNotifs, 30000);
     }
 
     function makeAvRow(uKey, uInfo, btnLabel, btnSetup) {
@@ -1567,6 +1655,7 @@ var PROFILE_USERS = <?php
         row.className = 'collab-user-row';
         var avWrap = document.createElement('div');
         avWrap.className = 'collab-avatar-wrap';
+        avWrap.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
         if (uInfo.image) {
             var avImg = document.createElement('img');
             avImg.className = 'collab-avatar-img';
@@ -1594,6 +1683,33 @@ var PROFILE_USERS = <?php
         el.style.cssText = 'font-size:10px;color:#666;padding:4px 0 2px;';
         el.textContent = text;
         return el;
+    }
+
+    /* Los elementos recién añadidos llevan un id provisional ("item_…") hasta
+       que save-lists les da el suyo, y las invitaciones necesitan el
+       definitivo: con el provisional la API respondía "Datos inválidos". Se
+       espera un poco al guardado que ya va en camino y, si no llega, se
+       guarda la categoría aquí. cb(id) recibe 0 si no se pudo. */
+    function withSavedItemId(cat, item, cb) {
+        var real = function(v) { return /^\d+$/.test(String(v)); };
+        function find() {
+            if (real(item.id)) return Number(item.id);
+            var same = (lists[cat] || []).filter(function(x) { return x.title === item.title && real(x.id); });
+            return same.length ? Number(same[same.length - 1].id) : 0;
+        }
+        var tries = 0;
+        (function wait() {
+            var id = find();
+            if (id) { cb(id); return; }
+            if (++tries <= 10) { setTimeout(wait, 300); return; }
+            fetch('assets/profile/api.php?action=save-lists', {
+                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat, items: lists[cat] })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d && Array.isArray(d.items)) lists[cat] = d.items;
+                cb(find());
+            }).catch(function() { cb(0); });
+        })();
     }
 
     function showCollabDialog(cat, item) {
@@ -1681,9 +1797,11 @@ var PROFILE_USERS = <?php
                             btn.addEventListener('click', function() {
                                 btn.disabled = true; btn.textContent = '…';
                                 statusEl.textContent = 'Enviando…';
+                                withSavedItemId(cat, item, function(itemId) {
+                                if (!itemId) { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = 'No se pudo guardar el elemento. Inténtalo otra vez.'; return; }
                                 fetch('assets/profile/api.php?action=send-item-invite', {
                                     method: 'POST', headers: {'Content-Type':'application/json'},
-                                    body: JSON.stringify({ toUser: key, category: cat, itemId: item.id })
+                                    body: JSON.stringify({ toUser: key, category: cat, itemId: itemId })
                                 }).then(function(r) { return r.json(); }).then(function(d) {
                                     if (d.ok) {
                                         var sent = document.createElement('span');
@@ -1696,6 +1814,7 @@ var PROFILE_USERS = <?php
                                         statusEl.textContent = d.error || 'Error al enviar.';
                                     }
                                 }).catch(function() { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = ''; });
+                                });
                             });
                         };
                     })(uKey)));
@@ -2133,6 +2252,7 @@ var PROFILE_USERS = <?php
                     if (!uInfo) return;
                     var avFrame = document.createElement('div');
                     avFrame.className = 'profile-avatar-frame';
+                    avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                     avFrame.title = uInfo.label;
                     if (uInfo.image) {
                         var avImg = document.createElement('img');
@@ -2430,6 +2550,9 @@ var PROFILE_USERS = <?php
         }
         lists[addDialogCat].push(newItem);
         saveCategory(addDialogCat);
+        if (typeof window.__pf2AfterAdd === 'function') {
+            try { window.__pf2AfterAdd(addDialogCat, newItem); } catch (_) {}
+        }
         updateCounts();
         if (currentCat) { renderCatView(currentCat); renderCatEncurso(currentCat); }
         closeAddDialog();
@@ -2525,8 +2648,8 @@ var PROFILE_USERS = <?php
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data && !data.error) {
-                    renderPosts(data.posts || []);
                     renderProfileInfo(data);
+                    if (window.PerfilV2) PerfilV2.render(data.v2, { own: true, userKey: currentSessionUser, label: <?php echo json_encode($desktopLabel); ?> });
                     ownFollowing = Array.isArray(data.following) ? data.following : [];
                     loadMyFollowers(function() { renderFollowedNav(); });
                 }
@@ -2556,6 +2679,27 @@ var PROFILE_USERS = <?php
         textEl.style.fontSize = best + 'px';
     }
 
+    /* Cumpleaños 'AAAA-MM-DD' → "3 de noviembre" (sin año: la edad ya
+       va en su línea) y → años cumplidos. '' si la fecha no vale. */
+    function partesCumple(s) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+        return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+    }
+    function cumpleLegible(s) {
+        var p = partesCumple(s);
+        var meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                     'agosto','septiembre','octubre','noviembre','diciembre'];
+        return p ? p.d + ' de ' + meses[p.m - 1] : '';
+    }
+    function edadDesdeCumple(s) {
+        var p = partesCumple(s);
+        if (!p) return '';
+        var hoy = new Date();
+        var edad = hoy.getFullYear() - p.y;
+        if (hoy.getMonth() + 1 < p.m || (hoy.getMonth() + 1 === p.m && hoy.getDate() < p.d)) edad--;
+        return edad >= 0 ? String(edad) : '';
+    }
+
     function renderProfileInfo(data) {
         var bioEl   = document.getElementById('profile-info-bio');
         var metaEl  = document.getElementById('profile-info-meta');
@@ -2574,9 +2718,33 @@ var PROFILE_USERS = <?php
 
         metaEl.innerHTML = '';
         function line(txt) { var s = document.createElement('div'); s.className = 'pinfo-line'; s.textContent = txt; return s; }
+        /* Con cumpleaños la edad se calcula aquí también (al guardar se
+           pinta el borrador, sin volver a pedir el perfil). */
+        var age = data.birthday ? edadDesdeCumple(data.birthday) : data.age;
         if (data.pronouns) metaEl.appendChild(line(data.pronouns));
-        if (data.age)      metaEl.appendChild(line(data.age + ' años'));
-        if (data.country)  metaEl.appendChild(line('📍 ' + data.country));
+        if (age !== '' && age != null) metaEl.appendChild(line(age + ' años'));
+        /* Sin emojis de interfaz (perfil nuevo): el cumpleaños lleva el
+           icono del calendario del pack del tema; el país, sin icono. */
+        if (data.birthday) {
+            var bdl = line(cumpleLegible(data.birthday));
+            bdl.insertAdjacentHTML('afterbegin', '<img class="pf2-ic" src="assets/img/appIcons/calendarioIcon.png" alt="" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;">');
+            metaEl.appendChild(bdl);
+        }
+        if (data.country)  metaEl.appendChild(line(data.country));
+        /* Clip para copiar el enlace del perfil, debajo del país, en el
+           color del tema (--accent). No sale al editar: buildMetaInputs
+           vacía esta columna. */
+        var clip = document.createElement('span');
+        clip.className = 'pinfo-link';
+        clip.setAttribute('role', 'button');
+        clip.tabIndex = 0;
+        clip.title = 'Copiar el enlace del perfil';
+        clip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        clip.addEventListener('click', function () { if (window.__perfilCopyLink) window.__perfilCopyLink(); });
+        clip.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (window.__perfilCopyLink) window.__perfilCopyLink(); }
+        });
+        metaEl.appendChild(clip);
 
         linksEl.innerHTML = '';
         /* Iconos PNG dedicados para cada red social. */
@@ -2796,10 +2964,11 @@ var PROFILE_USERS = <?php
                     profileNotifs.forEach(function(n) {
                         if (n && n.id != null && !_seenProfileNotifIds[n.id]) {
                             _seenProfileNotifIds[n.id] = true;
-                            if (!firstLoad && n.type === 'follow') newFollow = true;
+                            if (!firstLoad && (n.type === 'follow' || n.type === 'friend-request' || n.type === 'friend-accept')) newFollow = true;
                         }
                     });
                     if (newFollow) {
+                        amigosCargar();
                         loadMyFollowers(function() {
                             if (typeof renderFollowedNav === 'function') renderFollowedNav();
                             if (typeof renderSocialList   === 'function') renderSocialList();
@@ -2858,6 +3027,7 @@ var PROFILE_USERS = <?php
             row.className = 'profile-notif-row' + (n.read ? '' : ' unread');
             var avFrame = document.createElement('div');
             avFrame.className = 'profile-avatar-frame profile-notif-av';
+            avFrame.setAttribute('data-marco-user', n.fromUser);   /* marco (melon-marcos.js) */
             if (u.image) {
                 var img = document.createElement('img');
                 img.src = u.image; img.alt = u.label;
@@ -2872,11 +3042,18 @@ var PROFILE_USERS = <?php
             msg.className = 'profile-notif-msg';
             if (n.type === 'follow') {
                 msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> te ha seguido';
+            } else if (n.type === 'friend-request') {
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> te ha enviado una solicitud de amistad';
+            } else if (n.type === 'friend-accept') {
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> ha aceptado tu solicitud de amistad';
             } else if (n.type === 'like') {
                 var snippet = n.postText ? n.postText : '';
                 if (snippet.length > 60) snippet = snippet.substring(0, 60) + '…';
                 msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> le ha dado ❤ a tu publicación'
                     + (snippet ? ': <em>"' + escHtml(snippet) + '"</em>' : '');
+            } else if (n.type === 'invite-reward') {
+                /* Racha de la invitación cumplida (assets/profile/racha.php). */
+                msg.innerHTML = '<strong>' + escHtml(u.label) + '</strong> ha llegado a 7 días de racha: +' + (n.points || 500) + ' puntos de autismo por invitarle';
             } else if (n.type === 'review') {
                 var noun;
                 if (n.category === 'movies')      noun = 'la película';
@@ -2899,42 +3076,22 @@ var PROFILE_USERS = <?php
             info.appendChild(t);
             row.appendChild(info);
 
-            /* Botón "Seguir" para notifs de tipo follow */
-            if (n.type === 'follow') {
-                var fbBtn = document.createElement('button');
-                fbBtn.className = 'button profile-notif-follow-btn';
-                var nowFollowing = ownFollowing.indexOf(n.fromUser) !== -1;
-                fbBtn.textContent = nowFollowing ? '✓ Siguiendo' : '+ Seguir';
-                if (nowFollowing) fbBtn.classList.add('following');
-                (function(uk, b) {
-                    b.addEventListener('click', function(e) {
+            /* Solicitud de amistad: Aceptar / Rechazar (si sigue pendiente). */
+            if (n.type === 'friend-request' && amigosData.recibidas.indexOf(n.fromUser) !== -1) {
+                var amBox = document.createElement('div');
+                amBox.className = 'am-notif-btns';
+                [['Aceptar', 'friend-accept'], ['Rechazar', 'friend-reject']].forEach(function(par) {
+                    var bb = document.createElement('button');
+                    bb.className = 'button';
+                    bb.textContent = par[0];
+                    bb.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        if (b.dataset.busy === '1') return;
-                        b.dataset.busy = '1';
-                        fetch('assets/profile/api.php?action=toggle-follow', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ targetUser: uk })
-                        }).then(function(r) { return r.json(); })
-                          .then(function(d) {
-                              b.dataset.busy = '';
-                              if (!d || d.error) { if (d && d.error) alert(d.error); return; }
-                              ownFollowing = Array.isArray(d.list) ? d.list : ownFollowing;
-                              b.textContent = d.following ? '✓ Siguiendo' : '+ Seguir';
-                              b.classList.toggle('following', !!d.following);
-                              renderFollowedNav();
-                              /* La lista "Explorar" de la sección Social
-                                 filtra por `ownFollowing`. Tras seguir/
-                                 dejar de seguir, hay que repintarla para
-                                 que el usuario aparezca/desaparezca de
-                                 ahí en tiempo real. */
-                              if (typeof renderSocialList === 'function') renderSocialList();
-                              /* Si el perfil que se está viendo es este usuario, sincroniza también el botón principal */
-                              if (viewingUser === uk) updateFollowButton(!!d.following);
-                          }).catch(function() { b.dataset.busy = ''; });
+                        amBox.querySelectorAll('button').forEach(function(x) { x.disabled = true; });
+                        amigosAccion(par[1], n.fromUser).then(function() { amBox.textContent = par[1] === 'friend-accept' ? 'Ahora sois amigos' : 'Solicitud rechazada'; });
                     });
-                })(n.fromUser, fbBtn);
-                row.appendChild(fbBtn);
+                    amBox.appendChild(bb);
+                });
+                info.appendChild(amBox);
             }
 
             (function(uk, notif) {
@@ -3076,26 +3233,11 @@ var PROFILE_USERS = <?php
         if (!btn) return;
         btn.addEventListener('click', function() {
             if (!viewingUser || btn.dataset.busy === '1') return;
+            var uk = viewingUser;
+            if (amistadVista === 'amigos') { amConfirmarEliminar(uk); return; }
+            var act = { ninguna: 'friend-request', enviada: 'friend-cancel', recibida: 'friend-accept' }[amistadVista] || 'friend-request';
             btn.dataset.busy = '1';
-            fetch('assets/profile/api.php?action=toggle-follow', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUser: viewingUser })
-            }).then(function(r) { return r.json(); })
-              .then(function(d) {
-                  btn.dataset.busy = '';
-                  if (!d || d.error) { if (d && d.error) alert(d.error); return; }
-                  ownFollowing = Array.isArray(d.list) ? d.list : ownFollowing;
-                  updateFollowButton(!!d.following);
-                  loadMyFollowers(function() {
-                      renderFollowedNav();
-                      /* La sección "Social → Explorar" filtra por
-                         `ownFollowing`; el usuario que acabamos de
-                         seguir/dejar de seguir debe aparecer/
-                         desaparecer de la lista sin recargar la app. */
-                      if (typeof renderSocialList === 'function') renderSocialList();
-                  });
-              }).catch(function() { btn.dataset.busy = ''; });
+            amigosAccion(act, uk).then(function() { btn.dataset.busy = ''; }, function() { btn.dataset.busy = ''; });
         });
     })();
 
@@ -3618,6 +3760,7 @@ var PROFILE_USERS = <?php
             if (window.__attachPresenceDot) {
                 window.__attachPresenceDot(frame, viewingUser || currentSessionUser);
             }
+            frame.setAttribute('data-marco-user', viewingUser || currentSessionUser);   /* marco */
         }
         if (nameEl) nameEl.textContent = label;
         if (titleEl) titleEl.innerHTML = icon + ' ' + ownLabel;
@@ -3636,7 +3779,7 @@ var PROFILE_USERS = <?php
         document.getElementById('profile-sidebar-back').style.display = 'block';
         document.getElementById('profile-info-edit-btn').style.display = 'none';
         renderSocialList();
-        loadProfile(function() { renderSocialList(); });
+        loadProfile(function() { amigosCargar(); });
     }
 
     /* ──── Melon reviews ──── */
@@ -4248,6 +4391,7 @@ var PROFILE_USERS = <?php
                     row.className = 'melon-detail-row';
                     var avFrame = document.createElement('div');
                     avFrame.className = 'profile-avatar-frame melon-detail-av';
+                    if (rev.user) avFrame.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
                     if (rev.userImg) { var img = document.createElement('img'); img.src = rev.userImg; img.alt = rev.userLabel; avFrame.appendChild(img); }
                     else { avFrame.innerHTML = '<div class="profile-avatar-placeholder">👤</div>'; }
                     row.appendChild(avFrame);
@@ -4623,6 +4767,7 @@ var PROFILE_USERS = <?php
             row.className = 'melon-detail-row';
             var avFrame = document.createElement('div');
             avFrame.className = 'profile-avatar-frame melon-detail-av';
+            if (rev.user) avFrame.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
             if (rev.userImg) {
                 var img = document.createElement('img');
                 img.src = rev.userImg; img.alt = rev.userLabel;
@@ -4682,6 +4827,7 @@ var PROFILE_USERS = <?php
         card.className = 'profile-social-card';
         var avWrap = document.createElement('div');
         avWrap.className = 'profile-avatar-frame';
+        avWrap.setAttribute('data-marco-user', userKey);   /* marco (melon-marcos.js) */
         if (u.image) {
             var img = document.createElement('img');
             img.className = 'profile-avatar-img';
@@ -4725,31 +4871,244 @@ var PROFILE_USERS = <?php
         return card;
     }
 
-    function renderSocialList() {
-        var exploreEl = document.getElementById('profile-social-explore');
-        if (!exploreEl) return;
-        exploreEl.innerHTML = '';
+    /* ──── Amigos estilo Steam (assets/profile/amigos.php) ────
+       amigosData = { amigos, recibidas, enviadas } (user_keys). Nombre y
+       foto salen de PROFILE_USERS; estado de lastOnlineSet / lastAwaySet /
+       lastDndSet / lastNowPlaying / lastSeenMap (el sondeo de presencia
+       de cada 20 s vuelve a pintar la lista: applyPresence). */
+    var amigosData = { amigos: [], recibidas: [], enviadas: [] };
+    var amigosTab = 'amigos';
 
-        var followingSet = {};
-        ownFollowing.forEach(function(k) { followingSet[k] = true; });
-        var exploreKeys = Object.keys(PROFILE_USERS)
-            .filter(function(k) { return k !== currentSessionUser && !followingSet[k]; });
-        exploreKeys.sort(function(a, b) {
-            var la = (PROFILE_USERS[a].label || '').toLowerCase();
-            var lb = (PROFILE_USERS[b].label || '').toLowerCase();
-            return la < lb ? -1 : la > lb ? 1 : 0;
-        });
-
-        exploreKeys.forEach(function(k) {
-            var card = buildSocialCard(k);
-            if (card) exploreEl.appendChild(card);
-        });
-        /* Re-aplica el estado de presencia conocido sin esperar al fetch. */
-        if (window.__applyPresence) window.__applyPresence();
-        if (!exploreKeys.length) {
-            exploreEl.innerHTML = '<div class="profile-social-empty">No hay más usuarios.</div>';
-        }
+    function amApi(action, user) {
+        return fetch('assets/profile/api.php?action=' + action, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: user })
+        }).then(function(r) { return r.json(); });
     }
+    function amigosCargar(cb) {
+        fetch('assets/profile/api.php?action=friends', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d && d.ok) amigosAplicar(d); if (cb) cb(); })
+            .catch(function() { if (cb) cb(); });
+    }
+    function amigosAplicar(d) {
+        amigosData = { amigos: d.amigos || [], recibidas: d.recibidas || [], enviadas: d.enviadas || [] };
+        if (Array.isArray(d.list)) ownFollowing = d.list;
+        myFollowers = amigosData.amigos.slice();   /* amigos = mutuos */
+        /* Sin "ping" rojo (decidido así): las solicitudes avisan en la
+           campana; aquí solo el número, como en "Tus amigos (N)". */
+        var n = amigosData.recibidas.length;
+        var sol = document.getElementById('am-n-sol');
+        if (sol) sol.textContent = n ? '(' + n + ')' : '';
+        renderSocialList();
+        if (typeof renderFollowedNav === 'function') renderFollowedNav();
+    }
+    /* Tras cualquier acción: refresca lista, cabecera y barra lateral. */
+    function amigosAccion(action, uk) {
+        return amApi(action, uk).then(function(d) {
+            if (!d || !d.ok) { if (d && d.error) alert(d.error); return d; }
+            amigosAplicar(d);
+            if (viewingUser === uk) updateFollowButton(d.amistad);
+            return d;
+        });
+    }
+
+    function amUser(k) {
+        return PROFILE_USERS[k] || { label: k, image: '' };
+    }
+    function amAvatar(k) {
+        var u = amUser(k);
+        var dentro = u.image ? '<img class="profile-avatar-img" src="' + escHtml(u.image) + '" alt="">' : '<div class="profile-avatar-placeholder">👤</div>';
+        return '<div class="profile-avatar-frame has-presence-dot am-av" data-marco-user="' + escHtml(k) + '">' + dentro +
+               '<span class="pf-presence-dot" data-userkey="' + escHtml(k) + '"></span></div>';
+    }
+    function amHace(ts) {
+        if (!ts) return '';
+        var s = Math.max(0, Date.now() / 1000 - ts);
+        if (s < 3600) return 'hace ' + Math.max(1, Math.round(s / 60)) + ' min';
+        if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+        var d = Math.round(s / 86400);
+        return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+    }
+    /* Estado como en Steam: escuchando > no molestar > ausente > en línea;
+       si no, desconectado (hace X). */
+    function amEstado(k) {
+        if (lastOnlineSet[k]) {
+            var np = lastNowPlaying[k];
+            if (np && np.title) return { cls: 'np', txt: 'Escuchando: ' + np.title + (np.artist ? ' — ' + np.artist : '') };
+            if (lastDndSet[k])  return { cls: 'dnd',  txt: 'No molestar' };
+            if (lastAwaySet[k]) return { cls: 'away', txt: 'Ausente' };
+            return { cls: 'on', txt: 'En línea' };
+        }
+        var ts = (typeof lastSeenMap === 'object' && lastSeenMap) ? lastSeenMap[k] : 0;
+        return { cls: 'off', txt: 'Desconectado' + (ts ? ' · ' + amHace(ts) : '') };
+    }
+    function amNombre(a, b) {
+        var la = (amUser(a).label || '').toLowerCase(), lb = (amUser(b).label || '').toLowerCase();
+        return la < lb ? -1 : la > lb ? 1 : 0;
+    }
+
+    function amPintarLista() {
+        var box = document.getElementById('am-lista');
+        if (!box) return;
+        var f = (document.getElementById('am-filtro').value || '').trim().toLowerCase();
+        var lista = amigosData.amigos.filter(function(k) { return !f || (amUser(k).label || '').toLowerCase().indexOf(f) !== -1; });
+        var on = lista.filter(function(k) { return lastOnlineSet[k]; }).sort(amNombre);
+        var off = lista.filter(function(k) { return !lastOnlineSet[k]; }).sort(function(a, b) {
+            return ((lastSeenMap || {})[b] || 0) - ((lastSeenMap || {})[a] || 0) || amNombre(a, b);
+        });
+        document.getElementById('am-n-amigos').textContent = '(' + amigosData.amigos.length + ')';
+        if (!amigosData.amigos.length) {
+            box.innerHTML = '<div class="am-vacio">Todavía no tienes amigos. Búscalos en "Agregar amigo".</div>';
+            return;
+        }
+        var grupo = function(tit, keys) {
+            if (!keys.length) return '';
+            return '<div class="am-grupo">' + tit + ' — ' + keys.length + '</div><div class="am-grid">' + keys.map(function(k) {
+                var e = amEstado(k);
+                return '<div class="am-amigo am-' + e.cls + '" data-user="' + escHtml(k) + '">' + amAvatar(k) +
+                    '<div class="am-txt"><div class="am-nom">' + escHtml(amUser(k).label) + '</div>' +
+                    '<div class="am-est">' + escHtml(e.txt) + '</div></div></div>';
+            }).join('') + '</div>';
+        };
+        box.innerHTML = grupo('En línea', on) + grupo('Desconectados', off) +
+            (!on.length && !off.length ? '<div class="am-vacio">Ningún amigo se llama así.</div>' : '');
+        if (window.__applyPresence) window.__applyPresence();
+    }
+
+    /* Fila de usuario con botones (búsqueda y solicitudes). */
+    function amFila(k, botones, extra) {
+        return '<div class="am-fila" data-user="' + escHtml(k) + '">' + amAvatar(k) +
+            '<div class="am-txt"><div class="am-nom">' + escHtml(amUser(k).label) + '</div>' + (extra ? '<div class="am-est">' + escHtml(extra) + '</div>' : '') + '</div>' +
+            '<div class="am-btns">' + botones + '</div></div>';
+    }
+    function amBoton(txt, act, deshab) {
+        return '<button class="button" data-act="' + act + '"' + (deshab ? ' disabled' : '') + '>' + txt + '</button>';
+    }
+    function amBotonesPara(estado) {
+        if (estado === 'amigos')   return amBoton('Ya sois amigos', '', true);
+        if (estado === 'enviada')  return amBoton('Solicitud enviada', '', true) + amBoton('Cancelar', 'friend-cancel');
+        if (estado === 'recibida') return amBoton('Aceptar', 'friend-accept') + amBoton('Rechazar', 'friend-reject');
+        return amBoton('Agregar amigo', 'friend-request');
+    }
+
+    function amPintarSolicitudes() {
+        var r = document.getElementById('am-recibidas'), e = document.getElementById('am-enviadas');
+        if (!r) return;
+        r.innerHTML = amigosData.recibidas.length
+            ? amigosData.recibidas.map(function(k) { return amFila(k, amBotonesPara('recibida'), 'Quiere ser tu amigo'); }).join('')
+            : '<div class="am-vacio">No tienes solicitudes nuevas.</div>';
+        e.innerHTML = amigosData.enviadas.length
+            ? amigosData.enviadas.map(function(k) { return amFila(k, amBotonesPara('enviada'), 'Esperando respuesta'); }).join('')
+            : '<div class="am-vacio">No has enviado ninguna.</div>';
+        if (window.__applyPresence) window.__applyPresence();
+    }
+
+    var amUltimaBusqueda = '';
+    function amBuscar() {
+        var q = (document.getElementById('am-q').value || '').trim();
+        var box = document.getElementById('am-resultados');
+        amUltimaBusqueda = q;
+        if (!q) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="am-vacio">Buscando…</div>';
+        fetch('assets/profile/api.php?action=friend-search&q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (q !== amUltimaBusqueda) return;
+                var res = (d && d.resultados) || [];
+                box.innerHTML = res.length
+                    ? res.map(function(x) {
+                        if (!PROFILE_USERS[x.key]) PROFILE_USERS[x.key] = { label: x.nombre, image: '' };
+                        return amFila(x.key, amBotonesPara(x.estado));
+                    }).join('')
+                    : '<div class="am-vacio">No hay ningún perfil con ese nombre.</div>';
+                if (window.__applyPresence) window.__applyPresence();
+            })
+            .catch(function() { box.innerHTML = '<div class="am-vacio">Sin conexión, prueba otra vez.</div>'; });
+    }
+
+    function amTab(t) {
+        amigosTab = t;
+        document.querySelectorAll('.am-tabs [role=tab]').forEach(function(li) { li.setAttribute('aria-selected', li.dataset.tab === t ? 'true' : 'false'); });
+        document.querySelectorAll('#profile-view-social .am-panel').forEach(function(p) { p.hidden = p.dataset.panel !== t; });
+        if (t === 'agregar') setTimeout(function() { var q = document.getElementById('am-q'); if (q) q.focus(); }, 0);
+    }
+
+    /* Se llama desde muchos sitios (nombre de antes): repinta la página. */
+    function renderSocialList() {
+        amPintarLista();
+        amPintarSolicitudes();
+    }
+
+    /* Confirmación Win98 para eliminar. */
+    function amConfirmarEliminar(uk) {
+        var win = document.getElementById('am-confirm');
+        document.getElementById('am-confirm-msg').textContent = '¿Eliminar a ' + amUser(uk).label + ' de tus amigos?';
+        win.style.display = 'block';
+        var cerrar = function() { win.style.display = 'none'; };
+        document.getElementById('am-confirm-no').onclick = cerrar;
+        document.getElementById('am-confirm-x').onclick = cerrar;
+        document.getElementById('am-confirm-si').onclick = function() { cerrar(); amigosAccion('friend-remove', uk); };
+    }
+
+    /* Clic derecho en un amigo: mensaje, perfil, eliminar. */
+    function amMenu(x, y, uk) {
+        var m = document.getElementById('am-menu');
+        m.innerHTML = '<div data-m="chat">Enviar mensaje</div><div data-m="perfil">Ver perfil</div><div class="am-menu-sep"></div><div data-m="eliminar">Eliminar amigo</div>';
+        m.style.display = 'block';
+        m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 4) + 'px';
+        m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 4) + 'px';
+        m.onclick = function(e) {
+            var it = e.target.closest('[data-m]');
+            if (!it) return;
+            m.style.display = 'none';
+            if (it.dataset.m === 'chat') openChatWith(uk);
+            else if (it.dataset.m === 'perfil') amAbrirPerfil(uk);
+            else amConfirmarEliminar(uk);
+        };
+    }
+    function amAbrirPerfil(uk) {
+        if (typeof window.openProfileAtUser === 'function') window.openProfileAtUser(uk);
+        else viewOtherUser(uk);
+    }
+
+    (function setupAmigos() {
+        var view = document.getElementById('profile-view-social');
+        if (!view) return;
+        view.querySelectorAll('.am-tabs [role=tab]').forEach(function(li) {
+            li.addEventListener('click', function(e) { e.preventDefault(); amTab(li.dataset.tab); });
+        });
+        document.getElementById('am-filtro').addEventListener('input', amPintarLista);
+        var tBuscar = null;
+        document.getElementById('am-q').addEventListener('input', function() { clearTimeout(tBuscar); tBuscar = setTimeout(amBuscar, 300); });
+        document.getElementById('am-buscar-form').addEventListener('submit', function(e) { e.preventDefault(); amBuscar(); });
+        view.addEventListener('click', function(e) {
+            var btn = e.target.closest('button[data-act]');
+            var fila = e.target.closest('[data-user]');
+            if (btn && fila) {
+                if (!btn.dataset.act) return;
+                btn.disabled = true;
+                amigosAccion(btn.dataset.act, fila.dataset.user).then(function() { if (amUltimaBusqueda) amBuscar(); });
+                return;
+            }
+            if (fila && !e.target.closest('button')) amAbrirPerfil(fila.dataset.user);
+        });
+        view.addEventListener('contextmenu', function(e) {
+            var a = e.target.closest('.am-amigo');
+            if (!a) return;
+            e.preventDefault();
+            amMenu(e.clientX, e.clientY, a.dataset.user);
+        });
+        document.addEventListener('mousedown', function(e) {
+            var m = document.getElementById('am-menu');
+            if (m && m.style.display === 'block' && !m.contains(e.target)) m.style.display = 'none';
+        });
+        amigosCargar();
+    })();
+    /* El haro (desktop-base.php, pollAmigos) acepta / rechaza solicitudes:
+       la página de Amigos se pone al día. */
+    window.profileAmigosRecargar = function () { amigosCargar(); };
 
     function renderFollowedNav() {
         var nav = document.getElementById('profile-followed-nav');
@@ -4768,6 +5127,7 @@ var PROFILE_USERS = <?php
             item.dataset.user = k;
             var iconWrap = document.createElement('span');
             iconWrap.className = 'profile-nav-icon profile-nav-icon-followed';
+            iconWrap.setAttribute('data-marco-user', k);   /* marco (melon-marcos.js) */
             if (u.image) {
                 var img = document.createElement('img');
                 img.className = 'profile-nav-avatar';
@@ -4980,6 +5340,7 @@ var PROFILE_USERS = <?php
                 var avFrame = document.querySelector('#profile-avatar-col .profile-avatar-frame');
                 if (avFrame) {
                     avFrame.innerHTML = '';
+                    avFrame.setAttribute('data-marco-user', data.userKey);   /* marco (melon-marcos.js) */
                     if (u && u.image) {
                         var img = document.createElement('img');
                         img.className = 'profile-avatar-img';
@@ -4993,7 +5354,7 @@ var PROFILE_USERS = <?php
                 var nameEl = document.getElementById('profile-username');
                 if (nameEl) nameEl.textContent = data.label;
                 renderProfileInfo(data.profile);
-                renderPosts(data.profile.posts || []);
+                if (window.PerfilV2) PerfilV2.render(data.v2, { own: false, userKey: data.userKey, label: data.label });
                 updateCounts();
                 document.getElementById('profile-view-social').style.display = 'none';
                 document.getElementById('profile-view-cat').style.display     = 'none';
@@ -5006,7 +5367,7 @@ var PROFILE_USERS = <?php
                 document.getElementById('profile-info-edit-btn').style.display = 'none';
                 var newPostEl = document.getElementById('profile-new-post');
                 if (newPostEl) newPostEl.style.display = 'none';
-                updateFollowButton(!!data.isFollowing);
+                updateFollowButton(data.amistad || !!data.isFollowing);
                 var listasHdText = document.getElementById('profile-listas-heading-text');
                 if (listasHdText) listasHdText.textContent = 'Listas de ' + data.label;
                 var socialSec = document.getElementById('profile-social-section');
@@ -5039,13 +5400,85 @@ var PROFILE_USERS = <?php
             });
     }
 
-    function updateFollowButton(isFollowing) {
+    /* Lo que perfil-v2.js necesita de aquí: mis listas (para elegir
+       juegos, reseñas y música), el diálogo de añadir (crear un juego que
+       no está), reproducir un disco/canción y abrir un perfil. */
+    window.__pf2Bridge = {
+        ownLists:      function () { return viewingUser ? (ownLists || {}) : (lists || {}); },
+        openAddDialog: function (cat) { openAddDialog(cat); },
+        playMusicItem: function (item) { playMusicItem(item); },
+        openProfile:   function (key) {
+            if (key === currentSessionUser) { if (viewingUser && !window.__PERFIL_STANDALONE) { exitViewingUser(); showDefaultView(); } return; }
+            if (typeof window.openProfileAtUser === 'function') window.openProfileAtUser(key);
+        },
+        relTime:       function (ts) { return relTime(ts); },
+        presence:      function (key) {
+            return lastDndSet[key] ? 'dnd' : lastAwaySet[key] ? 'away' : lastOnlineSet[key] ? 'online' : 'offline';
+        },
+        /* Lo que suena ahora ({title, artist}) o null. */
+        nowPlaying:    function (key) { return lastOnlineSet[key] && lastNowPlaying[key] && lastNowPlaying[key].title ? lastNowPlaying[key] : null; },
+        lastSeen:      function (key) { return (lastSeenMap || {})[key] || 0; },
+        /* Clic en "Amigos" del bloque: MI sección de amigos. En un perfil
+           ajeno (iframe standalone) se le pide a la ventana principal. */
+        openAmigos:    function () {
+            if (window.__PERFIL_STANDALONE && viewingUser) {
+                try { window.top.postMessage({ type: 'perfil-open-amigos' }, '*'); } catch (_) {}
+                return;
+            }
+            if (viewingUser) exitViewingUser();
+            showSocialView();
+        }
+    };
+
+    /* Abrir mi sección de Amigos desde fuera (perfiles ajenos). */
+    window.profileOpenAmigos = function () {
+        if (window.__PERFIL_STANDALONE) return;
+        if (taskbarManager.isRegistered('profile-window')) {
+            taskbarManager.restore('profile-window');
+        } else {
+            profileWin.style.height = Math.max(380, window.innerHeight - 80) + 'px';
+            taskbarManager.register('profile-window', 'Perfil', '<img src="assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
+            startItemNotifStream();
+        }
+        if (viewingUser) exitViewingUser();
+        if (!loaded) {
+            loaded = true;
+            loadLists(function() { updateCounts(); showSocialView(); });
+            loadProfile();
+        } else {
+            showSocialView();
+        }
+    };
+    window.addEventListener('message', function (e) {
+        if (e.data && e.data.type === 'perfil-open-amigos' && !window.__PERFIL_STANDALONE) window.profileOpenAmigos();
+    });
+
+    /* Clip de la columna de datos (renderProfileInfo): copia el enlace del
+       perfil que se está viendo (el mío si no). */
+    (function () {
+        var ownKey = <?php echo json_encode(isset($desktopUserKey) ? $desktopUserKey : ($_SESSION['user'] ?? '')); ?>;
+        window.__perfilCopyLink = function () {
+            var key = viewingUser || window.__PERFIL_VIEWING_KEY || ownKey;
+            if (key && typeof window.melonCopyLink === 'function') window.melonCopyLink('perfil', key);
+        };
+    })();
+
+    /* Botón de amistad de la cabecera (amigos.php): ninguna → "+ Agregar
+       amigo"; enviada → "Solicitud enviada" (clic: cancelar); recibida →
+       "Aceptar solicitud"; amigos → "✓ Amigos" (clic: eliminar, con
+       confirmación). Acepta también el booleano de páginas viejas. */
+    var amistadVista = 'ninguna';
+    function updateFollowButton(estado) {
         var btn = document.getElementById('profile-follow-btn');
         if (!btn) return;
         if (!viewingUser) { btn.style.display = 'none'; return; }
+        if (estado === true) estado = 'amigos';
+        if (estado === false || !estado) estado = 'ninguna';
+        amistadVista = estado;
         btn.style.display = '';
-        btn.textContent = isFollowing ? '✓ Siguiendo' : '+ Seguir';
-        btn.classList.toggle('following', !!isFollowing);
+        btn.textContent = { ninguna: '+ Agregar amigo', enviada: 'Solicitud enviada', recibida: 'Aceptar solicitud', amigos: '✓ Amigos' }[estado] || '+ Agregar amigo';
+        btn.title = { enviada: 'Clic para cancelar la solicitud', amigos: 'Clic para eliminar de tus amigos' }[estado] || '';
+        btn.classList.toggle('following', estado === 'amigos' || estado === 'enviada');
     }
 
     function isMutual(userKey) {
@@ -5068,7 +5501,12 @@ var PROFILE_USERS = <?php
             dot.classList.toggle('dnd',    !!lastDndSet[k]);
         });
         applyNowPlaying();
+        if (window.PerfilV2) PerfilV2.refreshStatus();
+        /* Estados de la lista de amigos (en línea / escuchando / hace X). */
+        var amV = document.getElementById('profile-view-social');
+        if (amV && amV.style.display !== 'none' && !amPintando) { amPintando = true; amPintarLista(); amPintando = false; }
     }
+    var amPintando = false;
     /* Marquee clonado tal cual de apps/reproductor.php — el texto
        arranca en su posición natural (visible desde el principio),
        pausa `pauseMs`, se desplaza a la izquierda a `speed` px/seg,
@@ -5188,9 +5626,23 @@ var PROFILE_USERS = <?php
        chat cuando el otro está offline. Lo devuelve el endpoint extendido
        de presence. */
     var lastSeenMap = {};
+    /* La presencia sale del archivo estático que deja escrito el heartbeat
+       (assets/profile/presencia.php): leerlo no gasta PHP ni BD. Si no
+       responde o tiene más de 2 min, de la API como antes. */
+    function pedirPresencia() {
+        return fetch(PRESENCIA_URL, { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r) { if (!r.ok) throw new Error('presencia ' + r.status); return r.json(); })
+            .then(function(d) {
+                if (!d || !d.ahora || Math.abs(Date.now() / 1000 - d.ahora) > 120) throw new Error('presencia vieja');
+                return d;
+            })
+            .catch(function() {
+                return fetch('assets/profile/api.php?action=presence', { credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); });
+            });
+    }
     function refreshPresenceDots() {
-        fetch('assets/profile/api.php?action=presence', { credentials: 'same-origin' })
-            .then(function(r) { return r.json(); })
+        pedirPresencia()
             .then(function(d) {
                 if (!d || !d.ok || !Array.isArray(d.online)) return;
                 lastOnlineSet = {};
@@ -5344,6 +5796,7 @@ var PROFILE_USERS = <?php
                fuera del rect (bottom/right negativos). */
             avEl.style.position = 'relative';
             avEl.style.overflow = 'visible';
+            avEl.setAttribute('data-marco-user', userKey);   /* marco (melon-marcos.js) */
             /* Dot de presencia del user con el que chateo. Hereda
                online/away/dnd del cache (mismos sets que Social) para
                no parpadear: applyPresence() los re-aplica en cada poll. */
@@ -5363,8 +5816,7 @@ var PROFILE_USERS = <?php
         win.style.left = Math.round((window.innerWidth  - win.offsetWidth)  / 2) + 'px';
         win.style.top  = Math.round((window.innerHeight - win.offsetHeight) / 2) + 'px';
         loadChatMessages(true);   /* initial=true: pin imágenes durante grace */
-        if (chatPollTimer) clearInterval(chatPollTimer);
-        chatPollTimer = setInterval(loadChatMessages, 1500);
+        programarChat();
         /* Quita el contador local al abrir el chat */
         if (unreadChats[userKey]) { delete unreadChats[userKey]; renderFollowedNav(); }
         setTimeout(function() {
@@ -5427,7 +5879,24 @@ var PROFILE_USERS = <?php
         chatLastSig  = '';
         var stEl = document.getElementById('profile-chat-status');
         if (stEl) { stEl.textContent = ''; stEl.classList.remove('is-online'); }
-        if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+        if (chatPollTimer) { clearTimeout(chatPollTimer); chatPollTimer = null; }
+        if (window.melonTimbre) window.melonTimbre.rapido('chat', false);
+    }
+
+    /* Chat abierto: lo nuevo llega por el timbre (mensajes, editados,
+       borrados, leídos), que con un chat abierto se mira cada segundo;
+       aquí solo se repasa cada 10 s para el "entregado" (depende de
+       cuándo se conectó el otro). Antes se pedía cada 1,5 s. Sin timbre
+       (o si deja de responder), cada 1,5 s como antes. */
+    function programarChat() {
+        if (chatPollTimer) clearTimeout(chatPollTimer);
+        var conTimbre = window.melonTimbre && window.melonTimbre.ok();
+        if (window.melonTimbre) window.melonTimbre.rapido('chat', true);
+        chatPollTimer = setTimeout(function() {
+            if (!chatWithUser) return;
+            loadChatMessages();
+            programarChat();
+        }, conTimbre ? 10000 : 1500);
     }
 
     function loadChatMessages(initial) {
@@ -6189,6 +6658,7 @@ var PROFILE_USERS = <?php
                 }
             ?>;
             if (window.__attachPresenceDot) window.__attachPresenceDot(avFrame, currentSessionUser);
+            avFrame.setAttribute('data-marco-user', currentSessionUser);   /* marco (melon-marcos.js) */
         }
         var nameEl = document.getElementById('profile-username');
         if (nameEl) nameEl.textContent = <?php echo json_encode($desktopLabel); ?>;
@@ -6301,6 +6771,7 @@ var PROFILE_USERS = <?php
                     collabKeys.forEach(function(uKey) {
                         var uInfo = PROFILE_USERS[uKey]; if (!uInfo) return;
                         var avFrame = document.createElement('div'); avFrame.className = 'profile-avatar-frame'; avFrame.title = uInfo.label;
+                        avFrame.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                         if (uInfo.image) { var avImg = document.createElement('img'); avImg.src = uInfo.image; avImg.alt = uInfo.label; avFrame.appendChild(avImg); }
                         strip.appendChild(avFrame);
                     });
@@ -6497,6 +6968,7 @@ var PROFILE_USERS = <?php
                 collabKeys.forEach(function(uKey) {
                     var uInfo = PROFILE_USERS[uKey]; if (!uInfo) return;
                     var av = document.createElement('div'); av.className = 'profile-avatar-frame music-list-av'; av.title = uInfo.label;
+                    av.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
                     if (uInfo.image) { var avImg = document.createElement('img'); avImg.src = uInfo.image; avImg.alt = uInfo.label; av.appendChild(avImg); }
                     strip.appendChild(av);
                 });
@@ -6890,7 +7362,7 @@ var PROFILE_USERS = <?php
         var addPlat   = document.getElementById('profile-social-add-platform');
         var addVal    = document.getElementById('profile-social-add-value');
 
-        var FIELDS = ['bio', 'pronouns', 'age', 'country'];
+        var FIELDS = ['bio', 'pronouns', 'birthday', 'country'];
         var SOCIALS = ['steam', 'discord', 'twitter', 'instagram'];
         /* Iconos PNG dedicados para cada red social. */
         var SOCIAL_ICONS = {
@@ -6931,9 +7403,32 @@ var PROFILE_USERS = <?php
                 return inp;
             }
             row('pronouns', 'pronombres (él/ella/elle...)', 'text',   30);
-            row('age',      'edad',                          'number', 3);
-            row('country',  '📍 país',                        'text',   50);
+            /* Cumpleaños (la edad sale de aquí). Un <input type="date">
+               vacío no enseña el placeholder, así que vacío va como texto
+               ("cumpleaños", igual que "país") y pasa a fecha al
+               entrar. No vuelve a texto al salir: el selector de fecha
+               puede quitar el foco y se cerraría. */
+            var hoyD = new Date();
+            var bdInp = row('birthday', 'cumpleaños', d.birthday ? 'date' : 'text');
+            bdInp.title = 'Cumpleaños';
+            bdInp.min = '1900-01-01';
+            bdInp.max = hoyD.getFullYear() + '-' + String(hoyD.getMonth() + 1).padStart(2, '0') + '-' + String(hoyD.getDate()).padStart(2, '0');
+            bdInp.addEventListener('focus', function() {
+                if (this.type === 'date') return;
+                this.type = 'date';
+                try { this.showPicker(); } catch (e) {}
+            });
+            row('country',  'país',                           'text',   50);
         }
+
+        /* Vincular / desvincular Steam (perfil-v2.js) cambia el enlace de
+           Steam en el servidor: también en lo que se está editando, o
+           Guardar lo volvería a pisar. */
+        window.__pf2SetSocial = function (key, val) {
+            if (!editing || !draft) return;
+            if (val) draft[key] = val; else delete draft[key];
+            buildSocialEditable(draft);
+        };
 
         function buildBioTextarea(d) {
             var bioEl = document.getElementById('profile-info-bio');
@@ -7030,6 +7525,9 @@ var PROFILE_USERS = <?php
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     draft = Object.assign({}, data || {});
+                    /* Con cumpleaños, `age` es la calculada: si lo borra,
+                       se queda sin edad (como en el servidor). */
+                    if (draft.birthday) draft.age = '';
                     newPhotoFile = null;
                     editing = true;
                     editBtn.style.display    = 'none';
@@ -7039,6 +7537,9 @@ var PROFILE_USERS = <?php
                     buildMetaInputs(draft);
                     buildBioTextarea(draft);
                     buildSocialEditable(draft);
+                    /* Expositores: arrastrar, añadir, quitar y elegir su
+                       contenido (assets/js/perfil-v2.js). */
+                    if (window.PerfilV2) PerfilV2.setEditing(true, data.v2);
                 })
                 .catch(function() {});
         }
@@ -7052,6 +7553,7 @@ var PROFILE_USERS = <?php
             /* Restaurar layout del meta */
             var metaEl = document.getElementById('profile-info-meta');
             if (metaEl) { metaEl.style.flexDirection = ''; metaEl.style.gap = ''; }
+            if (window.PerfilV2) PerfilV2.setEditing(false);
             /* Re-renderizar con datos finales (draft si guardado, recarga si cancelado) */
             if (saved) {
                 renderProfileInfo(draft);
@@ -7072,6 +7574,14 @@ var PROFILE_USERS = <?php
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(function(r) { return r.json(); });
+            /* Los expositores se guardan a la vez; si fallan, el error sale
+               como el de los datos. */
+            if (window.PerfilV2) {
+                var scPromise = PerfilV2.save();
+                infoPromise = Promise.all([infoPromise, scPromise]).then(function(r) {
+                    return (r[1] && r[1].error) ? r[1] : r[0];
+                });
+            }
 
             var photoPromise = Promise.resolve(null);
             if (newPhotoFile) {
@@ -7446,7 +7956,7 @@ var PROFILE_USERS = <?php
             'position: fixed;' +
             'left: calc(8vw + ' + offsetPx + 'px);' +
             'top:  calc(4vh + ' + offsetPx + 'px);' +
-            'width: 860px;' +
+            'width: 1000px;' +   /* perfil nuevo: más ancho */
             'height: 900px;' +
             'z-index: 500;' +
             'display: block;' +
@@ -7695,13 +8205,22 @@ var PROFILE_USERS = <?php
         }
     });
 
-    /* Cargar notificaciones de perfil + polling cada 30s */
+    /* Notificaciones de perfil y contador de mensajes sin leer: al
+       empezar y cuando el timbre del escritorio dice que han cambiado
+       ('notif' / 'chat', window.melonTimbre en desktop-base.php); si no
+       responde, cada 30 s y cada 4 s como antes. En standalone no hay
+       timbre: como antes. */
     loadProfileNotifs();
-    setInterval(loadProfileNotifs, 30000);
-
-    /* Cargar contador de mensajes sin leer + polling cada 4s */
     loadUnreadChats();
-    unreadPollTimer = setInterval(loadUnreadChats, 4000);
+    if (window.melonTimbre) {
+        window.melonTimbre.on('notif', loadProfileNotifs, 30000);
+        window.melonTimbre.on('chat', loadUnreadChats, 4000);
+        /* El chat abierto, en cuanto llega algo (ver programarChat). */
+        window.melonTimbre.on('chat', function() { if (chatWithUser) loadChatMessages(); });
+    } else {
+        setInterval(loadProfileNotifs, 30000);
+        unreadPollTimer = setInterval(loadUnreadChats, 4000);
+    }
 
     document.getElementById('profile-close').addEventListener('click', function() {
         document.dispatchEvent(new Event('profile-edit-cancel'));

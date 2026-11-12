@@ -20,6 +20,10 @@ if (!function_exists('mtEnsureTable')) {
     function mtEnsureTable(PDO $pdo): void {
         static $done = false;
         if ($done) return;
+        /* Una vez por versión de este archivo (melon_esquema), no en cada
+           petición: ver .claude/notas/rendimiento.md. */
+        require_once __DIR__ . '/php/esquema.php';
+        melon_esquema($pdo, 'tokens-movil', __FILE__, function (PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS device_tokens (
             id           INT AUTO_INCREMENT PRIMARY KEY,
             user_id      INT NOT NULL,
@@ -31,6 +35,7 @@ if (!function_exists('mtEnsureTable')) {
             CONSTRAINT fk_device_user FOREIGN KEY (user_id)
                 REFERENCES usuarios(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        }, true);
         $done = true;
     }
 }

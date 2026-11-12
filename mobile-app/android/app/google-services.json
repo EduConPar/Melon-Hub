@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "718738272493",
+    "project_id": "melon-hub-af155",
+    "storage_bucket": "melon-hub-af155.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:718738272493:android:9e18a2f926c053cdfd9ce4",
+        "android_client_info": {
+          "package_name": "es.melonhub.MelonHub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbGA3AQ8o5_uZArjtBoRrauZ78SR9_Fe4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

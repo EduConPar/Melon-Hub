@@ -41,6 +41,12 @@ require_once __DIR__ . '/assets/mobile-token.php';
 
 $projectBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
 
+/* En Android, el paso 2 descarga el APK de la app en lugar de instalar
+   la PWA (si este entorno tiene APK; ver assets/mobile-downloads.php).
+   iPhone y el resto siguen con la PWA. */
+require_once __DIR__ . '/assets/mobile-downloads.php';
+$apkUrl = androidApkUrlForVisitor();
+
 /* NO saltamos server-side a mobile.php aunque is_pwa esté en sesión.
    En Android las cookies son compartidas entre PWA y navegador, así
    que is_pwa=true puede aparecer también en el navegador normal y
@@ -65,6 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loginError = 'Usuario o contraseña incorrectos.';
     } else {
         $_SESSION['user'] = $matchKey;
+        require_once __DIR__ . '/assets/remember-login.php';
+        rememberLogin($pdo, $matchKey);
         $uid = (int)$pdo->query('SELECT id FROM usuarios WHERE user_key = '
                                 . $pdo->quote($matchKey))->fetchColumn();
         if ($uid > 0) {
@@ -100,8 +108,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
        login normalmente, incluso si la PWA está abierta. */
     window.MELON_HAS_SESSION = <?= json_encode(!empty($_SESSION['user']) && isset($loginUsers[$_SESSION['user']])) ?>;
     (function(){
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (sa && window.MELON_HAS_SESSION) {
             window.location.replace('mobile.php?pwa=1');
         }
@@ -116,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php else: ?>
         <link rel="manifest" href="manifest.php">
     <?php endif; ?>
+    <?php suppressPwaInstallPrompt(); ?>
     <link rel="apple-touch-icon" href="assets/img/mobile/icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -546,6 +557,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="mh-sub">Cuenta activa: <?= htmlspecialchars($loginUsers[$_SESSION['user']]['label']) ?></div>
                 </div>
 
+                <?php if ($apkUrl !== ''): ?>
+                <!-- Android: en lugar de la PWA, la app (APK). -->
+                <div class="login-actions" style="margin-top:4px;">
+                    <button class="button default mh-cta-full" type="button"
+                            onclick="location.href = <?= htmlspecialchars(json_encode($apkUrl)) ?>;">
+                        ⬇ Descargar la app
+                    </button>
+                </div>
+                <?php else: ?>
                 <!-- Aviso amarillo HTTP (solo se ve si JS detecta HTTP) -->
                 <div class="mh-http-warn" id="http-warn" hidden>
                     ⚠️ <strong>Estás en HTTP.</strong> Para que el icono se
@@ -585,6 +605,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- Se rellena por JS según el navegador detectado -->
                     </ol>
                 </fieldset>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -705,7 +726,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 })();
 <?php endif; ?>
 
-<?php if ($step === 2): ?>
+<?php if ($step === 2 && $apkUrl === ''): ?>
 /* ── Service Worker ────────────────────────────────────────────── */
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js', { scope: '<?= $projectBaseUrl ?>' })
@@ -718,7 +739,8 @@ if ('serviceWorker' in navigator) {
     var isHTTPS    = window.location.protocol === 'https:';
     var isLocal    = /^(localhost|127\.|\[?::1)/.test(window.location.hostname);
     var isStandalone = window.matchMedia('(display-mode: standalone)').matches
-                    || window.navigator.standalone === true;
+                    || window.navigator.standalone === true
+                    || /MelonHubApp/.test(ua);   /* app de Android */
     if (isStandalone) {
         /* Ya estamos dentro de la PWA — la guía no aplica. */
         window.location.replace('mobile.php');

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget de calendario 2×2 (CalendarWidget). Se refresca cada hora (datos y
+     "hoy"); además a medianoche y al salir de la app. La vista previa es
+     una imagen sacada de la maqueta (los textos del widget son imágenes
+     que pinta el código y no saldrían en una vista previa por layout). -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/cal_month_description"
+    android:initialLayout="@layout/widget_w98_cal_month"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:previewImage="@drawable/widget_preview_cal_month"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="3600000"
+    android:widgetCategory="home_screen" />

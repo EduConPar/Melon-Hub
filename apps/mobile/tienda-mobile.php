@@ -15,6 +15,8 @@ require_once dirname(__DIR__, 2) . '/assets/mobile-detect.php';
 setLongSessionCookie();
 session_start();
 require_once dirname(__DIR__, 2) . '/assets/config.php';
+require_once dirname(__DIR__, 2) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: cajita "DEV" de darse puntos */
+require_once dirname(__DIR__, 2) . '/assets/tienda/catalogo.php';   /* pestañas de la tienda (catalogo.json) */
 
 if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
     header('Location: ../../index.php');
@@ -78,6 +80,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <?php require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php"; emitInterfaceCss("../../"); ?>
     <script src="../../assets/js/interface-loader.js?v=fs1"></script>
     <link rel="stylesheet" href="../../assets/css/themes.css">
+    <!-- Marcos de perfil en las fotos (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <?php if ($activeThemeCss): ?>
     <link rel="stylesheet" id="active-theme-link" href="../../<?= htmlspecialchars($activeThemeCss); ?>">
     <?php endif; ?>
@@ -540,6 +545,78 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                 inset  2px  2px var(--bezel-dark-1, #0a0a0a),
                 inset -2px -2px var(--bezel-light-2, #dfdfdf);
         }
+        /* ── Pestaña Perfil por secciones (renderPerfil; como la del PC,
+           apps/tienda.php): MARCOS DE AVATAR con tu foto, SUBIR DE NIVEL
+           EXPOSITORES (una tarjeta ancha por cadena, con pips), EXPOSITORES
+           ADICIONALES, RACHA (el fueguito) y OTROS. En el móvil: tarjetas
+           de 2 en 2 y las anchas a todo lo ancho. */
+        #tienda-view-principal.is-secciones { display: block; }
+        .tienda-sec { margin-bottom: 16px; }
+        .tienda-sec-h { display: flex; align-items: center; gap: 8px; margin: 0 0 4px;
+            font-size: 12px; font-weight: bold; letter-spacing: 1px; color: var(--text, #000); }
+        .tienda-sec-h::after { content: ''; flex: 1; border-top: 1px solid var(--bezel-dark-1, #808080); border-bottom: 1px solid var(--bezel-light-1, #fff); }
+        .tienda-sec-sub { font-size: 11px; color: var(--text-muted, #666); margin-bottom: 8px; line-height: 1.35; }
+        .tienda-sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; align-items: start; }
+        .tienda-sec-wide { display: flex; flex-direction: column; gap: 8px; }
+        /* Tarjeta ancha: también .tienda-card (su relieve, y Kawaii la pinta
+           igual que las demás); aquí, en fila: icono a la izquierda. */
+        .tienda-card.tienda-wide { flex-direction: row; align-items: stretch; gap: 0; padding: 4px; }
+        .tienda-wide-icon { width: 72px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--inset-bg, #808080);
+            box-shadow: inset -1px -1px var(--bezel-light-1, #fff), inset 1px 1px var(--bezel-dark-1, #0a0a0a); }
+        .tienda-wide-icon img { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
+        .tienda-wide-body { flex: 1; min-width: 0; padding: 4px 4px 2px 8px; display: flex; flex-direction: column; gap: 3px; }
+        .tienda-wide-name { font-size: 12px; font-weight: bold; color: var(--text, #000); }
+        .tienda-wide-type { font-size: 10px; color: var(--text-muted, #666); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .tienda-wide-pips { display: inline-flex; gap: 2px; }
+        .tienda-wide-pips i { width: 10px; height: 6px; background: var(--inset-bg, #808080); box-shadow: inset 1px 1px var(--bezel-dark-1, #0a0a0a); }
+        .tienda-wide-pips i.on { background: var(--accent, navy); }
+        .tienda-wide-desc { font-size: 10px; color: var(--text-muted, #666); flex: 1; line-height: 1.35; }
+        .tienda-wide-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+        .tienda-wide-price { font-size: 11px; font-weight: bold; color: var(--text, #000); display: inline-flex; align-items: center; gap: 3px; }
+        .tienda-wide-foot .button { min-height: 26px; min-width: 0; padding: 0 12px; }
+        .tienda-wide-done { font-size: 11px; font-weight: bold; color: var(--accent, navy); }
+        /* Marco con tu foto: hueco de 72 px y el sitio que pide cada marco
+           (--mk-* de marcos.css), como en el PC. */
+        .tienda-marco-prev.is-foto { width: 72px; height: 72px;
+            margin: calc(72px * var(--mk-t, .14)) calc(72px * var(--mk-r, .14)) calc(72px * var(--mk-b, .14)) calc(72px * var(--mk-l, .14)); }
+        .tienda-marco-prev.is-foto > img { object-fit: cover; image-rendering: auto; }
+        .tienda-fuego { width: 48px; height: 56px; display: block; }
+        /* FUENTES: "Aa Ññ" con la fuente de cada tarjeta. */
+        .tienda-fuente-prev { font-size: 28px; line-height: 1.1; color: var(--text, #000); text-align: center; padding: 0 4px; white-space: nowrap; }
+        /* ── Regalos (como los del PC, apps/tienda.php): botón "Regalos (N)"
+           en la cabecera → ventana con los sin abrir y "Regalar a un
+           amigo"; barra del modo regalo encima de los objetos. ── */
+        .tienda-av { width: 22px; height: 22px; flex-shrink: 0; display: inline-block; position: relative; background: var(--inset-bg, #808080); }
+        .tienda-av[data-marco] { margin: calc(var(--mk-t) * 22px) calc(var(--mk-r) * 22px) calc(var(--mk-b) * 22px) calc(var(--mk-l) * 22px); }
+        .tienda-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        #tienda-gift-bar { display: none; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 8px; font-size: 11px;
+            background: var(--accent, navy); color: var(--accent-text, #fff); }
+        #tienda-gift-bar.on { display: flex; }
+        #tienda-gift-bar .tienda-gift-txt { flex: 1; min-width: 0; line-height: 1.35; }
+        #tienda-gift-bar .button { min-height: 26px; font-size: 10px; padding: 0 8px; min-width: 0; flex-shrink: 0; }
+        .tienda-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 10px; }
+        .tienda-modal { width: 100%; max-width: 420px; max-height: 86vh; display: flex; flex-direction: column; color: var(--text, #000); }
+        .tienda-modal .window-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 11px; overflow-y: auto; }
+        .tienda-modal-foot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+        .tienda-modal-foot .button { min-height: 28px; min-width: 0; padding: 0 12px; }
+        .tienda-modal-item { display: flex; gap: 10px; align-items: flex-start; }
+        .tienda-modal-item .tienda-card-icon { width: 88px; height: 88px; flex-shrink: 0; font-size: 36px; }
+        .tienda-modal-item .tienda-card-icon > img, .tienda-modal-item .tienda-card-icon > svg { max-width: 60px; max-height: 60px; }
+        .tienda-modal-item .tienda-marco-prev.is-foto { width: 48px; height: 48px;
+            margin: calc(48px * var(--mk-t, .14)) calc(48px * var(--mk-r, .14)) calc(48px * var(--mk-b, .14)) calc(48px * var(--mk-l, .14)); }
+        .tienda-modal-name { font-size: 13px; font-weight: bold; }
+        .tienda-modal-desc { color: var(--text-muted, #666); margin-top: 3px; line-height: 1.35; }
+        .tienda-modal-from { display: flex; align-items: center; gap: 8px; }
+        .tienda-modal-msg { padding: 6px 8px; background: var(--input-bg, #fff); color: var(--input-text, #000); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); white-space: pre-wrap; word-break: break-word; font-style: italic; }
+        .tienda-friends { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); padding: 2px; }
+        .tienda-friend { display: flex; align-items: center; gap: 8px; padding: 6px; cursor: pointer; color: var(--input-text, #000); font-size: 12px; }
+        .tienda-friend .tienda-av { width: 30px; height: 30px; }
+        .tienda-friend .tienda-av[data-marco] { margin: calc(var(--mk-t) * 30px) calc(var(--mk-r) * 30px) calc(var(--mk-b) * 30px) calc(var(--mk-l) * 30px); }
+        .tienda-friend span:last-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tienda-friend i { font-style: normal; color: var(--text-muted, #666); }
+        .tienda-modal-h { font-weight: bold; font-size: 11px; }
+        .tienda-modal textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: 12px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
         #tienda-status:empty { display: none; }
         #tienda-status.is-error { color: var(--error-text, #c00); font-weight: bold; }
         #tienda-status.is-ok    { color: var(--accent, #000080); font-weight: bold; }
@@ -602,6 +679,14 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             <span id="tienda-balance-v">—</span>
         </div>
         <div class="ti-wallet-unit">puntos de Autismo</div>
+        <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
+        <!-- Solo en la build de dev: darse puntos para probar la tienda. -->
+        <div id="tienda-dev" style="margin-top:6px;padding:4px;border:1px dashed var(--error-text,#c00);font-size:11px;display:flex;gap:4px;align-items:center;justify-content:center;">
+            <b style="color:var(--error-text,#c00);">DEV</b>
+            <input type="number" id="tienda-dev-amount" value="1000" min="1" max="100000" style="width:72px;">
+            <button type="button" class="button" id="tienda-dev-grant">+ Puntos</button>
+        </div>
+        <?php endif; ?>
     </div>
     <div class="ti-discord">
         <div class="ti-discord-label">Discord</div>
@@ -610,20 +695,27 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
              izquierda del botón Vincular/Desvincular Discord. Así queda
              separada de las categorías de items. -->
         <div class="ti-actions">
+            <!-- Regalos: los sin abrir ("Regalos (N)") y "Regalar a un amigo". -->
+            <button type="button" class="button" id="tienda-gifts-btn">Regalos</button>
             <button type="button" class="button" id="tienda-donar-btn" data-view="donaciones">☕ Donar</button>
             <button type="button" class="button" id="tienda-discord-btn">…</button>
         </div>
     </div>
 </div>
 
-<!-- Tabs horizontales: 4 categorías de items. Donaciones ya no vive
+<!-- Tabs horizontales: las categorías de catalogo.json. Donaciones ya no vive
      aquí — se accede desde el botón del header. -->
 <div class="ti-tabs">
-    <div class="button tienda-tab active" data-view="principal" data-cat="discord"><img src="../../assets/img/appIcons/discordIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Discord</div>
-    <div class="button tienda-tab"        data-view="principal" data-cat="interfaces"><img src="../../assets/img/appIcons/interfaceIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Interfaces</div>
-    <div class="button tienda-tab"        data-view="principal" data-cat="mascotas"><img src="../../assets/img/appIcons/mascotaIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Mascotas</div>
-    <div class="button tienda-tab"        data-view="principal" data-cat="haros"><img src="../../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros</div>
+    <?php
+    /* Pestañas: salen de assets/tienda/catalogo.json (la primera empieza
+       activa; "proximamente" → la pestaña enseña "Coming soon..."). */
+    foreach (tiendaPestanas() as $_i => $_t): ?>
+    <div class="button tienda-tab<?= $_i === 0 ? ' active' : '' ?>" data-view="principal" data-cat="<?= htmlspecialchars($_t['id']) ?>"<?= $_t['proximamente'] ? ' data-soon="1"' : '' ?>><?php if ($_t['icono'] !== ''): ?><img src="../../<?= htmlspecialchars($_t['icono']) ?>" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;"><?php endif; ?><?= htmlspecialchars($_t['nombre']) ?></div>
+    <?php endforeach; ?>
 </div>
+
+<!-- Modo regalo (regalando a un amigo): barra encima de los objetos. -->
+<div id="tienda-gift-bar"></div>
 
 <!-- Vista Principal — grid de items de la categoría seleccionada. -->
 <div class="ti-pane" id="tienda-view-principal">
@@ -749,7 +841,37 @@ async function api(action, body){
     return r.json();
 }
 
-var _balance = 0, _items = [], _owned = {}, _activeCat = 'discord';
+var _balance = 0, _items = [], _owned = {};
+/* Modo regalo (como el PC): la tienda como si fueras esa persona (lo que
+   ya tiene, sus regalos pendientes, sus mejoras) y "Comprar" → "Regalar".
+   _gift = { key, label, image, discord, owned: {id: true}, pending: {id: true} } */
+var _gift = null;
+function isOwned(id){ return !!(_gift ? _gift.owned : _owned)[id|0]; }
+function isPending(id){ return !!(_gift && _gift.pending[id|0]); }
+function lblOwned(){ return _gift ? '✓ Ya lo tiene' : '✓ Ya lo tienes'; }
+function lblBuy(){ return _gift ? 'Regalar' : 'Comprar'; }
+/* Categoría inicial = la primera pestaña (las pinta PHP desde catalogo.json). */
+var _firstTab = document.querySelector('.tienda-tab[data-cat]');
+var _activeCat = _firstTab ? _firstTab.dataset.cat : 'discord';
+
+/* SOLO DEV: darse puntos para probar (assets/tienda/api.php dev-grant). */
+(function(){
+    var b = document.getElementById('tienda-dev-grant');
+    if (!b) return;
+    b.addEventListener('click', async function(){
+        var n = parseInt(document.getElementById('tienda-dev-amount').value, 10) || 0;
+        if (n < 1) return;
+        b.disabled = true;
+        try {
+            var r = await api('dev-grant', { amount: n });
+            if (r.error) throw new Error(r.error);
+            _balance = r.autismo|0;
+            renderBalance();
+            setStatus('DEV: +' + n + ' puntos', 'ok');
+        } catch (e) { setStatus('Error: ' + e.message, 'error'); }
+        b.disabled = false;
+    });
+})();
 
 async function loadState(){
     setStatus('Cargando…');
@@ -773,17 +895,175 @@ function renderBalance(){
     /* Botones se rehabilitan/deshabilitan según balance Y posesión. */
     document.querySelectorAll('[data-buy-id]').forEach(function(btn){
         var id = btn.dataset.buyId | 0;
-        if (_owned[id]) { btn.disabled = true; btn.textContent = '✓ Ya lo tienes'; return; }
+        if (isOwned(id)) { btn.disabled = true; btn.textContent = lblOwned(); return; }
+        if (isPending(id)) { btn.disabled = true; btn.textContent = 'Regalo pendiente'; return; }
+        if (btn.dataset.locked) { btn.disabled = true; return; }   /* falta Discord o el hueco anterior */
         var p = parseInt(btn.dataset.price, 10);
         btn.disabled = p > _balance;
     });
 }
+/* Compras en cadena de la pestaña Perfil: el objeto que hay que tener
+   antes (null = ninguno). Misma regla que tiendaPrevSlug de
+   assets/tienda/catalogo.php (la que vale al comprar). */
+function tiendaPrevSlug(slug) {
+    var m;
+    if ((m = /^expositor-hueco-(\d)$/.exec(slug)) && +m[1] > 3) return 'expositor-hueco-' + (m[1] - 1);
+    if ((m = /^(media-[a-z]+)-(\d)$/.exec(slug)) && +m[2] > 4) return m[1] + '-' + (m[2] - 1);
+    if ((m = /^(steam-(?:rare|ach)-fila)-(\d)$/.exec(slug)) && +m[2] > 2) return m[1] + '-' + (m[2] - 1);
+    return null;
+}
+
+/* Título y descripción de la sección de las pestañas que no son Perfil
+   (como SECCION_TAB de apps/tienda.php). */
+var SECCION_TAB = {
+    discord:    ['ROLES DE DISCORD', 'Roles para tu cuenta en el servidor de Discord. Para comprarlos tienes que tener tu Discord vinculado.'],
+    haros:      ['HAROS ESTÁNDAR', 'Otros colores para el haro que te trae los avisos. Se elige en Temas, en Personalización.'],
+    interfaces: ['INTERFACES', 'Cambian el aspecto de todo Melon Hub. Se elige en Temas, en Personalización.'],
+};
+/* FUENTES: muestra "Aa Ññ" escrita con la fuente (mh-fuente-muestra la
+   libra de la fuente puesta en la página, assets/php/fuentes.php) y su
+   CSS de Google Fonts, una vez cada una. */
+function fuenteEstilo(it) {
+    return 'font-family:&quot;' + esc(it.fuente.familia) + '&quot;, sans-serif;';
+}
+function fuenteMuestra(it) {
+    return '<span class="tienda-fuente-prev mh-fuente-muestra" style="' + fuenteEstilo(it) + '">Aa Ññ</span>';
+}
+var _fuentesCargadas = {};
+function cargaFuentes(items) {
+    items.forEach(function(it){
+        var u = it.fuente && it.fuente.url;
+        if (!u || _fuentesCargadas[u]) return;
+        _fuentesCargadas[u] = true;
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = u;
+        document.head.appendChild(l);
+    });
+}
+
+/* Tu foto (va dentro de la vista previa de los marcos). */
+var MY_AVATAR = <?php $_myAv = getUserImage($userLabel); echo json_encode($_myAv ? '../../' . $_myAv : ''); ?>;
+
+/* ── Pestaña Perfil, por secciones (como renderPerfil de apps/tienda.php) ──
+   Cadenas de mejoras: una tarjeta ancha cada una, que va cambiando según
+   lo que ya tengas (el primero que no tienes es el que se vende); con
+   todo comprado sale "✓ Completo". */
+var SLOT_SLUGS_PERFIL = ['expositor-hueco-3', 'expositor-hueco-4', 'expositor-hueco-5'];
+var EXPO_ADICIONALES = ['expositor-resena', 'expositor-juego-destacado', 'expositor-playlist'];
+var CADENAS_PERFIL = [
+    { slugs: SLOT_SLUGS_PERFIL, icono: 'profileIcon', base: 2, cosa: 'huecos', nombre: 'Huecos de expositor',
+      fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' todos los huecos: ' + n + ' expositores a la vez en ' + (_gift ? 'su' : 'tu') + ' perfil.'; } }
+].concat([['games', 'juegosIcon', 'Juegos favoritos', 'juegos'], ['movies', 'pelisIcon', 'Películas favoritas', 'películas'],
+          ['series', 'melonArchiveIcon', 'Series favoritas', 'series'], ['books', 'booksIcon', 'Libros favoritos', 'libros'],
+          ['music', 'musicaIcon', 'Música favorita', 'canciones']].map(function(m){
+    return { slugs: ['media-' + m[0] + '-4', 'media-' + m[0] + '-5'], icono: m[1], base: 3, cosa: m[3], nombre: m[2],
+             fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' todos los huecos: ' + n + ' ' + m[3] + ' en ' + (_gift ? 'su' : 'tu') + ' Media favorita.'; } };
+})).concat([['rare', 'Logros raros de Steam'], ['ach', 'Logros de Steam']].map(function(m){
+    return { slugs: ['steam-' + m[0] + '-fila-2', 'steam-' + m[0] + '-fila-3'], icono: 'steamIcon', base: 1,
+             cosa: 'filas', nombre: m[1], fin: function(n){ return 'Ya tiene' + (_gift ? '' : 's') + ' las ' + n + ' filas: ' + (n * 7) + ' logros en el expositor.'; } };
+}));
+function perfilPrecio(p) {
+    return p + ' <img src="../../assets/img/appIcons/puntosAutismo.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">';
+}
+function perfilSeccion(titulo, sub, cuerpo, cls) {
+    return '<section class="tienda-sec"><h3 class="tienda-sec-h">' + esc(titulo) + '</h3>' +
+        (sub ? '<div class="tienda-sec-sub">' + esc(sub) + '</div>' : '') +
+        '<div class="' + cls + '">' + cuerpo + '</div></section>';
+}
+/* El fueguito de la racha encendido (el de perfil-v2.js): icono del
+   Protector de racha. */
+function rachaFuego() {
+    var fuera = [[6,6],[5,6],[5,7],[4,7],[4,8],[3,8],[2,9],[2,9],[1,10],[1,10],[1,10],[2,9],[3,8],[4,7]];
+    var dentro = { 7: [5,6], 8: [4,7], 9: [4,7], 10: [4,7], 11: [5,6] };
+    var r = '';
+    fuera.forEach(function(x, y){ r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="#ff7a1a"/>'; });
+    Object.keys(dentro).forEach(function(y){ var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="#ffd34d"/>'; });
+    return '<svg class="tienda-fuego" viewBox="0 0 12 14" shape-rendering="crispEdges" aria-hidden="true">' + r + '</svg>';
+}
+/* Tarjeta normal (las de 2 en 2). */
+function perfilTarjeta(it, iconHtml) {
+    var owned = isOwned(it.id);
+    return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+        '<div class="tienda-card-icon">' + iconHtml + '<span class="tienda-card-price">' + perfilPrecio(it.precio) + '</span></div>' +
+        '<div class="tienda-card-name">' + esc(it.nombre) + '</div>' +
+        '<div class="tienda-card-desc">' + esc(it.descripcion || '') + '</div>' +
+        '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '">' + (owned ? lblOwned() : lblBuy()) + '</button>' +
+    '</div>';
+}
+function renderPerfil(view, items) {
+    var marcos = items.filter(function(it){ return !!it.marco; });
+    var enCadena = {};
+    CADENAS_PERFIL.forEach(function(c){ c.slugs.forEach(function(sl){ enCadena[sl] = true; }); });
+    var adicionales = EXPO_ADICIONALES.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; }).filter(Boolean);
+    var racha = items.filter(function(it){ return it.slug === 'protector-racha'; });
+    var otros = items.filter(function(it){ return !it.marco && !enCadena[it.slug] && EXPO_ADICIONALES.indexOf(it.slug) < 0 && it.slug !== 'protector-racha'; });
+    /* En modo regalo, los marcos se ven con la foto de esa persona. */
+    var foto = (_gift ? _gift.image : MY_AVATAR) || '../../assets/img/appIcons/profileIcon.png';
+    var html = '';
+    if (marcos.length) {
+        html += perfilSeccion('MARCOS DE AVATAR', 'Un marco alrededor de tu foto en el perfil, el chat, Social y los comentarios. Se elige en Personalizar del perfil.',
+            marcos.map(function(it){
+                return perfilTarjeta(it, '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto) + '" alt=""></span>');
+            }).join(''), 'tienda-sec-grid');
+    }
+    var anchas = CADENAS_PERFIL.map(function(c){
+        var cad = c.slugs.map(function(sl){ return items.filter(function(it){ return it.slug === sl; })[0]; }).filter(Boolean);
+        if (!cad.length) return '';
+        var tienes = cad.filter(function(it){ return isOwned(it.id); }).length;
+        var sig = cad.filter(function(it){ return !isOwned(it.id); })[0];
+        var total = c.base + cad.length;
+        var pips = '';
+        for (var i = 0; i < cad.length; i++) pips += '<i class="' + (i < tienes ? 'on' : '') + '"></i>';
+        return '<div class="tienda-card tienda-wide' + (sig ? '' : ' is-owned') + '">' +
+            '<div class="tienda-wide-icon"><img src="../../assets/img/appIcons/' + c.icono + '.png" alt=""></div>' +
+            '<div class="tienda-wide-body">' +
+                '<div class="tienda-wide-name">' + esc(c.nombre) + '</div>' +
+                '<div class="tienda-wide-type">Mejora de expositor · ' + (_gift ? 'tiene ' : 'tienes ') + (c.base + tienes) + ' de ' + total + ' ' + c.cosa + ' <span class="tienda-wide-pips">' + pips + '</span></div>' +
+                '<div class="tienda-wide-desc">' + esc(sig ? (sig.descripcion || '') : c.fin(total)) + '</div>' +
+                '<div class="tienda-wide-foot">' +
+                    (sig ? '<span class="tienda-wide-price">' + perfilPrecio(sig.precio) + '</span>' +
+                           '<button type="button" class="button" data-buy-id="' + sig.id + '" data-price="' + sig.precio + '">' + lblBuy() + '</button>'
+                         : '<span class="tienda-wide-done">✓ Completo</span>') +
+                '</div>' +
+            '</div></div>';
+    }).join('');
+    if (anchas) {
+        html += perfilSeccion('SUBIR DE NIVEL EXPOSITORES', 'Más huecos de expositor, más elementos en Media favorita (de 3 a 5, por tipo) y más filas en los expositores de logros de Steam (de 1 a 3).', anchas, 'tienda-sec-wide');
+    }
+    if (adicionales.length) {
+        var iconos = { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' };
+        html += perfilSeccion('EXPOSITORES ADICIONALES', 'Expositores nuevos para tu perfil. Se ponen en Personalizar, en un hueco libre.', adicionales.map(function(it){
+            return perfilTarjeta(it, '<img class="tienda-card-icon-img" src="../../assets/img/appIcons/' + iconos[it.slug] + '.png" alt="" style="image-rendering:pixelated;">');
+        }).join(''), 'tienda-sec-grid');
+    }
+    /* Protector de racha (assets/profile/racha.php): se gasta al salvar la
+       racha; mientras está guardado sale como "Ya lo tienes". */
+    if (racha.length) {
+        html += perfilSeccion('RACHA', 'La racha se enciende cada día con el fueguito que sale al lado de tu nombre en el perfil.',
+            racha.map(function(it){ return perfilTarjeta(it, rachaFuego()); }).join(''), 'tienda-sec-grid');
+    }
+    if (otros.length) {
+        html += perfilSeccion('OTROS', '', otros.map(function(it){
+            return perfilTarjeta(it, '<img class="tienda-card-icon-img" src="../../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">');
+        }).join(''), 'tienda-sec-grid');
+    }
+    view.innerHTML = html;
+    view.querySelectorAll('[data-buy-id]').forEach(function(btn){
+        btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
+    });
+    renderBalance();
+}
+
 function renderItems(){
     var view = document.getElementById('tienda-view-principal');
-    /* Categoría Mascotas: placeholder hasta que esté implementada.
+    /* Perfil va por secciones (renderPerfil); Discord, Haros e
+       Interfaces, en una sección con título (SECCION_TAB, como el PC). */
+    view.classList.toggle('is-secciones', _activeCat === 'perfil' || !!SECCION_TAB[_activeCat]);
+    /* Pestañas con "proximamente" en catalogo.json (ahora Mascotas): placeholder.
        height:100% rellena el alto visible del .ti-pane (flex:1), así
        el flex-center realmente centra el texto en pantalla. */
-    if (_activeCat === 'mascotas') {
+    var _tab = document.querySelector('.tienda-tab[data-cat="' + _activeCat + '"]');
+    if (_tab && _tab.dataset.soon) {
         view.innerHTML = '<div class="tienda-empty" style="display:flex;align-items:center;justify-content:center;height:100%;font-size:22px;">Coming soon...</div>';
         return;
     }
@@ -792,7 +1072,8 @@ function renderItems(){
         view.innerHTML = '<div class="tienda-empty">No hay items en esta categoría todavía.</div>';
         return;
     }
-    view.innerHTML = items.map(function(it){
+    if (_activeCat === 'perfil') { renderPerfil(view, items); return; }
+    var cards = items.map(function(it){
         /* El nombre visible es el del rol de Discord (si lo lleva); si no,
            cae al nombre interno del item. Coloreamos el texto del nombre
            con el color del rol cuando exista, así se mantiene la identidad
@@ -811,16 +1092,26 @@ function renderItems(){
         var desc = it.discord_role_name
             ? 'Adquiere el rol ' + it.discord_role_name + ' en :melonduagua: 3.0'
             : (it.descripcion || '');
-        var owned = !!_owned[it.id|0];
+        var owned = isOwned(it.id);
         /* Items con rol de Discord requieren vinculación obligatoria.
            El server también lo enforza (403) por si el frontend se parchea. */
         var needsDiscord  = !!it.discord_role_name;
-        var discordLinked = window.__DISCORD_LINKED__ === true;
+        var discordLinked = _gift ? _gift.discord : window.__DISCORD_LINKED__ === true;
         var locked        = needsDiscord && !discordLinked && !owned;
-        var btnLabel = owned  ? '✓ Ya lo tienes'
-                     : locked ? 'Vincula Discord'
-                              : 'Comprar';
-        var btnAttrs = locked ? ' disabled' : '';
+        /* Compras en cadena del perfil (huecos, mejoras de expositor): en
+           orden (el 4 pide el 3…). */
+        var prevSlug = tiendaPrevSlug(it.slug || '');
+        var needsPrev = false;
+        if (prevSlug && !owned) {
+            var prev = _items.filter(function(x){ return x.slug === prevSlug; })[0];
+            needsPrev = !prev || !isOwned(prev.id);
+        }
+        var prevHueco = prevSlug && /^expositor-hueco-(\d)$/.exec(prevSlug);
+        var btnLabel = owned     ? lblOwned()
+                     : locked    ? (_gift ? 'No tiene Discord' : 'Vincula Discord')
+                     : needsPrev ? (prevHueco ? 'Antes, el hueco ' + prevHueco[1] : 'Antes, la mejora anterior')
+                                 : lblBuy();
+        var btnAttrs = (locked || needsPrev) ? ' disabled data-locked="1"' : '';
         /* Para los haros el icono usa la convención
            assets/img/haro/{slug}Haro-preview.png (PNG curado).
            Si no existe, cae al último frame del gif vía onerror. */
@@ -831,18 +1122,39 @@ function renderItems(){
                 + ' onerror="this.onerror=null;this.src=\'../../assets/vids/' + esc(it.slug) + 'Haro-last.png\';"'
                 + ' alt="">';
         } else {
-            iconHtml = esc(it.icono || '🎁');
+            iconHtml = (it.categoria === 'perfil' && it.marco)
+                /* Marcos: el marco alrededor del icono de perfil del pack. */
+                ? '<span class="tienda-marco-prev" data-marco="' + esc(it.slug) + '"><img src="../../assets/img/appIcons/profileIcon.png" alt=""></span>'
+                : it.categoria === 'perfil'
+                ? '<img class="tienda-card-icon-img" src="../../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">'
+                : it.fuente ? fuenteMuestra(it)
+                : esc(it.icono || '🎁');
         }
-        return '<div class="tienda-card' + (owned ? ' is-owned' : '') + '">' +
+        /* Fuentes: el nombre también con su fuente. */
+        if (it.fuente) nameStyle = ' style="' + fuenteEstilo(it) + '"';
+        return '<div class="tienda-card' + (owned ? ' is-owned' : '') + (it.fuente ? ' is-fuente' : '') + '">' +
             '<div class="tienda-card-icon">' +
                 iconHtml +
                 '<span class="tienda-card-price">' + it.precio + ' <img src="../../assets/img/appIcons/puntosAutismo.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;"></span>' +
             '</div>' +
-            '<div class="tienda-card-name"' + nameStyle + '>' + esc(displayName) + '</div>' +
+            '<div class="tienda-card-name' + (it.fuente ? ' mh-fuente-muestra' : '') + '"' + nameStyle + '>' + esc(displayName) + '</div>' +
             '<div class="tienda-card-desc">' + esc(desc) + '</div>' +
             '<button type="button" class="button" data-buy-id="' + it.id + '" data-price="' + it.precio + '"' + btnAttrs + '>' + btnLabel + '</button>' +
         '</div>';
-    }).join('');
+    });
+    var sec = SECCION_TAB[_activeCat];
+    if (_activeCat === 'interfaces') {
+        /* Interfaces y FUENTES (assets/php/fuentes.php), cada una en su
+           sección. Las muestras se pintan con la fuente de cada tarjeta. */
+        var ifc = [], fts = [];
+        items.forEach(function(it, i){ (it.fuente ? fts : ifc).push(cards[i]); });
+        view.innerHTML = (ifc.length ? perfilSeccion(sec[0], sec[1], ifc.join(''), 'tienda-sec-grid') : '') +
+            (fts.length ? perfilSeccion('FUENTES', 'Cambian la letra de todo Melon Hub. Cada interfaz guarda la suya. Se elige en Temas, en Personalización.', fts.join(''), 'tienda-sec-grid') : '');
+        cargaFuentes(items);
+    } else {
+        cards = cards.join('');
+        view.innerHTML = sec ? perfilSeccion(sec[0], sec[1], cards, 'tienda-sec-grid') : cards;
+    }
     view.querySelectorAll('[data-buy-id]').forEach(function(btn){
         btn.addEventListener('click', function(){ buy(parseInt(btn.dataset.buyId, 10), btn); });
     });
@@ -850,6 +1162,7 @@ function renderItems(){
 }
 
 async function buy(itemId, btn){
+    if (_gift) { openGiftConfirm(itemId); return; }
     btn.disabled = true;
     setStatus('Comprando…');
     try {
@@ -870,6 +1183,216 @@ async function buy(itemId, btn){
         btn.disabled = false;
     }
 }
+
+/* ═══════════════════ REGALOS (como los del PC) ═══════════════════
+   Botón "Regalos (N)" de la cabecera → ventana con los regalos sin abrir
+   y "Regalar a un amigo" → eliges un amigo → modo regalo (barra arriba,
+   la tienda como si fueras esa persona) → "Regalar" en un objeto →
+   ventana con mensaje opcional (200) → se cobra y le queda pendiente.
+   Los que te mandan: aviso de la carcasa ("Abrir" → ?regalo=ID) o desde
+   la ventana: el objeto, quién lo manda y el mensaje; Aceptar / Rechazar
+   (devuelve los puntos). Las fotos de la API van con "../" (apps/): aquí
+   hace falta otro. */
+var _gifts = [];
+function fotoApi(p) { return p ? '../' + p : ''; }
+function avHtml(p) {
+    return '<span class="tienda-av" data-marco-user="' + esc(p.key) + '">' +
+        (p.image ? '<img src="' + esc(fotoApi(p.image)) + '" alt="">'
+                 : '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="image-rendering:pixelated;">') + '</span>';
+}
+function perfilIcono(slug) {
+    var m = /^media-([a-z]+)-/.exec(slug || '');
+    if (m) return { games: 'juegosIcon', movies: 'pelisIcon', series: 'melonArchiveIcon', books: 'booksIcon', music: 'musicaIcon' }[m[1]] || 'profileIcon';
+    if (/^steam-/.test(slug)) return 'steamIcon';
+    return { 'expositor-resena': 'bestOfTheYearIcon', 'expositor-juego-destacado': 'juegosIcon', 'expositor-playlist': 'songIcon' }[slug] || 'profileIcon';
+}
+/* Icono de un objeto en las ventanas de regalo (como en su tarjeta). */
+function itemIconHtml(it, foto) {
+    if (it.categoria === 'haros' && it.slug) {
+        return '<img class="tienda-card-icon-img" src="../../assets/img/haro/' + esc(it.slug) + 'Haro-preview.png"' +
+            ' onerror="this.onerror=null;this.src=\'../../assets/vids/' + esc(it.slug) + 'Haro-last.png\';" alt="">';
+    }
+    if (it.categoria === 'perfil' && /^marco-/.test(it.slug || '')) {
+        return '<span class="tienda-marco-prev is-foto" data-marco="' + esc(it.slug) + '"><img src="' + esc(foto || '../../assets/img/appIcons/profileIcon.png') + '" alt=""></span>';
+    }
+    if (it.slug === 'protector-racha') return rachaFuego();
+    if (it.fuente) { cargaFuentes([it]); return fuenteMuestra(it); }
+    if (it.categoria === 'perfil') {
+        return '<img class="tienda-card-icon-img" src="../../assets/img/appIcons/' + perfilIcono(it.slug) + '.png" alt="" style="image-rendering:pixelated;">';
+    }
+    return '<span>' + esc(it.icono || '🎁') + '</span>';
+}
+function itemTexts(it) {
+    return {
+        nombre: it.discord_role_name || it.nombre,
+        desc: it.discord_role_name ? 'Adquiere el rol ' + it.discord_role_name + ' en :melonduagua: 3.0' : (it.descripcion || ''),
+    };
+}
+function itemBlock(it, foto, extra) {
+    var tx = itemTexts(it);
+    return '<div class="tienda-modal-item"><div class="tienda-card-icon">' + itemIconHtml(it, foto) + '</div>' +
+        '<div><div class="tienda-modal-name">' + esc(tx.nombre) + '</div><div class="tienda-modal-desc">' + esc(tx.desc) + '</div>' + (extra || '') + '</div></div>';
+}
+var GIFT_IC = '<img src="../../assets/img/appIcons/tiendaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">';
+/* Ventana Win98 sobre la tienda. */
+function tiendaModal(titleHtml) {
+    var bg = document.createElement('div');
+    bg.className = 'tienda-modal-bg';
+    bg.innerHTML = '<div class="window tienda-modal"><div class="title-bar"><div class="title-bar-text">' + titleHtml + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close"></button></div></div><div class="window-body"></div></div>';
+    document.body.appendChild(bg);
+    var close = function () { bg.remove(); };
+    bg.querySelector('[aria-label="Close"]').addEventListener('click', close);
+    bg.addEventListener('click', function (e) { if (e.target === bg) close(); });
+    return { body: bg.querySelector('.window-body'), close: close };
+}
+
+async function loadGifts() {
+    try { var r = await api('gifts'); _gifts = (r && r.gifts) || []; } catch (_) { _gifts = []; }
+    var b = document.getElementById('tienda-gifts-btn');
+    if (b) b.textContent = 'Regalos' + (_gifts.length ? ' (' + _gifts.length + ')' : '');
+}
+/* La ventana del botón "Regalos". */
+function openGiftsWindow() {
+    var m = tiendaModal(GIFT_IC + 'Regalos');
+    m.body.innerHTML = (_gifts.length
+        ? '<div class="tienda-modal-h">Sin abrir</div><div class="tienda-friends">' + _gifts.map(function (g) {
+            return '<div class="tienda-friend" data-gift="' + g.id + '">' + avHtml(g.from) + '<span>De ' + esc(g.from.label) + '</span><i>›</i></div>';
+          }).join('') + '</div>'
+        : '<div class="tienda-modal-desc">No tienes regalos sin abrir.</div>') +
+        '<div class="tienda-modal-foot"><button type="button" class="button" data-a="regalar" style="flex:1;">Regalar a un amigo</button></div>';
+    m.body.querySelectorAll('[data-gift]').forEach(function (row) {
+        row.addEventListener('click', function () { m.close(); openGift(+row.dataset.gift); });
+    });
+    m.body.querySelector('[data-a="regalar"]').addEventListener('click', function () { m.close(); openFriendPicker(); });
+}
+function openGift(id) {
+    var g = _gifts.filter(function (x) { return x.id === id; })[0];
+    if (!g) { setStatus('Ese regalo ya no está pendiente.', 'error'); return; }
+    var it = _items.filter(function (x) { return (x.id|0) === g.item.id; })[0] || g.item;
+    var m = tiendaModal(GIFT_IC + 'Regalo de ' + esc(g.from.label));
+    m.body.innerHTML =
+        '<div class="tienda-modal-from">' + avHtml(g.from) + '<span><b>' + esc(g.from.label) + '</b> te ha enviado un regalo</span></div>' +
+        itemBlock(it, MY_AVATAR) +
+        (g.mensaje ? '<div class="tienda-modal-msg"></div>' : '') +
+        '<div class="tienda-modal-foot"><button type="button" class="button" data-a="no">Rechazar</button><button type="button" class="button" data-a="si">Aceptar</button></div>';
+    if (g.mensaje) m.body.querySelector('.tienda-modal-msg').textContent = g.mensaje;
+    var answer = async function (accept) {
+        m.body.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+        try {
+            var r = await api('gift-answer', { id: g.id, accept: accept });
+            if (r.error) throw new Error(r.error);
+            m.close();
+            /* Su aviso en la carcasa (mobile.php), si sigue a la vista. */
+            try { var t = window.parent.document.getElementById('m-toast-regalo-' + g.id); if (t) t.remove(); } catch (_) {}
+            if (r.accepted) {
+                _owned[g.item.id] = true;
+                var msg = 'Regalo aceptado: ' + itemTexts(it).nombre;
+                if (r.discord && r.discord.attempted) msg += ' · 🎉 rol de Discord asignado';
+                setStatus(msg, 'ok');
+            } else {
+                setStatus(r.refunded || ('Regalo rechazado: se le devuelven los puntos a ' + g.from.label + '.'), r.refunded ? 'error' : 'ok');
+            }
+            loadGifts();
+            renderItems();
+        } catch (e) {
+            setStatus('Error: ' + e.message, 'error');
+            m.body.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        }
+    };
+    m.body.querySelector('[data-a="si"]').addEventListener('click', function () { answer(true); });
+    m.body.querySelector('[data-a="no"]').addEventListener('click', function () { answer(false); });
+}
+async function openFriendPicker() {
+    var m = tiendaModal(GIFT_IC + 'Regalar a un amigo');
+    m.body.innerHTML = '<div>Elige a quién le quieres hacer un regalo. La tienda se verá como si fueras esa persona.</div>' +
+        '<div class="tienda-friends"><div class="tienda-empty">Cargando…</div></div>';
+    var box = m.body.querySelector('.tienda-friends');
+    var r;
+    try { r = await api('gift-friends'); } catch (_) { r = null; }
+    var fr = (r && r.friends) || [];
+    box.innerHTML = fr.length ? fr.map(function (f, i) {
+        return '<div class="tienda-friend" data-i="' + i + '">' + avHtml(f) + '<span>' + esc(f.label) + '</span></div>';
+    }).join('') : '<div class="tienda-empty" style="padding:12px;">Aún no tienes amigos a los que regalar.</div>';
+    box.querySelectorAll('.tienda-friend').forEach(function (row) {
+        row.addEventListener('click', function () { m.close(); enterGiftMode(fr[+row.dataset.i].key); });
+    });
+}
+async function enterGiftMode(key) {
+    setStatus('Cargando…');
+    try {
+        var r = await api('gift-target&user=' + encodeURIComponent(key));
+        if (r.error) throw new Error(r.error);
+        var owned = {}, pending = {};
+        (r.owned || []).forEach(function (id) { owned[id|0] = true; });
+        (r.pending || []).forEach(function (id) { pending[id|0] = true; });
+        _gift = { key: r.key, label: r.label, image: fotoApi(r.image), discord: !!r.discord, owned: owned, pending: pending };
+        renderGiftBar();
+        renderItems();
+        setStatus('');
+    } catch (e) { setStatus('Error: ' + e.message, 'error'); }
+}
+function exitGiftMode() { _gift = null; renderGiftBar(); renderItems(); }
+function renderGiftBar() {
+    var bar = document.getElementById('tienda-gift-bar');
+    bar.classList.toggle('on', !!_gift);
+    if (!_gift) { bar.innerHTML = ''; return; }
+    bar.innerHTML = avHtml({ key: _gift.key, image: _gift.image ? _gift.image.replace(/^\.\.\//, '') : '' }) +
+        '<span class="tienda-gift-txt">Regalando a <b>' + esc(_gift.label) + '</b>. Lo que ya tiene sale como "Ya lo tiene".</span>' +
+        '<button type="button" class="button">Salir</button>';
+    bar.querySelector('button').addEventListener('click', exitGiftMode);
+}
+function openGiftConfirm(itemId) {
+    var it = _items.filter(function (x) { return (x.id|0) === (itemId|0); })[0];
+    if (!it || !_gift) return;
+    var to = _gift;
+    var m = tiendaModal(GIFT_IC + 'Regalar a ' + esc(to.label));
+    m.body.innerHTML = itemBlock(it, to.image, '<div style="margin-top:6px;">Precio: <b>' + perfilPrecio(it.precio) + '</b></div>') +
+        '<div>Mensaje (opcional):</div><textarea rows="3" maxlength="200"></textarea>' +
+        '<div class="tienda-modal-foot"><span class="tienda-modal-desc" style="margin-right:auto;" data-r="n">0 / 200</span>' +
+        '<button type="button" class="button" data-a="no">Cancelar</button><button type="button" class="button" data-a="si">Regalar</button></div>';
+    var ta = m.body.querySelector('textarea'), ok = m.body.querySelector('[data-a="si"]');
+    ta.addEventListener('input', function () { m.body.querySelector('[data-r="n"]').textContent = ta.value.length + ' / 200'; });
+    ok.disabled = it.precio > _balance;
+    m.body.querySelector('[data-a="no"]').addEventListener('click', m.close);
+    ok.addEventListener('click', async function () {
+        ok.disabled = true;
+        try {
+            var r = await api('gift', { item_id: it.id, to: to.key, mensaje: ta.value.trim() });
+            if (r.error) throw new Error(r.error);
+            _balance = r.autismo|0;
+            if (_gift && _gift.key === to.key) _gift.pending[it.id|0] = true;
+            m.close();
+            renderItems();
+            setStatus('Regalo enviado a ' + to.label + ': ' + itemTexts(it).nombre + ' (-' + r.item.precio + ' puntos)', 'ok');
+        } catch (e) {
+            setStatus('Error: ' + e.message, 'error');
+            ok.disabled = false;
+        }
+    });
+}
+document.getElementById('tienda-gifts-btn').addEventListener('click', openGiftsWindow);
+/* Los regalos: al entrar (y si viene ?regalo=ID del aviso, se abre ese
+   cuando ya están los objetos) y cuando el timbre de la carcasa dice que
+   ha llegado uno ('regalo'). */
+(function () {
+    var m = /[?&]regalo=(\d+)/.exec(location.search);
+    var pedido = m ? +m[1] : 0;
+    var esperaObjetos = function () {
+        return new Promise(function (ok) { (function mira() { if (_items.length) ok(); else setTimeout(mira, 150); })(); });
+    };
+    loadGifts().then(function () {
+        if (!pedido) return;
+        esperaObjetos().then(function () { openGift(pedido); });
+        try { history.replaceState(null, '', location.pathname); } catch (_) {}
+    });
+    var timbre = null;
+    try { timbre = window.parent !== window ? window.parent.melonTimbre : null; } catch (e) {}
+    if (timbre) {
+        var baja = timbre.on('regalo', loadGifts);
+        window.addEventListener('pagehide', function () { try { baja(); } catch (_) {} });
+    }
+})();
 
 /* ── Cambio de vista ──
    Cubre tanto los .tienda-tab (Principal) como el botón #tienda-donar-btn
@@ -947,9 +1470,24 @@ document.querySelectorAll('[data-view]').forEach(function(el){
     /* Polling cada 30 s mientras la pestaña Donaciones está visible. El
        webhook de Ko-fi guarda en BD y la siguiente vuelta del poll lo
        muestra sin necesidad de recargar la app. */
+    /* La lista solo se pide cuando cambia rt/donantes.json (lo reescribe
+       el webhook de Ko-fi; mirarlo no gasta PHP ni BD). Si no responde,
+       la lista cada 30 s como antes. */
+    var donantesVisto = null;
+    function mirarDonantes(){
+        fetch('../../rt/donantes.json', { cache: 'no-cache', credentials: 'same-origin' })
+            .then(function(r){ if (!r.ok) throw new Error('donantes ' + r.status); return r.json(); })
+            .then(function(d){
+                if (donantesVisto !== null && d.v !== donantesVisto) loadDonors();
+                donantesVisto = d.v;
+            })
+            .catch(function(){ loadDonors(); });
+    }
     function startPolling(){
         if (pollHandle) return;
-        pollHandle = setInterval(loadDonors, 30000);
+        donantesVisto = null;
+        mirarDonantes();
+        pollHandle = setInterval(mirarDonantes, 30000);
     }
     function stopPolling(){
         if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
@@ -1095,9 +1633,19 @@ document.querySelectorAll('[data-view]').forEach(function(el){
             renderBalance();
         } catch (e) { console.warn('[tienda] poll error:', e.message); }
     }
-    /* Primera llamada a los 3 s para arrancar rápido, luego cada 15 s. */
+    /* Primera llamada a los 3 s para arrancar rápido; luego, dentro de la
+       carcasa del móvil, cuando su timbre dice que ha cambiado el saldo
+       ('saldo', window.parent.melonTimbre, assets/js/timbre.js). Sin
+       timbre (o si no responde), cada 15 s como antes. Al salir, se da de
+       baja. */
     setTimeout(pollBalance, 3000);
-    setInterval(pollBalance, 15000);
+    (function(){
+        var timbre = null;
+        try { timbre = window.parent !== window ? window.parent.melonTimbre : null; } catch (e) {}
+        if (!timbre) { setInterval(pollBalance, 15000); return; }
+        var baja = timbre.on('saldo', pollBalance, 15000);
+        window.addEventListener('pagehide', function(){ try { baja(); } catch (e) {} });
+    })();
 
     /* El escritorio nos avisa cuando el usuario reabre la ventana de la
        tienda — refrescamos balance + items + compras al instante en lugar
@@ -1160,14 +1708,14 @@ if (document.readyState === 'loading') {
                     <div>
                         <strong>Mensajes</strong>
                         <span class="th-help-amt">+1 / mensaje</span>
-                        <div class="th-help-sub">Cooldown anti-spam de 2 s.</div>
+                        <div class="th-help-sub">Cooldown anti-spam de 10 s.</div>
                     </div>
                 </li>
                 <li class="th-help-item">
                     <span class="th-help-icon">🎙</span>
                     <div>
                         <strong>Tiempo en voz</strong>
-                        <span class="th-help-amt">+1 cada 2 min</span>
+                        <span class="th-help-amt">+1 cada 5 min</span>
                         <div class="th-help-sub">Se contabiliza al salir del canal.</div>
                     </div>
                 </li>

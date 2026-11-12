@@ -274,7 +274,7 @@ function renderList() {
             ? '<div class="ch-friend-badge">' + c.unread + '</div>'
             : '';
         return '<div class="ch-friend" data-user="' + esc(c.userKey) + '">' +
-            '<div class="ch-friend-av">' + av + presence + '</div>' +
+            '<div class="ch-friend-av" data-marco-user="' + esc(c.userKey) + '">' + av + presence + '</div>' +
             '<div class="ch-friend-info">' +
                 '<div class="ch-friend-name">' + esc(name) + muteIcon + '</div>' +
                 '<div class="ch-friend-sub' + (c.unread > 0 ? ' has-unread' : '') + '">' + esc(sub) + '</div>' +
@@ -361,10 +361,13 @@ function openChat(uKey) {
         if (typeof fn === 'function') fn({ tag: 'chat:' + uKey });
     } catch (_) {}
 
-    /* Poll de mensajes. */
+    /* Mensajes: lo nuevo llega por el timbre de la carcasa ('chat',
+       window.parent.melonTimbre, assets/js/timbre.js; con un chat abierto
+       lo mira cada segundo) y aquí solo se repasa cada 10 s (el
+       "entregado"). Antes, cada 2,5 s. Sin timbre (o si deja de
+       responder), cada 2,5 s como antes. */
     pollMessages(true);
-    if (STATE.chatPollTimer) clearInterval(STATE.chatPollTimer);
-    STATE.chatPollTimer = setInterval(() => pollMessages(false), POLL_MESSAGES_MS);
+    programarMensajes();
 
     setTimeout(() => {
         const inp = document.getElementById('ch-input');
@@ -389,6 +392,7 @@ function refreshChatHeader() {
                       : (meta && meta.online) ? ' is-online' : '';
     const presence = '<span class="ch-presence-dot' + presenceCls + '"></span>';
     avEl.innerHTML = av + presence;
+    avEl.setAttribute('data-marco-user', uKey);   /* marco de perfil (melon-marcos.js) */
     nmEl.textContent = name;
     /* Status — hereda los flags del meta cacheado (los mismos que usa
        Social). Prioridad:
@@ -441,7 +445,8 @@ function closeChat() {
     STATE.chatLastSig = '';
     STATE.view        = 'list';
     STATE.currentMeta = null;
-    if (STATE.chatPollTimer) { clearInterval(STATE.chatPollTimer); STATE.chatPollTimer = null; }
+    if (STATE.chatPollTimer) { clearTimeout(STATE.chatPollTimer); STATE.chatPollTimer = null; }
+    { const t = timbreMovil(); if (t) t.rapido('chat', false); }
     closeEmojiPanel();
     document.getElementById('ch-chat').classList.remove('is-active');
     document.getElementById('ch-list').classList.remove('is-hidden');
@@ -947,12 +952,39 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-/* ── Polling de recents mientras estamos en la lista. ── */
-STATE.recentPollTimer = setInterval(() => {
-    if (STATE.view === 'list' && document.visibilityState === 'visible') {
-        loadRecents();
-    }
-}, POLL_RECENTS_MS);
+/* Timbre de la carcasa del móvil (assets/js/timbre.js), si estamos dentro. */
+function timbreMovil() {
+    try { return window.parent !== window ? window.parent.melonTimbre || null : null; } catch (_) { return null; }
+}
+function programarMensajes() {
+    if (STATE.chatPollTimer) clearTimeout(STATE.chatPollTimer);
+    const t = timbreMovil();
+    if (t) t.rapido('chat', true);
+    STATE.chatPollTimer = setTimeout(() => {
+        if (STATE.view !== 'chat') return;
+        pollMessages(false);
+        programarMensajes();
+    }, t && t.ok() ? 10000 : POLL_MESSAGES_MS);
+}
+
+/* ── Lista de chats (y el chat abierto) ──
+   Con timbre: cuando cambia 'chat' (si no responde, la lista cada
+   POLL_RECENTS_MS como antes). Sin timbre, cada POLL_RECENTS_MS. */
+function recentsSiToca() {
+    if (STATE.view === 'list' && document.visibilityState === 'visible') loadRecents();
+}
+(function () {
+    const t = timbreMovil();
+    if (!t) { STATE.recentPollTimer = setInterval(recentsSiToca, POLL_RECENTS_MS); return; }
+    const bajas = [
+        t.on('chat', recentsSiToca, POLL_RECENTS_MS),
+        t.on('chat', () => { if (STATE.view === 'chat') pollMessages(false); })
+    ];
+    window.addEventListener('pagehide', () => {
+        bajas.forEach((b) => { try { b(); } catch (_) {} });
+        try { t.rapido('chat', false); } catch (_) {}
+    });
+})();
 
 /* ── Heartbeat de presencia ──
    Sin esto la app de Chat no actualiza user_presence.last_at → los otros

@@ -26,12 +26,24 @@
      leave         POST   guest sale O host cierra la sesión entera.
      current       GET    devuelve la sesión activa del usuario (como
                           host o guest) o null.
+     request-join  POST   {host} → "Escuchar conmigo" (botón de la presencia
+                          de Discord de la app de escritorio): pide unirse a
+                          lo que escucha otro usuario (amigo o no).
+     join-requests GET    peticiones pendientes para mí como anfitrión: mi
+                          app las atiende sola (abre la sesión e invita, y
+                          la app de quien lo pidió acepta sola).
+     answer-join   POST   {requestId} → petición atendida.
 
    No es WebSocket — usa polling cada 2s. Tradeoff: ~2s de lag, pero
    simple, sin infra extra.
 ═════════════════════════════════════════════════════════════════════ */
+/* Los sondeos (invitaciones cada 5 s, invitado cada 2 s): si la BD está
+   saturada, un solo reintento corto (melon_pdo en assets/config.php) en
+   vez de ocupar un proceso PHP esperando; ya volverá a preguntar. */
+if (in_array($_GET['action'] ?? '', ['invites', 'poll'], true)) define('MELON_DB_RAPIDO', true);
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__, 2) . '/assets/themes/theme-helpers.php';
+require_once dirname(__DIR__) . '/php/timbre.php';   /* rt_usuario: avisos al escritorio */
 
 session_start();
 $userKey = $_SESSION['user'] ?? '';
@@ -51,49 +63,66 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
 /* ── Auto-migración de tablas ──────────────────────────────────── */
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_sessions (
-        id              INT AUTO_INCREMENT PRIMARY KEY,
-        host_user_id    INT NOT NULL,
-        video_id        VARCHAR(20)  NULL,
-        track_title     VARCHAR(255) NULL,
-        track_artist    VARCHAR(255) NULL,
-        cover_url       VARCHAR(500) NULL,
-        current_time_s  INT  NOT NULL DEFAULT 0,
-        duration_s      INT  NOT NULL DEFAULT 0,
-        is_playing      TINYINT NOT NULL DEFAULT 0,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        closed_at       TIMESTAMP NULL,
-        INDEX idx_host (host_user_id, closed_at),
-        INDEX idx_updated (updated_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_participants (
-        session_id    INT NOT NULL,
-        user_id       INT NOT NULL,
-        joined_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        left_at       TIMESTAMP NULL,
-        PRIMARY KEY (session_id, user_id),
-        INDEX idx_user (user_id, left_at),
-        INDEX idx_last_seen (last_seen_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS listening_invites (
-        id            INT AUTO_INCREMENT PRIMARY KEY,
-        session_id    INT NOT NULL,
-        from_user_id  INT NOT NULL,
-        to_user_id    INT NOT NULL,
-        status        ENUM('pending','accepted','declined','expired') DEFAULT 'pending',
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        responded_at  TIMESTAMP NULL,
-        INDEX idx_to (to_user_id, status),
-        INDEX idx_session (session_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-");
+/* Una vez por versión de este archivo (melon_esquema, assets/php/
+   esquema.php), no en cada petición: el escritorio llama a esta API cada
+   5 s (invitaciones) o 2 s (escuchando de invitado). */
+require_once dirname(__DIR__) . '/php/esquema.php';
+melon_esquema($pdo, 'escuchar-juntos', __FILE__, function (PDO $pdo) {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_sessions (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            host_user_id    INT NOT NULL,
+            video_id        VARCHAR(20)  NULL,
+            track_title     VARCHAR(255) NULL,
+            track_artist    VARCHAR(255) NULL,
+            cover_url       VARCHAR(500) NULL,
+            current_time_s  INT  NOT NULL DEFAULT 0,
+            duration_s      INT  NOT NULL DEFAULT 0,
+            is_playing      TINYINT NOT NULL DEFAULT 0,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            closed_at       TIMESTAMP NULL,
+            INDEX idx_host (host_user_id, closed_at),
+            INDEX idx_updated (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_participants (
+            session_id    INT NOT NULL,
+            user_id       INT NOT NULL,
+            joined_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            left_at       TIMESTAMP NULL,
+            PRIMARY KEY (session_id, user_id),
+            INDEX idx_user (user_id, left_at),
+            INDEX idx_last_seen (last_seen_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_invites (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            session_id    INT NOT NULL,
+            from_user_id  INT NOT NULL,
+            to_user_id    INT NOT NULL,
+            status        ENUM('pending','accepted','declined','expired') DEFAULT 'pending',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            responded_at  TIMESTAMP NULL,
+            INDEX idx_to (to_user_id, status),
+            INDEX idx_session (session_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS listening_join_requests (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            host_user_id  INT NOT NULL,
+            from_user_id  INT NOT NULL,
+            status        ENUM('pending','done','expired') DEFAULT 'pending',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_host (host_user_id, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+});
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 function getActiveSessionAsHost(PDO $pdo, int $userId): ?array {
@@ -229,6 +258,13 @@ if ($action === 'update-state') {
         !empty($j['isPlaying']) ? 1 : 0,
         (int)$host['id'],
     ]);
+    /* Lo que suena, en el archivo estático de la sesión (rt_urlSesion):
+       los invitados lo leen cada 2 s sin PHP ni BD y solo llaman a `poll`
+       cada 10 s (antes, cada 2 s). Con la hora de la BD, la misma que
+       devuelve `poll` (server_time), para que calculen bien la posición. */
+    $stS = $pdo->prepare("SELECT *, UNIX_TIMESTAMP(updated_at) AS updated_at_epoch FROM listening_sessions WHERE id = ?");
+    $stS->execute([(int)$host['id']]);
+    if ($filaS = $stS->fetch(PDO::FETCH_ASSOC)) rt_escribir(rt_urlSesion((int)$host['id']), ['session' => $filaS]);
     /* Refresca last_seen_at del host (igual que hace el poll del guest).
        Necesario para que la query de buddies del wrapped use un cierre
        preciso cuando la sesión se abandona sin "leave" explícito. Si
@@ -294,6 +330,7 @@ if ($action === 'poll') {
         'host_label'   => getHostLabel($pdo, (int)$cur['host_user_id']),
         'participants' => countActiveParticipants($pdo, (int)$cur['id']),
         'server_time'  => (int)$cur['server_now'],
+        'rt'           => rt_urlSesion((int)$cur['id']),
     ]);
     exit;
 }
@@ -310,11 +347,21 @@ if ($action === 'invite') {
         echo json_encode(['ok' => false, 'error' => 'Usuario inválido']);
         exit;
     }
-    /* Defense in depth: rechazar si no es seguimiento mutuo. */
+    /* Defense in depth: rechazar si no es seguimiento mutuo. Excepción:
+       quien entró por el enlace de "Escuchar conmigo" (request-join de
+       los últimos 5 min): la app del anfitrión le invita sola aunque no
+       sean amigos. */
     require_once dirname(__DIR__) . '/social-helpers.php';
     if (!isMutualFollow($pdo, (int)$userId, (int)$toId)) {
-        echo json_encode(['ok' => false, 'error' => 'Solo puedes invitar a usuarios con seguimiento mutuo']);
-        exit;
+        $st = $pdo->prepare("SELECT 1 FROM listening_join_requests
+                              WHERE host_user_id = ? AND from_user_id = ?
+                                AND status IN ('pending', 'done')
+                                AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE) LIMIT 1");
+        $st->execute([$userId, $toId]);
+        if (!$st->fetchColumn()) {
+            echo json_encode(['ok' => false, 'error' => 'Solo puedes invitar a usuarios con seguimiento mutuo']);
+            exit;
+        }
     }
     /* Asegura que tengamos sesión host abierta. */
     $host = getActiveSessionAsHost($pdo, $userId);
@@ -333,6 +380,9 @@ if ($action === 'invite') {
         VALUES (?, ?, ?)
     ")->execute([(int)$host['id'], $userId, $toId]);
     $newInviteId = (int)$pdo->lastInsertId();
+    /* Timbre 'lt' (assets/php/timbre.php): su escritorio pide las
+       invitaciones al verlo (antes, cada 5 s). */
+    rt_usuario((int)$toId, 'lt');
 
     /* Push notification al destinatario. */
     require_once dirname(__DIR__) . '/push/send-push.php';
@@ -346,6 +396,8 @@ if ($action === 'invite') {
         'listen',
         '🎧 ' . ($fromLabel ?: 'Alguien') . ' te invita',
         'Escuchar juntos en directo',
+        melonPushFoto($fromLabel),
+        ['fromName' => $fromLabel],
     ));
 
     echo json_encode(['ok' => true, 'invite_id' => $newInviteId]);
@@ -358,7 +410,7 @@ if ($action === 'invites') {
        si la sesión se cerró pero el invite es reciente, lo mostramos
        igual; el accept reabrirá la sesión si hace falta. */
     $st = $pdo->prepare("
-        SELECT i.id, i.session_id, i.from_user_id, u.label AS from_label,
+        SELECT i.id, i.session_id, i.from_user_id, u.user_key AS from_user_key, u.label AS from_label,
                s.track_title, s.track_artist, s.video_id, s.cover_url
           FROM listening_invites i
           JOIN usuarios u ON u.id = i.from_user_id
@@ -433,6 +485,8 @@ if ($action === 'leave') {
     $host = getActiveSessionAsHost($pdo, $userId);
     if ($host) {
         $pdo->prepare("UPDATE listening_sessions SET closed_at = NOW() WHERE id = ?")->execute([(int)$host['id']]);
+        /* Los invitados lo ven en el archivo de la sesión. */
+        rt_escribir(rt_urlSesion((int)$host['id']), ['closed' => true]);
         $pdo->prepare("UPDATE listening_participants SET left_at = NOW() WHERE session_id = ? AND left_at IS NULL")
             ->execute([(int)$host['id']]);
         echo json_encode(['ok' => true, 'role' => 'host', 'closed' => true]);
@@ -442,6 +496,50 @@ if ($action === 'leave') {
     $pdo->prepare("UPDATE listening_participants SET left_at = NOW() WHERE user_id = ? AND left_at IS NULL")
         ->execute([$userId]);
     echo json_encode(['ok' => true, 'role' => 'guest', 'closed' => false]);
+    exit;
+}
+
+if ($action === 'request-join') {
+    $j = bodyJson();
+    $hostKey = trim((string)($j['host'] ?? ''));
+    $hostId = $hostKey !== '' ? userIdByKey($hostKey) : 0;
+    if (!$hostId || $hostId === $userId) {
+        echo json_encode(['ok' => false, 'error' => 'Usuario inválido']);
+        exit;
+    }
+    /* Con el enlace de "Escuchar conmigo" se une cualquiera con cuenta,
+       sea o no amigo del anfitrión (antes solo seguimiento mutuo). */
+    $pdo->prepare("UPDATE listening_join_requests SET status = 'expired'
+                    WHERE host_user_id = ? AND from_user_id = ? AND status = 'pending'")
+        ->execute([$hostId, $userId]);
+    $pdo->prepare("INSERT INTO listening_join_requests (host_user_id, from_user_id) VALUES (?, ?)")
+        ->execute([$hostId, $userId]);
+    /* Timbre 'lt': la app del anfitrión atiende la petición al verlo
+       (antes preguntaba cada 5 s). */
+    rt_usuario((int)$hostId, 'lt');
+    echo json_encode(['ok' => true, 'host_label' => getHostLabel($pdo, (int)$hostId)]);
+    exit;
+}
+
+if ($action === 'join-requests') {
+    $st = $pdo->prepare("
+        SELECT r.id, u.user_key AS from_user_key, u.label AS from_label
+          FROM listening_join_requests r
+          JOIN usuarios u ON u.id = r.from_user_id
+         WHERE r.host_user_id = ? AND r.status = 'pending'
+           AND r.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+         ORDER BY r.id
+    ");
+    $st->execute([$userId]);
+    echo json_encode(['ok' => true, 'requests' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+    exit;
+}
+
+if ($action === 'answer-join') {
+    $j = bodyJson();
+    $pdo->prepare("UPDATE listening_join_requests SET status = 'done' WHERE id = ? AND host_user_id = ?")
+        ->execute([(int)($j['requestId'] ?? 0), $userId]);
+    echo json_encode(['ok' => true]);
     exit;
 }
 

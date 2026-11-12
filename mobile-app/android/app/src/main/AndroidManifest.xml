@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Enlaces compartidos (assets/links.php en la web): los abre
+                 MainActivity.openLink. melonhub://<tipo>/<valor> llega
+                 desde enlace.php (intent:// en Chrome); los enlace.php de
+                 la web se abren directos en la app si Android verifica
+                 el dominio (.well-known/assetlinks.json en la web). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="melonhub" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="melonhub.es" />
+                <data android:host="melonhubdev.melonhub.es" />
+                <data android:path="/enlace.php" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+
+        <!-- Mantiene la música sonando fuera de la app / con la pantalla apagada. -->
+        <service
+            android:name=".MusicService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Widget de música (PlayerWidget): reproductor y playlists. Antes
+             se llamaba MusicWidget (4×3): el lanzador de Xiaomi se quedaba
+             con ese tamaño guardado aunque la app declarara 2×2, así que
+             cambió de nombre para que lo lea como widget nuevo. -->
+        <receiver
+            android:name=".PlayerWidget"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/music_widget_info" />
+        </receiver>
+
+        <!-- Widgets de calendario: el mes y "Próximos". -->
+        <receiver
+            android:name=".CalendarWidget"
+            android:exported="false"
+            android:label="@string/cal_month_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_month_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".CalendarAgendaWidget"
+            android:exported="false"
+            android:label="@string/cal_agenda_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_agenda_widget_info" />
+        </receiver>
+        <service
+            android:name=".CalendarAgendaService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- Filas de las listas del widget. -->
+        <service
+            android:name=".WidgetListService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- Invisible: pasa a la app la canción tocada en el widget. Tarea
+             propia para no traer delante la de la app. -->
+        <activity
+            android:name=".WidgetPlayActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Avisos push: AvisosService recibe los mensajes de FCM y monta los
+             avisos con su estilo (MelonNotifs); sustituye al servicio del
+             plugin de Capacitor (lo que no es nuestro se lo pasa a él). -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".AvisosService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Botones de los avisos push (Responder, Marcar como leído, Aceptar). -->
+        <receiver
+            android:name=".NotifAccionReceiver"
+            android:exported="false" />
+
+        <!-- Avisos push (FCM): icono pequeño y canal que usa Android cuando
+             pinta él la notificación (app en segundo plano o cerrada). El
+             canal "avisos" lo crea la web con PushNotifications.createChannel.
+             El icono es la silueta blanca del melón (Android lo tiñe). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_melon" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="avisos" />
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Instalar las actualizaciones de la app (MelonUpdaterPlugin). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>

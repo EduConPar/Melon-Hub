@@ -1,0 +1,9 @@
+# Imagen para compilar la app con electron-builder (la usa build.sh).
+# Wine hace falta para el instalable de Windows: electron-builder lo usa
+# para poner el icono y los datos de la app dentro del .exe, y para generar
+# el desinstalador, que es un programa de 32 bits (de ahí wine32).
+FROM docker.io/library/node:22-bookworm
+RUN dpkg --add-architecture i386 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends wine wine64 wine32:i386 \
+    && rm -rf /var/lib/apt/lists/*

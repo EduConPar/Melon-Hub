@@ -141,8 +141,10 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <!-- PWA GUARD: fuera de standalone → fuera de la app. -->
     <script>
     (function(){
+        /* "MelonHubApp" en el User-Agent: la app de Android. */
         var sa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-              || window.navigator.standalone === true;
+              || window.navigator.standalone === true
+              || /MelonHubApp/.test(navigator.userAgent);
         if (!sa) window.location.replace('../../mobile-landing.php');
     })();
     /* --mh-vh sincronizado con window.innerHeight (sobrevive al bfcache). */
@@ -165,6 +167,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <link rel="stylesheet" href="../../assets/css/98.css">
     <link rel="stylesheet" href="../../assets/css/tokens.css">
     <link rel="stylesheet" href="../../assets/css/base.css">
+    <!-- Marcos de perfil en las fotos de los usuarios (data-marco-user) -->
+    <link rel="stylesheet" href="../../assets/css/marcos.css?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/css/marcos.css') ?>">
+    <script src="../../assets/js/melon-marcos.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-marcos.js') ?>"></script>
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <?php /* Override del icon pack ANTES de cargar icon-pack.js. Sólo
               cuando visitamos a otro user. */ ?>
@@ -174,6 +179,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <script src="../../assets/js/icon-pack.js"></script>
     <script src="../../assets/js/notif-sound.js"></script>
     <script src="../../assets/js/cover-fallback.js"></script>
+    <script src="../../assets/js/melon-links.js?v=<?= @filemtime(dirname(__DIR__, 2) . '/assets/js/melon-links.js') ?>"></script>
     <?php
         require_once dirname(__DIR__, 2) . "/assets/php/active-interface.php";
         emitInterfaceCss("../../");
@@ -847,6 +853,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             padding: 4px 6px;
         }
         .pf-form-row textarea { resize: vertical; min-height: 60px; }
+        /* Cumpleaños: 98.css no estiliza <input type="date">; igual que
+           los de texto (Kawaii pone su borde con !important). */
+        .pf-form-row input[type="date"] { border: none; border-radius: 0; height: 21px; }
         .pf-form-hint {
             font-size: 10px; color: var(--text-faint, #666);
             font-style: italic; margin-top: 2px;
@@ -953,102 +962,341 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             margin-bottom: 8px;
         }
         .pf-profile-actions .button { min-height: 28px; font-size: 11px; flex: 1; }
-        /* Posts list scrollable INTERNAMENTE: el header (userbar),
-           actions y el form de nuevo post se quedan fijos arriba, y
-           solo la lista de posts hace scroll. `flex: 1` la hace ocupar
-           el espacio que queda en la vista (que ya es flex column con
-           min-height: 0); `min-height: 0` permite que un hijo flex
-           sobredimensionado pueda recortarse y activar overflow.
-           `overscroll-behavior: contain` evita que el scroll se
-           propague al padre cuando llega a los extremos. */
-        .pf-posts-list {
-            display: flex; flex-direction: column; gap: 8px;
-            padding: 0 4px 8px 0;
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
+        /* `.button` pisa el atributo hidden (Personalizar cambia los botones). */
+        .pf-profile-actions [hidden] { display: none !important; }
+        /* Franja de Steam en Personalizar (renderPf2Steam; en el PC, arriba a
+           la derecha de la cabecera): debajo de Guardar / Datos / Cancelar. */
+        .pf2m-steam {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+            padding: 0 0 8px; margin-bottom: 8px; font-size: 12px; color: var(--text, #000);
+            border-bottom: 1px solid var(--bezel-dark-1, #808080);
         }
-        .pf-post {
-            background: var(--input-bg, #fff);
-            padding: 8px 10px;
-            box-shadow:
-                inset  1px  1px var(--bezel-dark-1, #808080),
-                inset -1px -1px var(--bezel-light-1, #fff);
+        .pf2m-steam[hidden] { display: none !important; }
+        .pf2m-steam-t { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-steam-t img { width: 16px; height: 16px; object-fit: contain; image-rendering: pixelated; flex-shrink: 0; }
+        .pf2m-steam .button { min-height: 28px; font-size: 11px; min-width: 0; padding: 0 10px; flex-shrink: 0; }
+        .pf2m-steam .button img { width: 12px; height: 12px; object-fit: contain; image-rendering: pixelated; vertical-align: -2px; margin-right: 4px; }
+        .pf2m-steam-nota { width: 100%; font-size: 11px; color: var(--text-muted, #444); }
+        .pf2m-steam-nota.is-aviso { color: var(--warning-text, #8a6d00); }
+        /* Racha (renderPf2Racha): fueguito pixelado al lado del nombre, gris
+           apagado / naranja encendido, con los días. Como el del PC. */
+        .pf-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .pf-name-row .mh-userbar-name { min-width: 0; }
+        .pf2m-racha { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; font-size: 13px; color: var(--text, #000); }
+        .pf2m-racha:empty { display: none; }
+        .pf2m-racha svg { width: 15px; height: 18px; display: block; filter: drop-shadow(1px 1px 0 rgba(0,0,0,.6)); }
+        .pf2m-racha.is-off b { color: var(--text-muted, #666); }
+        .pf2m-racha.is-btn { cursor: pointer; }
+        /* Invitar (menú lateral; pf2AbrirInvitar). */
+        .pf2m-inv-txt { font-size: 11px; line-height: 1.4; color: var(--text, #000); margin-bottom: 8px; }
+        .pf2m-inv-link { display: flex; gap: 4px; margin-bottom: 10px; }
+        .pf2m-inv-link input { flex: 1; min-width: 0; min-height: 28px; box-sizing: border-box; font-size: 11px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-inv-link .button { min-width: 0; padding: 0 10px; min-height: 28px; font-size: 11px; flex-shrink: 0; }
+        .pf2m-inv-h { font-weight: bold; font-size: 12px; color: var(--text, #000); margin: 0 0 4px; }
+        .pf2m-inv-list { max-height: 45vh; overflow-y: auto; }
+        .pf2m-inv-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; cursor: pointer; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-inv-av { position: relative; width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+            background: var(--inset-bg, #808080); color: var(--text, #000); font-size: 11px; }
+        .pf2m-inv-av[data-marco] { margin: calc(var(--mk-t) * 30px) calc(var(--mk-r) * 30px) calc(var(--mk-b) * 30px) calc(var(--mk-l) * 30px); }
+        .pf2m-inv-av img { width: 30px; height: 30px; object-fit: cover; display: block; }
+        .pf2m-inv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+        .pf2m-inv-st { font-size: 10px; color: var(--text-muted, #666); text-align: right; flex-shrink: 0; max-width: 55%; }
+        .pf2m-inv-row.is-cobrada .pf2m-inv-st { color: var(--accent, navy); font-weight: bold; }
+        .pf2m-inv-vacio { font-size: 11px; color: var(--text-muted, #666); padding: 8px 2px; }
+        /* Selector de marco (pf2AbrirMarcos): la foto en cada marco. El
+           hueco deja sitio a lo que más sobresale (Polaroid, Overdose) y la
+           foto se corre para que foto + marco queden centrados (--mk-*). */
+        .pf2m-mk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px; }
+        .pf2m-mk { text-align: center; font-size: 11px; color: var(--text, #000); padding: 4px 2px; cursor: pointer; }
+        .pf2m-mk.on { outline: 2px solid var(--accent, navy); outline-offset: -2px; }
+        .pf2m-mk-hueco { height: 92px; display: flex; align-items: center; justify-content: center; }
+        .pf2m-mk-foto { position: relative; display: block; width: 52px; height: 52px; flex-shrink: 0; background: var(--inset-bg, #808080); }
+        .pf2m-mk-foto[data-marco] { transform: translate(calc(26px * (var(--mk-l) - var(--mk-r))), calc(26px * (var(--mk-t) - var(--mk-b)))); }
+        .pf2m-mk-foto > img, .pf2m-mk-ph { width: 52px; height: 52px; object-fit: cover; display: block; }
+        .pf2m-mk-t { margin-top: 2px; line-height: 1.25; overflow-wrap: anywhere; }
+        /* ── Perfil nuevo (estilo Steam en el móvil; renderPerfil2) ──
+           Como antes la lista de posts: la cabecera y los botones se
+           quedan arriba y esto hace scroll por dentro (`flex: 1` +
+           `min-height: 0` en la vista, que es flex en columna). */
+        .pf2m {
+            display: flex; flex-direction: column; gap: 6px;
+            padding: 0 2px 10px 0; flex: 1; min-height: 0;
+            overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
         }
-        .pf-post-head {
-            display: flex; align-items: center; gap: 6px;
-            font-size: 11px; margin-bottom: 6px;
+        /* En una columna con scroll, que nada se encoja (la franja del
+           estado salía aplastada). */
+        .pf2m > * { flex-shrink: 0; }
+        .pf2m-relieve {
+            background: var(--win-bg, silver); color: var(--text, #000);
+            box-shadow: inset -1px -1px var(--bezel-dark-1, #0a0a0a), inset 1px 1px var(--bezel-light-1, #fff),
+                        inset -2px -2px var(--bezel-dark-2, grey), inset 2px 2px var(--bezel-light-2, #dfdfdf);
         }
-        .pf-post-author { font-weight: bold; color: var(--accent, #000080); }
-        .pf-post-time { font-size: 10px; color: var(--text-faint, #666); margin-left: auto; }
-        .pf-post-text {
-            font-size: 12px; line-height: 1.4;
-            white-space: pre-wrap; word-break: break-word;
+        /* Kawaii cambia los relieves por bordes, como el resto de su interfaz. */
+        body.pf-iface-kawaii .pf2m-relieve { box-shadow: none; border: 2px solid var(--border, #49388B); }
+        .pf2m-level {
+            width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 15px; flex-shrink: 0;
+            background: var(--accent, navy); color: var(--accent-text, #fff);
+            box-shadow: 0 0 0 2px var(--win-bg, silver), 0 0 0 3px var(--accent, navy);
+        }
+        /* Nivel + la mejor medalla (sin barra de XP, como Steam). */
+        .pf2m-lvlbox { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 8px; padding: 12px 10px; }
+        .pf2m-lvl { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 22px; }
+        .pf2m-best { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .pf2m-best svg { width: 44px; height: 52px; flex-shrink: 0; }
+        .pf2m-best-t { font-size: 12px; line-height: 1.35; min-width: 0; }
+        .pf2m-best-t small { display: block; color: var(--text-muted, #444); font-size: 11px; }
+        /* Franja del estado ("Currently Online"). */
+        .pf2m-estado { padding: 12px; font-size: 17px; color: var(--accent, navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-estado.is-offline { color: var(--text-muted, #444); }
+        .pf2m-estado.is-dnd { color: #d04040; }
+        .pf2m-estado.is-away { color: #c99a0e; }
+        /* Cuadrícula de 2 columnas: título + número; Medallas y Amigos con sus iconos. */
+        .pf2m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .pf2m-tile { padding: 9px 9px 8px; min-width: 0; }
+        .pf2m-tile[data-t] { cursor: pointer; }
+        .pf2m-tile[data-t]:active { box-shadow: inset 1px 1px var(--bezel-dark-1, #0a0a0a), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-tile-t { font-size: 13px; display: flex; align-items: baseline; gap: 7px; white-space: nowrap; overflow: hidden; }
+        .pf2m-tile-t span { color: var(--text-muted, #444); font-size: 17px; }
+        .pf2m-icons { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+        .pf2m-icons svg { width: 30px; height: 36px; flex-shrink: 0; }
+        .pf2m-fav { width: 34px; height: 34px; flex-shrink: 0; background: var(--input-bg, #fff); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+        .pf2m-fav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        /* Ventana de medallas (al tocar "Medallas"). */
+        .pf2m-mrow { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 11px; line-height: 1.4; }
+        .pf2m-mrow + .pf2m-mrow { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-mrow svg { width: 34px; height: 40px; flex-shrink: 0; }
+        /* Medallas con sprite (PNG pixel, cuadrado): a la altura del SVG de cada sitio. */
+        .pf2m-medal-img { display: block; flex-shrink: 0; image-rendering: pixelated; }
+        .pf2m-best .pf2m-medal-img { width: 52px; height: 52px; }
+        .pf2m-icons .pf2m-medal-img { width: 36px; height: 36px; }
+        .pf2m-mrow .pf2m-medal-img { width: 40px; height: 40px; }
+        .pf2m-mtxt { flex: 1; min-width: 0; }
+        .pf2m-bar { height: 6px; margin-top: 3px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-bar i { display: block; height: 100%; background: var(--accent, navy); }
+        /* Comentarios (el muro; sustituye a los posts). */
+        .pf2m-com-win { margin: 0; }
+        .pf2m-com-win .title-bar-text { display: flex; align-items: center; gap: 5px; width: 100%; }
+        .pf2m-com-win .title-bar-text span { margin-left: auto; font-weight: normal; opacity: .85; }
+        .pf2m-com-win .window-body { margin: 6px; color: var(--text, #000); }
+        .pf2m-new { display: flex; gap: 6px; }
+        .pf2m-new input { flex: 1; min-width: 0; min-height: 30px; box-sizing: border-box;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-new .button { min-width: 0; padding: 0 10px; }
+        .pf2m-com { display: flex; gap: 8px; padding: 7px 0; align-items: flex-start; }
+        .pf2m-com + .pf2m-com { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-com-av { width: 32px; height: 32px; flex-shrink: 0; background: var(--input-bg, #fff); }
+        .pf2m-com-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pf2m-com-main { flex: 1; min-width: 0; font-size: 11px; overflow-wrap: anywhere; }
+        .pf2m-com-who { font-weight: bold; cursor: pointer; }
+        .pf2m-com-when { color: var(--text-muted, #444); font-size: 10px; margin-left: 5px; }
+        .pf2m-com-txt { margin-top: 2px; line-height: 1.35; white-space: pre-wrap; }
+        .pf2m-com-img { margin-top: 5px; }
+        .pf2m-com-img img { max-width: 100%; max-height: 260px; display: block; }
+        .pf2m-del { min-width: 0 !important; width: 26px; min-height: 24px !important; padding: 0 !important; flex-shrink: 0; }
+        .pf2m-vacio { font-size: 11px; color: var(--text-muted, #444); padding: 8px 2px; }
+
+        /* ── Expositores (renderPf2Expositores): los del PC en una columna,
+           cada uno en su ventanita como "Comentarios" (boceto aprobado:
+           electron/.e2e/perfil-movil-mock/preview-expositores.png). ── */
+        .pf2m-expo { display: flex; flex-direction: column; gap: 6px; }
+        .pf2m-expo:empty { display: none; }
+        .pf2m-x { margin: 0; }
+        .pf2m-x .title-bar-text { display: flex; align-items: center; gap: 5px; width: 100%; }
+        .pf2m-x .title-bar-text span { margin-left: auto; font-weight: normal; opacity: .85; }
+        .pf2m-x .window-body { margin: 6px; color: var(--text, #000); position: relative; }
+        .pf2m-hund { background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
+        .pf2m-stars { color: var(--accent, navy); }
+        .pf2m-noimg { display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; font-size: 10px;
+            background: var(--input-bg, #fff); color: var(--input-text, #000); box-sizing: border-box; }
+        /* Pósteres (juegos, películas, series, libros) y discos: 3 por fila. */
+        .pf2m-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .pf2m-row3 img, .pf2m-row3 .pf2m-noimg { width: 100%; display: block; object-fit: cover; }
+        .pf2m-poster img, .pf2m-poster .pf2m-noimg { aspect-ratio: 2/3; cursor: pointer; }
+        .pf2m-album img, .pf2m-album .pf2m-noimg { aspect-ratio: 1; }
+        .pf2m-album span { display: block; font-size: 10px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-album > div, .pf2m-pl-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        .pf2m-album > div.long-pressing, .pf2m-pl-row.long-pressing { opacity: .6; }
+        /* Ficha al tocar (lo que en el PC sale al pasar el ratón). */
+        .pf2m-tip { position: absolute; z-index: 5; left: 4px; right: 4px; font-size: 11px; padding: 6px 8px; line-height: 1.5;
+            background: var(--warning-bg, #fffbe6); color: var(--warning-text, #444); border: 1px solid var(--bezel-dark-2, grey); }
+        .pf2m-tip .pf2m-tr { display: flex; justify-content: space-between; gap: 8px; }
+        .pf2m-tip .pf2m-tr > span { display: inline-flex; align-items: center; gap: 4px; }
+        .pf2m-tip .pf2m-bar { margin: 2px 0 3px; }
+        /* Juego destacado */
+        .pf2m-gf { display: flex; gap: 10px; }
+        .pf2m-gf > img, .pf2m-gf > .pf2m-noimg { width: 120px; aspect-ratio: 2/3; object-fit: cover; display: flex; flex-shrink: 0; }
+        .pf2m-gf-t { flex: 1; min-width: 0; font-size: 11px; }
+        .pf2m-gf-t h3 { margin: 0 0 4px; font-size: 15px; }
+        .pf2m-gf-t .pf2m-bar { height: 8px; margin: 3px 0 6px; }
+        .pf2m-gf-p { display: flex; justify-content: space-between; margin-top: 6px; }
+        .pf2m-gf-achs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .pf2m-gf-achs img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+        /* Playlist destacada */
+        .pf2m-pl { display: flex; gap: 10px; }
+        .pf2m-pl > img, .pf2m-pl > .pf2m-noimg { width: 110px; height: 110px; object-fit: cover; flex-shrink: 0; }
+        .pf2m-pl-t { flex: 1; min-width: 0; font-size: 11px; }
+        .pf2m-pl-t h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+        .pf2m-pl-t small { color: var(--text-muted, #444); }
+        .pf2m-pl-btns { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+        .pf2m-pl-btns .button { min-width: 0; padding: 0 8px; min-height: 28px; }
+        .pf2m-pl-btns svg { fill: var(--btn-text, #000); margin-right: 4px; vertical-align: 0; }
+        .pf2m-pl-tracks { margin-top: 8px; font-size: 11px; }
+        .pf2m-pl-row { display: flex; gap: 6px; padding: 3px 0; }
+        .pf2m-pl-row i { font-style: normal; color: var(--text-muted, #444); width: 12px; text-align: right; flex-shrink: 0; }
+        .pf2m-pl-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pf2m-pl-row em { font-style: normal; color: var(--text-muted, #444); }
+        /* Logros de Steam: filas de 7; los raros (< 10 %) con brillo. */
+        .pf2m-ach7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .pf2m-ach7 img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+        .pf2m-ach7 img.raro, .pf2m-gf-achs img.raro { box-shadow: 0 0 0 2px var(--accent, navy), 0 0 6px var(--accent, navy); }
+        .pf2m-ach-stats { display: flex; gap: 26px; margin-top: 8px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--text, #000) 25%, transparent); }
+        .pf2m-ach-stats b { display: block; font-size: 22px; }
+        .pf2m-ach-stats span { font-size: 10px; }
+        /* Reseña destacada */
+        .pf2m-rev { display: flex; gap: 10px; }
+        .pf2m-rev > img { width: 70px; aspect-ratio: 2/3; object-fit: cover; flex-shrink: 0; }
+        .pf2m-rev h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+        .pf2m-rev small { color: var(--text-muted, #444); display: block; }
+        .pf2m-rev p { margin: 4px 0 0; font-size: 11px; line-height: 1.4; white-space: pre-wrap; }
+        /* Capturas: la primera grande y las demás debajo. */
+        .pf2m-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .pf2m-shots img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+        .pf2m-shots img:first-child { grid-column: 1 / -1; }
+        .pf2m-shot-cap { grid-column: 1 / -1; font-size: 10px; color: var(--text-muted, #444); }
+        .pf2m-txt { font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+        /* ── Personalizar (pf2Editar / renderPf2Edicion; boceto aprobado:
+           preview-personalizar.png). Se ordena manteniendo pulsada la barra. ── */
+        .pf2m-ed { outline: 2px dashed var(--accent, navy); outline-offset: 2px; }
+        .pf2m-ed { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        .pf2m-ed-bar { cursor: grab; }
+        .pf2m-ed.long-pressing { opacity: .7; }
+        .pf2m-ed-asa { font-size: 14px; line-height: 1; margin-right: 1px; opacity: .9; }
+        .pf2m-ed .title-bar-text { gap: 4px; }
+        .pf2m-ed-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* 98.css lo pinta blanco y themes.css repite la flecha: con el tema. */
+        .pf2m-ed-sel { flex: 1; min-width: 0; height: 24px; font-size: 11px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important;
+            background-repeat: no-repeat !important; background-position: top 2px right 2px !important; }
+        .pf2m-ed-sel option { background-color: var(--input-bg, #fff); color: var(--input-text, #000); }
+        body.pf-iface-kawaii .pf2m-ed-sel { font-size: 13px !important; height: 28px; }
+        .pf2m-ed-btn { min-width: 0 !important; min-height: 24px !important; padding: 0 7px !important; font-size: 11px; flex-shrink: 0; }
+        .pf2m-arrastra { opacity: .85; box-shadow: 0 8px 22px rgba(0,0,0,.45); position: relative; z-index: 5; }
+        .pf2m-slot { border: 1px dashed var(--bezel-dark-1, #808080); color: var(--text, #000); font-size: 12px; text-align: center; padding: 16px 8px; }
+        .pf2m-slot.add { cursor: pointer; font-weight: bold; }
+        .pf2m-slot-info { font-size: 11px; color: var(--text-muted, #444); text-align: center; padding: 4px; }
+        .pf2m-tipo { padding: 11px 8px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pf2m-tipo:active { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pf2m-tipo small { margin-left: auto; color: var(--text-muted, #444); font-size: 10px; }
+        /* Selectores */
+        .pf2m-picker .window-body { overflow-y: auto; min-height: 0; }
+        .pf2m-buscar { display: flex; gap: 6px; margin-bottom: 6px; }
+        .pf2m-buscar input { flex: 1; min-width: 0; min-height: 30px; box-sizing: border-box;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-buscar .button { min-width: 0; padding: 0 8px; }
+        .pf2m-pk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 4px; max-height: 46vh; overflow-y: auto; }
+        .pf2m-pk-grid.pf2m-pk-wide { grid-template-columns: repeat(2, 1fr); }
+        .pf2m-pk-corta { max-height: 26vh; }
+        .pf2m-pk { position: relative; font-size: 10px; text-align: center; cursor: pointer; color: var(--input-text, #000); min-width: 0; }
+        .pf2m-pk img, .pf2m-pk-ph { width: 100%; display: block; object-fit: cover; background: color-mix(in srgb, var(--text, #000) 8%, transparent); }
+        .pf2m-pk.portrait img, .pf2m-pk.portrait .pf2m-pk-ph { aspect-ratio: 2/3; }
+        .pf2m-pk.square img, .pf2m-pk.square .pf2m-pk-ph { aspect-ratio: 1; }
+        .pf2m-pk.wide img, .pf2m-pk.wide .pf2m-pk-ph { aspect-ratio: 16/9; }
+        .pf2m-pk.on img, .pf2m-pk.on .pf2m-pk-ph { outline: 3px solid var(--accent, navy); outline-offset: -3px; }
+        .pf2m-pk-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        .pf2m-pk-n { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent, navy);
+            color: var(--accent-text, #fff); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
+        .pf2m-pk-list { max-height: 40vh; overflow-y: auto; margin-bottom: 4px; }
+        .pf2m-pk-row { display: flex; align-items: center; gap: 8px; padding: 6px; font-size: 11px; cursor: pointer; color: var(--input-text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--input-text, #000) 12%, transparent); }
+        .pf2m-pk-row img, .pf2m-pk-ri { width: 32px; height: 32px; object-fit: cover; flex-shrink: 0; }
+        .pf2m-pk-rt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .pf2m-pk-row.on { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pf2m-pk-row.on small, .pf2m-pk-row.on .pf2m-stars { color: var(--accent-text, #fff); }
+        .pf2m-pk-h { font-size: 11px; margin: 6px 0 4px; color: var(--text, #000); }
+        .pf2m-pk-h .button { min-width: 0; padding: 0 8px; margin-top: 4px; }
+        .pf2m-ach-sel { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; min-height: 40px; margin-bottom: 6px; }
+        .pf2m-ach-it { position: relative; width: 40px; height: 40px; cursor: pointer; }
+        .pf2m-ach-it img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pf2m-ach-it i { position: absolute; right: -3px; top: -3px; font-style: normal; font-size: 9px; font-weight: bold; min-width: 14px; height: 14px; border-radius: 7px;
+            background: var(--accent, navy); color: var(--accent-text, #fff); display: flex; align-items: center; justify-content: center; }
+        .pf2m-ta { width: 100%; box-sizing: border-box; resize: vertical; background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; font-size: 12px; }
+        .pf2m-shot-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+        .pf2m-shot-row { display: flex; gap: 4px; align-items: center; font-size: 11px; }
+        .pf2m-shot-row input { flex: 1; min-width: 0; background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important; }
+        .pf2m-pie { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .pf2m-pie span { flex: 1; min-width: 120px; font-size: 11px; color: var(--text-muted, #444); }
+        .pf2m-pie .button { min-width: 0; padding: 0 10px; min-height: 28px; }
+
+        /* ── Amigos (vista "social"; amPintar) ──
+           Filas como en el PC: foto con marco y punto de presencia,
+           nombre y estado. Todo con los colores del tema. */
+        .pfa-tabs { margin: 0 0 8px; }
+        .pfa-panel { padding: 0 0 8px; }
+        .pfa-input {
+            width: 100%; box-sizing: border-box; height: auto; min-height: 30px; margin: 0 0 6px;
+            background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important;
+        }
+        .pfa-sec {
+            font-size: 11px; font-weight: bold; color: var(--text, #000);
+            margin: 8px 0 4px; padding-bottom: 3px; border-bottom: 1px solid var(--bezel-dark-1, #808080);
+        }
+        .pfa-nota { font-size: 11px; color: var(--text-muted, #444); margin: 0 0 6px; line-height: 1.4; }
+        .pfa-buscar { display: flex; gap: 6px; align-items: flex-start; }
+        .pfa-buscar .pfa-input { flex: 1; min-width: 0; }
+        .pfa-buscar .button { min-height: 30px; }
+        .pfa-grupo {
+            font-size: 10px; font-weight: bold; text-transform: none; color: var(--text-muted, #444);
+            margin: 6px 0 4px;
+        }
+        .pfa-fila {
+            display: flex; align-items: center; gap: 10px; padding: 6px;
             color: var(--text, #000);
+            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
         }
-        .pf-post-img {
-            display: block; max-width: 100%; margin-top: 6px;
-            border: 1px solid var(--bezel-dark-1, #808080);
+        .pfa-fila + .pfa-fila { border-top: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent); }
+        .pfa-fila.pfa-amigo { cursor: pointer; }
+        .pfa-fila.pfa-amigo:active, .pfa-fila.long-pressing { background: color-mix(in srgb, var(--accent, navy) 18%, transparent); }
+        .pfa-av {
+            position: relative; width: 36px; height: 36px; flex-shrink: 0;
+            background: var(--input-bg, #fff); display: flex; align-items: center; justify-content: center;
         }
-        .pf-post-foot {
-            display: flex; align-items: center; gap: 4px;
-            margin-top: 6px; padding-top: 6px;
-            border-top: 1px solid var(--bezel-dark-1, #808080);
+        .pfa-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pfa-av.has-presence-dot { overflow: visible; }
+        /* El marco (marcos.css) sobresale de la foto lo que digan sus
+           --mk-* (14 % de serie; Paint, polaroid… más): se le deja ese
+           hueco o lo recorta la vista (se cortaba por los lados). Igual en
+           las fotos del perfil nuevo (recuadro Amigos, comentarios). */
+        .pfa-av[data-marco] { margin: calc(var(--mk-t) * 36px) calc(var(--mk-r) * 36px) calc(var(--mk-b) * 36px) calc(var(--mk-l) * 36px); }
+        .pf2m-fav[data-marco] { margin: calc(var(--mk-t) * 34px) calc(var(--mk-r) * 34px) calc(var(--mk-b) * 34px) calc(var(--mk-l) * 34px); position: relative; }
+        /* La foto de la cabecera (48 px): si no, el Polaroid tapaba los
+           iconos de redes de debajo. */
+        #pf-userbar-avatar[data-marco] { margin: calc(var(--mk-t) * 48px) calc(var(--mk-r) * 48px) calc(var(--mk-b) * 48px) calc(var(--mk-l) * 48px); }
+        .pf2m-com-av[data-marco] { margin: calc(var(--mk-t) * 32px) calc(var(--mk-r) * 32px) calc(var(--mk-b) * 32px) calc(var(--mk-l) * 32px); position: relative; }
+        .pfa-txt { flex: 1; min-width: 0; }
+        .pfa-nom { font-size: 12px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pfa-est { font-size: 10px; color: var(--text-muted, #444); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        /* Los mismos colores de estado que el PC (perfil.css, .am-*). */
+        .pfa-on .pfa-est   { color: #3a9d3a; }
+        .pfa-away .pfa-est { color: #c99a0e; }
+        .pfa-dnd .pfa-est  { color: #d04040; }
+        .pfa-np .pfa-est   { color: var(--accent, navy); }
+        .pfa-off { opacity: .75; }
+        .pfa-btns .button:disabled { text-shadow: none; color: var(--text-muted, grey); }
+        .pfa-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; max-width: 55%; }
+        .pfa-btns .button { min-width: 0; padding: 0 8px; min-height: 28px; }
+        .pfa-vacio { font-size: 11px; color: var(--text-muted, #444); padding: 8px 4px; }
+        /* Menú al mantener pulsado un amigo. */
+        .pfa-menu-item {
+            padding: 10px 8px; font-size: 12px; cursor: pointer; color: var(--text, #000);
+            border-bottom: 1px solid color-mix(in srgb, var(--text, #000) 15%, transparent);
         }
-        .pf-post-btn {
-            min-height: 22px; min-width: 36px;
-            font-size: 11px; padding: 0 6px;
-        }
-        .pf-post-btn.is-liked { color: var(--accent, #000080); font-weight: bold; }
-        .pf-post-btn.danger { color: var(--error-text, #c00); margin-left: auto; }
-        .pf-post-comments {
-            margin-top: 6px; padding-top: 6px;
-            border-top: 1px solid var(--bezel-dark-1, #808080);
-        }
-        .pf-post-comments[hidden] { display: none; }
-        .pf-comment {
-            display: flex; gap: 6px;
-            padding: 4px 0; font-size: 11px;
-        }
-        .pf-comment-author { font-weight: bold; color: var(--accent, #000080); }
-        .pf-comment-text   { flex: 1; word-break: break-word; }
-        .pf-comment-del {
-            min-width: 18px; min-height: 18px; padding: 0;
-            font-size: 10px; color: var(--error-text, #c00);
-        }
-        .pf-comment-form {
-            display: flex; gap: 4px; margin-top: 4px;
-        }
-        .pf-comment-form input {
-            flex: 1; font-size: 11px; padding: 3px 6px;
-        }
-        .pf-comment-form button { font-size: 11px; min-height: 22px; }
-        .pf-new-post {
-            display: flex; flex-direction: column; gap: 4px;
-            padding: 8px; margin-bottom: 10px;
-            background: var(--input-bg, #fff);
-            box-shadow:
-                inset  1px  1px var(--bezel-dark-1, #808080),
-                inset -1px -1px var(--bezel-light-1, #fff);
-        }
-        /* El atributo HTML `hidden` lo pisaría `display:flex` de arriba —
-           lo forzamos para que toggleProfileActions(true) realmente oculte
-           el form cuando estoy viendo a otro usuario. */
-        .pf-new-post[hidden] { display: none !important; }
-        #pf-edit-profile-btn[hidden],
-        #pf-follow-btn[hidden],
-        #pf-chat-btn[hidden] { display: none !important; }
-        .pf-new-post textarea {
-            width: 100%; box-sizing: border-box;
-            font-family: inherit; font-size: 12px;
-            resize: vertical; min-height: 50px;
-        }
-        .pf-new-post input { font-size: 11px; padding: 3px 6px; }
-        .pf-new-post-actions {
-            display: flex; justify-content: flex-end; gap: 4px;
-        }
+        .pfa-menu-item:active { background: var(--accent, navy); color: var(--accent-text, #fff); }
+        .pfa-menu-item.peligro { color: var(--error-text, #c00); font-weight: bold; }
 
         /* ── Vista Social ── */
         .pf-social-section-title {
@@ -1453,7 +1701,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf-ep-addbar input[type="text"] { width: 100%; box-sizing: border-box; }
     </style>
 </head>
-<body class="mh-body <?= htmlspecialchars($activeThemeClass) ?>">
+<body class="mh-body <?= htmlspecialchars($activeThemeClass) ?> pf-iface-<?= htmlspecialchars($_lookIface) ?>">
 
 <div class="window mh-window" id="perfilWindow">
     <div class="title-bar">
@@ -1474,7 +1722,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <div class="mh-userbar pf-userbar">
             <button class="button pf-hamburger" id="pf-hamburger" type="button" aria-label="Menú">☰</button>
             <div class="pf-userbar-left">
-                <div class="mh-userbar-avatar" id="pf-userbar-avatar">
+                <div class="mh-userbar-avatar" id="pf-userbar-avatar" data-marco-user="<?= htmlspecialchars($userKey) ?>"><?php /* marco de perfil: cambia con el perfil que se ve */ ?>
                     <?php if ($userImg): ?>
                         <img src="<?= htmlspecialchars($userImg) ?>" alt="">
                     <?php else: ?>
@@ -1487,7 +1735,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             </div>
             <div class="mh-userbar-text">
                 <div class="mh-userbar-greeting" id="pf-userbar-greeting">Perfil de</div>
-                <div class="mh-userbar-name" id="pf-userbar-name"><?= htmlspecialchars($userLabel) ?></div>
+                <!-- Nombre + fueguito de la racha (renderPf2Racha). -->
+                <div class="pf-name-row">
+                    <div class="mh-userbar-name" id="pf-userbar-name"><?= htmlspecialchars($userLabel) ?></div>
+                    <span class="pf2m-racha" id="pf2m-racha"></span>
+                </div>
                 <!-- Bio = "descripción" del escritorio. Si está vacía mostramos
                      "Sin descripción" como placeholder en gris. -->
                 <div class="pf-about-bio" id="pf-about-bio">Sin descripción</div>
@@ -1498,18 +1750,23 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <!-- VISTA: Perfil (edit + posts) -->
         <div class="pf-view" id="pf-view-profile">
             <div class="pf-profile-actions" id="pf-profile-actions">
-                <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Editar perfil</button>
-                <button class="button" id="pf-follow-btn" type="button" hidden>+ Seguir</button>
+                <!-- Personalizar (antes "Editar perfil"): modo de los
+                     expositores; los datos, con "Datos" de dentro. -->
+                <button class="button" id="pf-edit-profile-btn" type="button"><img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Personalizar</button>
+                <button class="button" id="pf2-guardar" type="button" hidden>✓ Guardar</button>
+                <button class="button" id="pf2-datos" type="button" hidden>Datos</button>
+                <button class="button" id="pf2-cancelar" type="button" hidden>Cancelar</button>
+                <button class="button" id="pf-follow-btn" type="button" hidden>+ Agregar amigo</button>
                 <button class="button" id="pf-chat-btn" type="button" hidden><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Chat</button>
+                <!-- Enlace para compartir el perfil que se ve (enlace.php?perfil=…). -->
+                <button class="button" id="pf-link-btn" type="button">🔗 Enlace</button>
             </div>
-            <div class="pf-new-post" id="pf-new-post">
-                <textarea id="pf-post-text" maxlength="1000" placeholder="Escribe algo..."></textarea>
-                <input type="text" id="pf-post-img" maxlength="2000" placeholder="URL de imagen (opcional)">
-                <div class="pf-new-post-actions">
-                    <button class="button default" id="pf-post-publish" type="button">Publicar</button>
-                </div>
-            </div>
-            <div class="pf-posts-list" id="pf-posts-list"></div>
+            <!-- Solo en Personalizar: Marco y Steam (conectar / desconectar). -->
+            <div class="pf2m-steam" id="pf2m-steam" hidden></div>
+            <!-- Perfil nuevo estilo Steam (renderPerfil2): nivel y mejor
+                 medalla, estado, cuadrícula (Medallas, Amigos, actividad),
+                 expositores y comentarios. -->
+            <div class="pf2m" id="pf2m"><div class="mh-empty">Cargando…</div></div>
         </div>
 
         <!-- VISTA: Mis listas (tabs + sub-tabs + destacados + lista) -->
@@ -1550,10 +1807,34 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             </div>
         </div>
 
-        <!-- VISTA: Social (amigos + explorar) -->
+        <!-- VISTA: Amigos estilo Steam (assets/profile/amigos.php; antes
+             "Social"). Tus amigos (en línea arriba) · Agregar amigo ·
+             Solicitudes. La pinta amPintar(). -->
         <div class="pf-view" id="pf-view-social" hidden>
-            <div class="pf-social-section-title"><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Amigos</div>
-            <div class="pf-friends-grid" id="pf-friends-grid"></div>
+            <nav class="pf-tabs pfa-tabs">
+                <button class="pf-tab active" data-amtab="amigos" type="button">Tus amigos <span id="pfa-n-amigos"></span></button>
+                <button class="pf-tab" data-amtab="agregar" type="button">Agregar amigo</button>
+                <button class="pf-tab" data-amtab="solicitudes" type="button">Solicitudes <span id="pfa-n-sol"></span></button>
+            </nav>
+            <div class="pfa-panel" data-ampanel="amigos">
+                <input type="search" id="pfa-filtro" class="pfa-input" placeholder="Buscar entre tus amigos">
+                <div id="pfa-lista"><div class="mh-empty">Cargando…</div></div>
+            </div>
+            <div class="pfa-panel" data-ampanel="agregar" hidden>
+                <div class="pfa-sec">Agregar un amigo</div>
+                <div class="pfa-nota">Busca a alguien por el nombre de su perfil y envíale una solicitud de amistad. Cuando la acepte, seréis amigos.</div>
+                <form class="pfa-buscar" id="pfa-buscar-form">
+                    <input type="search" id="pfa-q" class="pfa-input" placeholder="Nombre del perfil" autocomplete="off">
+                    <button type="submit" class="button">Buscar</button>
+                </form>
+                <div id="pfa-resultados"></div>
+            </div>
+            <div class="pfa-panel" data-ampanel="solicitudes" hidden>
+                <div class="pfa-sec">Recibidas</div>
+                <div id="pfa-recibidas"></div>
+                <div class="pfa-sec">Enviadas</div>
+                <div id="pfa-enviadas"></div>
+            </div>
         </div>
 
         <!-- VISTA: Melon reviews (ranking comunidad) -->
@@ -1633,6 +1914,8 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <script>
 /* ─── Estado y carga de datos ──────────────────────────────────── */
 var API = '../../assets/profile/api.php';
+/* Archivo estático de la presencia (assets/profile/presencia.php). */
+var PRESENCIA_URL = '../../' + <?php require_once dirname(__DIR__, 2) . '/assets/php/timbre.php'; echo json_encode(rt_urlPresencia()); ?>;
 var COUPLE_API = '../../assets/couple/api.php';
 var STATE = {
     lists: null, profile: null,
@@ -1647,6 +1930,8 @@ var STATE = {
     unreadChats: {}        /* { userKey: unreadCount } — actualizado por polling */
 };
 var USER_LABEL = <?= json_encode($userLabel) ?>;
+/* Google Drive (Capturas de Personalizar): el mismo cliente que la Galería. */
+var PF2_GOOGLE_CLIENT_ID = <?= json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : '') ?>;
 var PAREJA_ID  = <?= (int)$parejaId ?>;
 var USER_KEY   = <?= json_encode($userKey) ?>;
 /* Si llegamos vía ?as=USERKEY, el server ya emitió HTML con la
@@ -1677,10 +1962,8 @@ function fetchProfile() {
             /* get-profile devuelve following → cache para vista Social. */
             STATE.myFollowing = (STATE.profile.following || []).slice();
             renderAbout(STATE.profile);
-            /* Si estamos en vista Perfil (mía), re-render de posts. */
-            if (!STATE.viewingUser && STATE.view === 'profile') {
-                renderPosts(STATE.profile.posts || []);
-            }
+            /* Mi perfil: el perfil nuevo. */
+            if (!STATE.viewingUser) renderPerfil2();
         })
         .catch(function(){
             var bioEl = document.getElementById('pf-about-bio');
@@ -1703,6 +1986,15 @@ function fetchFollowers() {
 
 /* Pinta la sección "About" con bio, meta y conexiones — mismo
    conjunto de campos que `renderProfileInfo` del escritorio. */
+/* Cumpleaños 'AAAA-MM-DD' → "3 de noviembre" (sin año: la edad ya va
+   al lado). '' si la fecha no vale. */
+function cumpleLegible(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+    var meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                 'agosto','septiembre','octubre','noviembre','diciembre'];
+    return m ? (+m[3]) + ' de ' + meses[+m[2] - 1] : '';
+}
+
 function renderAbout(d) {
     var bioEl     = document.getElementById('pf-about-bio');
     var metaEl    = document.getElementById('pf-about-meta');
@@ -1719,10 +2011,12 @@ function renderAbout(d) {
         bioEl.classList.add('is-empty');
     }
 
-    /* Meta: pronombres · edad · país */
+    /* Meta: pronombres · edad · cumpleaños · país. Con cumpleaños la
+       edad viene ya calculada del servidor (get-profile / view-user). */
     var parts = [];
     if (d && d.pronouns) parts.push(esc(d.pronouns));
     if (d && d.age)      parts.push(esc(d.age) + ' años');
+    if (d && d.birthday) parts.push('🎂 ' + esc(cumpleLegible(d.birthday)));
     if (d && d.country)  parts.push('📍 ' + esc(d.country));
     metaEl.innerHTML = parts.length
         ? parts.join('<span class="pf-meta-sep">·</span>')
@@ -2690,7 +2984,7 @@ function openEpReviewsModal(ep) {
                 if (src && src.indexOf('/') !== 0 && src.indexOf('http') !== 0 && src.indexOf('../') !== 0) src = '../../' + src;
                 var av = src ? '<img src="' + esc(src) + '" alt="">' : '👤';
                 return '<div class="pf-melon-review-row">' +
-                    '<div class="pf-melon-review-av">' + av + '</div>' +
+                    '<div class="pf-melon-review-av" data-marco-user="' + esc(rev.user || '') + '">' + av + '</div>' +
                     '<div class="pf-melon-review-info">' +
                         '<div class="pf-melon-review-hdr"><strong>' + esc(rev.userLabel || '') + '</strong> ' + makeStarsHtml(rev.stars, 5) + ' <span class="pf-melon-review-num">' + rev.stars + '</span></div>' +
                         (rev.comment ? '<div class="pf-melon-review-comment">" ' + esc(rev.comment) + ' "</div>' : '') +
@@ -3037,6 +3331,7 @@ function openCollabDialog(item, origIdx, cat) {
         row.className = 'pf-collab-row';
         var av = document.createElement('div');
         av.className = 'pf-collab-av';
+        av.setAttribute('data-marco-user', uKey);   /* marco (melon-marcos.js) */
         if (uInfo.image) {
             var im = document.createElement('img');
             im.src = uInfo.image; im.alt = uInfo.label;
@@ -3086,6 +3381,33 @@ function openCollabDialog(item, origIdx, cat) {
     }
 
     /* Soy el dueño → render colabs actuales + invitables. */
+    /* Los elementos recién añadidos llevan un id provisional ("item_…") hasta
+       que save-lists les da el suyo, y las invitaciones necesitan el
+       definitivo: con el provisional la API respondía "Datos inválidos". Se
+       espera un poco al guardado que ya va en camino y, si no llega, se
+       guarda la categoría aquí. cb(id) recibe 0 si no se pudo. */
+    function withSavedItemId(cat, item, cb) {
+        var real = function(v) { return /^\d+$/.test(String(v)); };
+        function find() {
+            if (real(item.id)) return Number(item.id);
+            var same = (STATE.lists[cat] || []).filter(function(x) { return x.title === item.title && real(x.id); });
+            return same.length ? Number(same[same.length - 1].id) : 0;
+        }
+        var tries = 0;
+        (function wait() {
+            var id = find();
+            if (id) { cb(id); return; }
+            if (++tries <= 10) { setTimeout(wait, 300); return; }
+            fetch(API + '?action=save-lists', {
+                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat, items: STATE.lists[cat] })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d && Array.isArray(d.items)) STATE.lists[cat] = d.items;
+                cb(find());
+            }).catch(function() { cb(0); });
+        })();
+    }
+
     function render() {
         listEl.innerHTML = '';
         var list = STATE.lists && STATE.lists[cat];
@@ -3142,11 +3464,13 @@ function openCollabDialog(item, origIdx, cat) {
                 listEl.appendChild(avRow(uKey, uInfo, 'Invitar', function(btn){
                     btn.disabled = true; btn.textContent = '…';
                     statusEl.textContent = 'Enviando…';
+                    withSavedItemId(cat, item, function(itemId) {
+                    if (!itemId) { btn.disabled = false; btn.textContent = 'Invitar'; statusEl.textContent = 'No se pudo guardar el elemento. Inténtalo otra vez.'; return; }
                     fetch(API + '?action=send-item-invite', {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ toUser: uKey, category: cat, itemId: item.id })
+                        body: JSON.stringify({ toUser: uKey, category: cat, itemId: itemId })
                     })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -3161,6 +3485,7 @@ function openCollabDialog(item, origIdx, cat) {
                     .catch(function(){
                         statusEl.textContent = 'Error.';
                         btn.disabled = false; btn.textContent = 'Invitar';
+                    });
                     });
                 }));
             });
@@ -3310,10 +3635,15 @@ function toggleFeatured(origIdx) {
 })();
 
 /* ─── Editar perfil ──────────────────────────────────────────────
-   Modal con form para bio, pronouns, age, country + 4 conexiones.
+   Modal con form para bio, pronouns, birthday, country + 4 conexiones
+   (la edad sale del cumpleaños).
    Guarda vía save-info y refresca la sección About con renderAbout. */
 function openEditProfileDialog() {
     var p = STATE.profile || {};
+    function hoyISO() {
+        var h = new Date();
+        return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0') + '-' + String(h.getDate()).padStart(2, '0');
+    }
     function v(k){ return (p && p[k] != null) ? String(p[k]) : ''; }
     var bd = document.createElement('div');
     bd.className = 'pf-modal-backdrop';
@@ -3336,8 +3666,8 @@ function openEditProfileDialog() {
                     '<input type="text" id="ep-pronouns" maxlength="30" value="' + esc(v('pronouns')) + '" placeholder="él/ella/elle...">' +
                 '</div>' +
                 '<div class="pf-form-row">' +
-                    '<label for="ep-age">Edad</label>' +
-                    '<input type="number" id="ep-age" min="0" max="999" value="' + esc(v('age')) + '" placeholder="25">' +
+                    '<label for="ep-birthday">Cumpleaños</label>' +
+                    '<input type="date" id="ep-birthday" min="1900-01-01" max="' + hoyISO() + '" value="' + esc(v('birthday')) + '">' +
                 '</div>' +
                 '<div class="pf-form-row">' +
                     '<label for="ep-country">País</label>' +
@@ -3375,7 +3705,7 @@ function openEditProfileDialog() {
         var payload = {
             bio:       bd.querySelector('#ep-bio').value,
             pronouns:  bd.querySelector('#ep-pronouns').value,
-            age:       bd.querySelector('#ep-age').value,
+            birthday:  bd.querySelector('#ep-birthday').value,
             country:   bd.querySelector('#ep-country').value,
             steam:     bd.querySelector('#ep-steam').value,
             discord:   bd.querySelector('#ep-discord').value,
@@ -3521,6 +3851,12 @@ function openAddItemDialog(cat) {
             document.getElementById('cnt-' + cat).textContent = STATE.lists[cat].length;
             renderActiveList();
             close();
+            /* Creado desde un selector de Personalizar ("＋ Crear juego"):
+               queda elegido allí. */
+            if (typeof window.__pf2mAfterAdd === 'function') {
+                var creado = STATE.lists[cat].find(function(x){ return x && x.title && x.title.toLowerCase() === lower; }) || item;
+                window.__pf2mAfterAdd(cat, creado);
+            }
         })
         .catch(function(){ errEl.textContent = 'Error de conexión.'; });
     });
@@ -3791,7 +4127,10 @@ document.addEventListener('click', function(e){
 });
 
 /* Botón "Editar perfil" — vive ahora en la vista Perfil. */
-document.getElementById('pf-edit-profile-btn').addEventListener('click', openEditProfileDialog);
+document.getElementById('pf-edit-profile-btn').addEventListener('click', function(){ pf2Editar(true); });
+document.getElementById('pf2-datos').addEventListener('click', openEditProfileDialog);
+document.getElementById('pf2-guardar').addEventListener('click', pf2Guardar);
+document.getElementById('pf2-cancelar').addEventListener('click', function(){ pf2Editar(false); });
 
 /* ─── Sidebar drawer ──────────────────────────────────────────────
    Botón ☰ abre el panel lateral. El backdrop y la × lo cierran.
@@ -3825,7 +4164,9 @@ function renderDrawerBody() {
                 { view: 'profile', icon: '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Perfil' },
                 { view: 'lists',   icon: '<img src="../../assets/img/appIcons/calendarioIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Mis listas' },
                 { view: 'melon',   icon: '⭐', label: 'Melon reviews' },
-                { view: 'social',  icon: '+', label: 'Social' }
+                { view: 'social',  icon: '+', label: 'Amigos' },
+                /* No es una vista: abre la ventana de invitar (pf2AbrirInvitar). */
+                { act: 'invitar',  icon: '<img src="../../assets/img/appIcons/puntosAutismo.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">', label: 'Invitar' }
             ]
         });
     } else {
@@ -3844,7 +4185,7 @@ function renderDrawerBody() {
         if (sec.title) html += '<div class="pf-drawer-section-title">' + esc(sec.title) + '</div>';
         sec.items.forEach(function(it){
             var active = STATE.view === it.view ? ' active' : '';
-            html += '<button class="button pf-drawer-item' + active + '" data-view="' + it.view + '" type="button">' +
+            html += '<button class="button pf-drawer-item' + active + '" ' + (it.act ? 'data-act="' + it.act + '"' : 'data-view="' + it.view + '"') + ' type="button">' +
                       '<span class="pf-drawer-icon">' + it.icon + '</span>' +
                       '<span>' + esc(it.label) + '</span>' +
                     '</button>';
@@ -3858,6 +4199,9 @@ function renderDrawerBody() {
             closeDrawer();
         });
     });
+    DRAWER_BD2.querySelectorAll('[data-act="invitar"]').forEach(function(btn){
+        btn.addEventListener('click', function(){ closeDrawer(); pf2AbrirInvitar(); });
+    });
 }
 
 /* ─── View switching ────────────────────────────────────────────── */
@@ -3870,9 +4214,8 @@ function showView(name) {
     });
     /* Acciones específicas por vista. */
     if (name === 'profile') {
-        /* Posts ya cargados con fetchProfile; render si tenemos datos. */
-        if (STATE.profile && STATE.profile.posts) renderPosts(STATE.profile.posts);
-        /* Si estoy viendo otro usuario, oculto edit + new-post y enseño follow. */
+        renderPerfil2();
+        /* Si estoy viendo otro usuario, oculto Editar y enseño amistad / chat. */
         toggleProfileActions();
     } else if (name === 'social') {
         renderSocial();
@@ -4176,6 +4519,7 @@ function showMelonDetails(item) {
 
         var av = document.createElement('div');
         av.className = 'pf-melon-review-av';
+        if (rev.user) av.setAttribute('data-marco-user', rev.user);   /* marco (melon-marcos.js) */
         if (rev.userImg) {
             /* getUserImage devuelve la ruta relativa al root del proyecto
                ("assets/img/Sami.jpg"); perfil-mobile vive en /apps/mobile/
@@ -4258,18 +4602,16 @@ function relTimeStr(ts) {
     });
 })();
 
-/* Edit profile / nuevo post solo en mi perfil. Botón Seguir solo cuando
+/* Editar perfil solo en mi perfil. Botón Seguir solo cuando
    estoy viendo a otro. Chat solo si hay seguimiento mutuo. */
 function toggleProfileActions() {
     var viewing = !!STATE.viewingUser;
     var editBtn = document.getElementById('pf-edit-profile-btn');
     var followBtn = document.getElementById('pf-follow-btn');
     var chatBtn = document.getElementById('pf-chat-btn');
-    var newPost = document.getElementById('pf-new-post');
     editBtn.hidden   = viewing;
     followBtn.hidden = !viewing;
     chatBtn.hidden   = !(viewing && isMutual(STATE.viewingUser));
-    newPost.hidden   = viewing;
 }
 
 /* Mutualidad: sigo a X Y X me sigue. Necesario para el chat (el server
@@ -4316,9 +4658,22 @@ function attachPresenceDot(wrap, userKey, small) {
     wrap.appendChild(dot);
 }
 window.__pfAttachPresenceDot = attachPresenceDot;
+/* La presencia sale del archivo estático que deja escrito el heartbeat
+   (assets/profile/presencia.php): leerlo no gasta PHP ni BD. Si no
+   responde o tiene más de 2 min, de la API como antes. */
+function pedirPresencia() {
+    return fetch(PRESENCIA_URL, { cache: 'no-cache', credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('presencia ' + r.status); return r.json(); })
+        .then(function(d) {
+            if (!d || !d.ahora || Math.abs(Date.now() / 1000 - d.ahora) > 120) throw new Error('presencia vieja');
+            return d;
+        })
+        .catch(function() {
+            return fetch(API + '?action=presence', { credentials: 'same-origin' }).then(function(r) { return r.json(); });
+        });
+}
 function refreshPresenceDots() {
-    fetch(API + '?action=presence', { credentials: 'same-origin' })
-        .then(function(r) { return r.json(); })
+    pedirPresencia()
         .then(function(d) {
             if (!d || !d.ok || !Array.isArray(d.online)) return;
             __pfLastOnline = {};
@@ -4331,6 +4686,11 @@ function refreshPresenceDots() {
             if (Array.isArray(d.dnd)) {
                 d.dnd.forEach(function(k) { __pfLastDnd[k] = true; });
             }
+            /* Para el estado de la página de Amigos (escuchando… / hace X). */
+            __pfLastNp   = (d.nowPlaying && typeof d.nowPlaying === 'object') ? d.nowPlaying : {};
+            __pfLastSeen = (d.lastSeen && typeof d.lastSeen === 'object') ? d.lastSeen : {};
+            if (STATE.view === 'social') amPintarLista();
+            pf2Estado();
             applyPresence();
         })
         .catch(function() {});
@@ -4339,66 +4699,6 @@ window.__pfApplyPresence = applyPresence;
 refreshPresenceDots();
 setInterval(refreshPresenceDots, 20000);
 
-/* ─── Posts ─────────────────────────────────────────────────────── */
-function renderPosts(posts) {
-    var listEl = document.getElementById('pf-posts-list');
-    if (!listEl) return;
-    if (!posts || !posts.length) {
-        listEl.innerHTML = '<div class="mh-empty"><span class="mh-empty-icon"><img src="../../assets/img/appIcons/newsIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>Sin posts todavía</div>';
-        return;
-    }
-    var iAmOwner = !STATE.viewingUser;
-    var authorKey = STATE.viewingUser || USER_KEY;
-    var authorLabel = STATE.viewingLabel || USER_LABEL;
-    var html = '';
-    posts.forEach(function(p){
-        var imgHtml = p.imageUrl ? '<img class="pf-post-img" src="' + esc(p.imageUrl) + '" alt="" loading="lazy">' : '';
-        var liked = (p.likes || []).indexOf(USER_KEY) !== -1;
-        var likeCount = (p.likes || []).length;
-        var commentCount = (p.comments || []).length;
-        var canDel = iAmOwner;
-        /* En mis propios posts no puedo darme like — render del botón
-           como disabled para que se vea el contador pero no responda. */
-        var likeBtnAttr = iAmOwner ? ' disabled' : '';
-        html +=
-            '<div class="pf-post" data-post-id="' + p.id + '">' +
-                '<div class="pf-post-head">' +
-                    '<span class="pf-post-author">' + esc(authorLabel) + '</span>' +
-                    '<span class="pf-post-time">' + relTime(p.createdAt) + '</span>' +
-                '</div>' +
-                (p.text ? '<div class="pf-post-text">' + esc(p.text) + '</div>' : '') +
-                imgHtml +
-                '<div class="pf-post-foot">' +
-                    '<button class="button pf-post-btn' + (liked ? ' is-liked' : '') + '" data-act="like" type="button"' + likeBtnAttr + '>' +
-                        (liked ? '❤' : '♡') + ' ' + likeCount +
-                    '</button>' +
-                    '<button class="button pf-post-btn" data-act="comments" type="button"><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + commentCount + '</button>' +
-                    (canDel ? '<button class="button pf-post-btn danger" data-act="delete" type="button"><img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;"></button>' : '') +
-                '</div>' +
-                '<div class="pf-post-comments" data-comments-for="' + p.id + '" hidden></div>' +
-            '</div>';
-    });
-    listEl.innerHTML = html;
-
-    listEl.querySelectorAll('.pf-post').forEach(function(postEl){
-        var pid = parseInt(postEl.dataset.postId, 10);
-        var post = posts.find(function(x){ return x.id === pid; });
-        if (!post) return;
-        var likeBtn = postEl.querySelector('[data-act="like"]');
-        /* No bindeamos handler si está disabled (posts propios). */
-        if (likeBtn && !likeBtn.disabled) {
-            likeBtn.addEventListener('click', function(){ togglePostLike(post, postEl); });
-        }
-        var cmtBtn  = postEl.querySelector('[data-act="comments"]');
-        if (cmtBtn)  cmtBtn.addEventListener('click', function(){ toggleComments(post, postEl); });
-        var delBtn  = postEl.querySelector('[data-act="delete"]');
-        if (delBtn)  delBtn.addEventListener('click', function(){
-            pfConfirm('¿Eliminar el post?', 'Eliminar', function(){ deletePost(post.id); });
-        });
-    });
-}
-
-/* Helper de fecha relativa (ahora / hace Nm / hace Nh / hace Nd). */
 function relTime(ts) {
     var diff = Math.floor(Date.now() / 1000) - (ts || 0);
     if (diff < 60)    return 'ahora';
@@ -4407,203 +4707,1574 @@ function relTime(ts) {
     return 'hace ' + Math.floor(diff / 86400) + 'd';
 }
 
-function togglePostLike(post, postEl) {
-    var targetUser = STATE.viewingUser || USER_KEY;
-    fetch(API + '?action=toggle-post-like', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUser: targetUser, postId: post.id })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        /* La API responde { ok, liked: bool, count: int }, no un array
-           `likes`. El check antiguo Array.isArray(d.likes) siempre fallaba
-           y el UI no se refrescaba. Reconstruimos post.likes localmente
-           a partir de `liked` para que el próximo re-render mantenga el
-           estado. */
-        if (!d || !d.ok) return;
-        var liked = !!d.liked;
-        var count = d.count | 0;
-        if (!Array.isArray(post.likes)) post.likes = [];
-        var idx = post.likes.indexOf(USER_KEY);
-        if (liked && idx === -1)        post.likes.push(USER_KEY);
-        else if (!liked && idx !== -1)  post.likes.splice(idx, 1);
-        var btn = postEl.querySelector('[data-act="like"]');
-        if (btn) {
-            btn.classList.toggle('is-liked', liked);
-            btn.textContent = (liked ? '❤' : '♡') + ' ' + count;
-        }
-    })
-    .catch(function(){});
+/* ─── Perfil nuevo (estilo Steam; assets/profile/perfil2.php → v2) ────
+   Decidido así (7/11, con una captura del perfil de Steam en el móvil
+   de referencia). Debajo de la cabecera y los botones, de arriba abajo:
+     - Nivel N y, a la derecha, la mejor medalla (la de más nivel) con su
+       XP. Sin barra de XP (como Steam).
+     - Franja con el estado: En línea / Escuchando… / Ausente / No
+       molestar / Desconectado (el perfil propio, en línea).
+     - Cuadrícula de 2 columnas, solo con lo que tiene el PC: Medallas
+       (las ganadas en pequeño; al tocar, la lista con la ficha de cada
+       una) · Amigos (fotos en fila; al tocar, la página de Amigos) ·
+       Reseñas · Capturas · Horas escuchadas · En Melon Hub (estos no
+       hacen nada).
+     - Expositores (punto 3, aún no) justo encima de los comentarios.
+     - Comentarios: el muro (los posts de antes pasaron aquí en el PC).
+       Escribe cualquiera con cuenta; borra el dueño del muro o el autor.
+   Las fotos de v2 vienen desde la raíz de la web: aquí se les pone
+   ../../ delante (pf2Ruta). */
+var PF2_TIERS = [null, ['#b06a2c', '#e6a46a', 'Bronce'], ['#8c8c8c', '#e8e8e8', 'Plata'],
+                 ['#b8860b', '#ffe066', 'Oro'], ['#3a9bd5', '#bfe9ff', 'Diamante']];
+var PF2_TIER_XP = [0, 100, 300, 600];   /* = PF2_TIER_XP de perfil2.php */
+function pf2v() { return (STATE.profile && STATE.profile.v2) || null; }
+function pf2Ruta(u) {
+    if (!u) return '';
+    return /^(https?:|data:|\/|\.\.\/)/.test(u) ? u : '../../' + u;
 }
+/* La misma medalla que el PC (perfil-v2.js, medalSvg). */
+function pf2Medalla(m) {
+    if (m.sprite) return '<img class="pf2m-medal-img" src="' + esc(pf2Ruta(m.sprite)) + '" alt="">';
+    var t = m.unique ? ['var(--accent)', 'color-mix(in srgb, var(--accent) 30%, #fff)'] : (PF2_TIERS[m.tier] || PF2_TIERS[1]);
+    return '<svg viewBox="0 0 34 40"><path d="M9 0h6l2 10-6 0z" fill="var(--accent)"/><path d="M19 0h6l-5 10h-3z" fill="var(--accent-deep, var(--accent))"/>' +
+        '<circle cx="17" cy="25" r="13" style="fill:' + t[1] + ';stroke:' + t[0] + '" stroke-width="3"/>' +
+        '<text x="17" y="30" font-size="13" text-anchor="middle">' + m.emoji + '</text></svg>';
+}
+/* La de más nivel (a igualdad, la primera de la lista); la de Tester
+   solo si no hay ninguna otra. */
+function pf2Mejor(meds) {
+    var mejor = null;
+    meds.forEach(function(m) {
+        if (!m.tier) return;
+        if (!mejor || (mejor.unique && !m.unique) || (!m.unique && m.tier > mejor.tier)) mejor = m;
+    });
+    return mejor;
+}
+function pf2ProfileKey() { return STATE.viewingUser || USER_KEY; }
 
-function toggleComments(post, postEl) {
-    var box = postEl.querySelector('[data-comments-for="' + post.id + '"]');
+function renderPerfil2() {
+    var box = document.getElementById('pf2m');
     if (!box) return;
-    if (!box.hidden) { box.hidden = true; return; }
-    renderComments(post, box);
-    box.hidden = false;
-}
-
-function renderComments(post, box) {
-    var comments = post.comments || [];
-    var html = '';
-    comments.forEach(function(c){
-        var canDel = (c.authorKey === USER_KEY) || (!STATE.viewingUser);
-        html +=
-            '<div class="pf-comment" data-comment-id="' + c.id + '">' +
-                '<span class="pf-comment-author">' + esc(c.authorLabel || c.authorKey) + ':</span>' +
-                '<span class="pf-comment-text">' + esc(c.text) + '</span>' +
-                (canDel ? '<button class="button pf-comment-del" data-act="del-comment" type="button">×</button>' : '') +
-            '</div>';
-    });
-    /* Form solo si soy yo o si estoy viendo otro (puedo comentar en posts ajenos). */
-    html +=
-        '<div class="pf-comment-form">' +
-            '<input type="text" maxlength="500" placeholder="Comentar...">' +
-            '<button class="button" type="button">Enviar</button>' +
-        '</div>';
+    var v2 = pf2v();
+    renderPf2Racha();
+    if (!v2) { box.innerHTML = '<div class="mh-empty">Cargando…</div>'; return; }
+    var st = v2.stats || {}, c = st.counts || {}, meds = st.medals || [], fr = v2.friends || [];
+    var mejor = pf2Mejor(meds);
+    var ganadas = meds.filter(function(m) { return m.tier > 0; });
+    var html = '<div class="pf2m-relieve pf2m-lvlbox"><div class="pf2m-lvl">Nivel <span class="pf2m-level">' + (st.level || 1) + '</span></div>' +
+        (mejor
+            ? '<div class="pf2m-best">' + pf2Medalla(mejor) + '<div class="pf2m-best-t">' + esc(mejor.name) +
+              '<small>' + (mejor.unique ? 'Única' : esc(PF2_TIERS[mejor.tier][2]) + ' · ' + PF2_TIER_XP[mejor.tier] + ' XP') + '</small></div></div>'
+            : '<div class="pf2m-best"><div class="pf2m-best-t"><small>Sin medallas todavía</small></div></div>') + '</div>';
+    html += '<div class="pf2m-relieve pf2m-estado" id="pf2m-estado"></div>';
+    var tile = function(tit, n, dentro, t) {
+        return '<div class="pf2m-relieve pf2m-tile"' + (t ? ' data-t="' + t + '"' : '') + '><div class="pf2m-tile-t">' + tit + ' <span>' + n + '</span></div>' +
+            (dentro ? '<div class="pf2m-icons">' + dentro + '</div>' : '') + '</div>';
+    };
+    /* Tres, como Steam: con marco no caben más en el recuadro. */
+    var fotos = fr.slice(0, 3).map(function(f) {
+        return '<span class="pf2m-fav" data-marco-user="' + esc(f.key) + '">' +
+            (f.image ? '<img src="' + esc(pf2Ruta(f.image)) + '" alt="">' : esc((f.label || '?').slice(0, 2))) + '</span>';
+    }).join('');
+    html += '<div class="pf2m-grid">' +
+        tile('Medallas', ganadas.length, ganadas.slice(0, 3).map(pf2Medalla).join(''), 'med') +
+        tile('Amigos', fr.length, fotos, 'am') +
+        tile('Reseñas', c.reviews || 0) + tile('Capturas', c.shots || 0) +
+        tile('Horas escuchadas', (c.hours || 0).toLocaleString('es')) +
+        tile('En Melon Hub', (c.days || 0) + (c.days === 1 ? ' día' : ' días')) + '</div>';
+    /* Expositores, justo encima de los comentarios. */
+    html += '<div class="pf2m-expo" id="pf2m-expo"></div>';
+    html += '<div class="window pf2m-com-win" id="pf2m-com"></div>';
     box.innerHTML = html;
-    box.querySelectorAll('[data-act="del-comment"]').forEach(function(btn){
-        var row = btn.closest('[data-comment-id]');
-        var cid = parseInt(row.dataset.commentId, 10);
-        btn.addEventListener('click', function(){ deleteComment(post, cid, box); });
-    });
-    var input = box.querySelector('input');
-    var sendBtn = box.querySelector('.pf-comment-form button');
-    function send(){
-        var txt = input.value.trim();
-        if (!txt) return;
-        addComment(post, txt, box);
-        input.value = '';
-    }
-    sendBtn.addEventListener('click', send);
-    input.addEventListener('keydown', function(e){ if (e.key === 'Enter') send(); });
-}
-
-function addComment(post, text, box) {
-    fetch(API + '?action=add-comment', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.id, text: text })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok && d.comment) {
-            post.comments = post.comments || [];
-            post.comments.push(d.comment);
-            renderComments(post, box);
-            /* Actualiza el contador del botón. */
-            var postEl = box.closest('.pf-post');
-            var btn = postEl && postEl.querySelector('[data-act="comments"]');
-            if (btn) btn.innerHTML = '<img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + post.comments.length;
-        }
-    })
-    .catch(function(){});
-}
-
-function deleteComment(post, cid, box) {
-    fetch(API + '?action=delete-comment', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: cid })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok) {
-            post.comments = (post.comments || []).filter(function(c){ return c.id !== cid; });
-            renderComments(post, box);
-            var postEl = box.closest('.pf-post');
-            var btn = postEl && postEl.querySelector('[data-act="comments"]');
-            if (btn) btn.innerHTML = '<img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:12px;height:12px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">' + post.comments.length;
-        }
-    })
-    .catch(function(){});
-}
-
-function deletePost(postId) {
-    fetch(API + '?action=delete-post', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: postId })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok && STATE.profile && STATE.profile.posts) {
-            STATE.profile.posts = STATE.profile.posts.filter(function(p){ return p.id !== postId; });
-            renderPosts(STATE.profile.posts);
-        }
-    })
-    .catch(function(){});
-}
-
-(function(){
-    var btn = document.getElementById('pf-post-publish');
-    if (!btn) return;
-    /* Guard contra doble-submit: con lag de red el usuario puede pulsar
-       el botón varias veces antes de que la primera request acabe, y
-       cada click insertaba un post duplicado. Mientras `_inFlight=true`
-       ignoramos clicks adicionales y deshabilitamos el botón
-       visualmente. */
-    var _inFlight = false;
-    btn.addEventListener('click', function(){
-        if (_inFlight) return;
-        var textEl = document.getElementById('pf-post-text');
-        var imgEl  = document.getElementById('pf-post-img');
-        var text = (textEl.value || '').trim();
-        var img  = (imgEl.value || '').trim();
-        if (!text && !img) return;
-        _inFlight = true;
-        btn.disabled = true;
-        fetch(API + '?action=add-post', {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, image_url: img })
-        })
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-            if (d && d.ok && d.post) {
-                STATE.profile = STATE.profile || {};
-                STATE.profile.posts = STATE.profile.posts || [];
-                STATE.profile.posts.unshift(d.post);
-                renderPosts(STATE.profile.posts);
-                textEl.value = ''; imgEl.value = '';
-            } else if (d && d.error) {
-                pfAlert(d.error);
-            }
-        })
-        .catch(function(){})
-        .finally(function(){
-            _inFlight = false;
-            btn.disabled = false;
+    pf2Estado();
+    renderPf2Expositores();
+    renderPf2Comentarios();
+    box.querySelectorAll('.pf2m-tile[data-t]').forEach(function(t) {
+        t.addEventListener('click', function() {
+            if (t.dataset.t === 'med') pf2AbrirMedallas();
+            else showView('social');   /* la página de Amigos (la tuya, como en el PC) */
         });
+    });
+}
+
+/* La franja del estado; también al llegar la presencia nueva. */
+function pf2Estado() {
+    var el = document.getElementById('pf2m-estado');
+    if (!el) return;
+    var k = pf2ProfileKey(), cls = 'online', txt = 'En línea';
+    if (STATE.viewingUser) {
+        if (!__pfLastOnline[k]) { cls = 'offline'; txt = 'Desconectado'; }
+        else if (__pfLastNp[k] && __pfLastNp[k].title) txt = 'Escuchando: ' + __pfLastNp[k].title + (__pfLastNp[k].artist ? ' — ' + __pfLastNp[k].artist : '');
+        else if (__pfLastDnd[k]) { cls = 'dnd'; txt = 'No molestar'; }
+        else if (__pfLastAway[k]) { cls = 'away'; txt = 'Ausente'; }
+    }
+    el.className = 'pf2m-relieve pf2m-estado is-' + cls;
+    el.textContent = txt;
+}
+
+/* Tocar "Medallas": todas, con la ficha de cada una (lo que en el PC sale
+   al pasar el ratón). */
+function pf2AbrirMedallas() {
+    var v2 = pf2v();
+    if (!v2) return;
+    /* Solo las ganadas: las que no tienes no salen (ni en gris). */
+    var filas = ((v2.stats || {}).medals || []).filter(function(m) { return m.tier > 0; }).map(function(m) {
+        var ficha;
+        if (m.unique) ficha = esc(m.desc || '');
+        else {
+            var sig = m.next == null ? 'Nivel máximo'
+                : PF2_TIERS[m.tier + 1][2] + ' con ' + m.next.toLocaleString('es') + ' ' + m.unit.split(' ')[0];
+            ficha = m.value.toLocaleString('es') + ' ' + esc(m.unit) + ' · ' + esc(sig) +
+                '<div class="pf2m-bar"><i style="width:' + (m.progress || 0) + '%"></i></div>';
+        }
+        return '<div class="pf2m-mrow">' + pf2Medalla(m) + '<div class="pf2m-mtxt"><b>' + esc(m.name) + ' · ' +
+            (m.unique ? 'Única' : PF2_TIERS[m.tier][2]) + '</b><br>' + ficha + '</div></div>';
+    }).join('') || '<div class="mh-empty">Sin medallas todavía.</div>';
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal"><div class="title-bar"><div class="title-bar-text">Medallas</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div>' +
+        '<div class="window-body">' + filas + '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div></div></div>';
+    document.body.appendChild(bd);
+    var cerrar = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', cerrar);
+    bd.querySelector('[data-act="close"]').addEventListener('click', cerrar);
+    bd.addEventListener('click', function(e) { if (e.target === bd) cerrar(); });
+}
+
+/* ─── Expositores (los del PC, perfil-v2.js RENDER, en una columna) ───
+   Decidido así (7/11, boceto aprobado en
+   electron/.e2e/perfil-movil-mock/preview-expositores.png): cada uno en su
+   ventanita, uno debajo de otro, encima de los comentarios. Lo que en el
+   PC sale al pasar el ratón (ficha de un juego, de un logro) sale al
+   tocar; lo que sale con clic derecho ("▶ Reproducir" en discos y en las
+   canciones de la playlist), al mantener pulsado. A los demás no se les
+   enseñan los vacíos; los de pago sin comprar no salen (se ven en
+   Personalizar). */
+var PF2_TYPES = {
+    media:  { label: 'Media favorita',   icon: 'juegosIcon' },
+    shots:  { label: 'Capturas',         icon: 'galeriaIcon' },
+    review: { label: 'Reseña destacada', icon: 'bestOfTheYearIcon' },
+    steam_rare: { label: 'Logros raros de Steam', icon: 'steamIcon' },
+    steam_ach:  { label: 'Logros de Steam',       icon: 'steamIcon' },
+    game_feat:  { label: 'Juego destacado',       icon: 'juegosIcon' },
+    playlist:   { label: 'Playlist destacada',    icon: 'songIcon' },
+    text:       { label: 'Texto libre',           icon: 'newsIcon' }
+};
+var PF2_MEDIA = {
+    games:  { label: 'Juegos favoritos',    icon: 'juegosIcon' },
+    movies: { label: 'Películas favoritas', icon: 'pelisIcon' },
+    series: { label: 'Series favoritas',    icon: 'melonArchiveIcon' },
+    books:  { label: 'Libros favoritos',    icon: 'booksIcon' },
+    music:  { label: 'Música favorita',     icon: 'musicaIcon' }
+};
+var PF2_CAT_LABEL = { movies: 'Película', series: 'Serie', books: 'Libro', games: 'Juego', music: 'Música' };
+function pf2Ic(n, size) {
+    size = size || 14;
+    return '<img src="../../assets/img/appIcons/' + n + '.png" alt="" style="width:' + size + 'px;height:' + size + 'px;object-fit:contain;image-rendering:pixelated;">';
+}
+function pf2Stars(n) {
+    n = Math.max(0, Math.min(5, Number(n) || 0));
+    var full = Math.floor(n);
+    return '★'.repeat(full) + (n - full >= 0.5 ? '½' : '');
+}
+function pf2Vacio(sc) {
+    if (sc.locked) return true;
+    var d = sc.data;
+    if (!d) return true;
+    if (Array.isArray(d)) return !d.length;
+    if (sc.type.indexOf('steam_') === 0) return !(d.items || []).length;
+    if (sc.type === 'playlist') return !d.id;
+    if (sc.type === 'text') return !d.text;
+    return !d.title;
+}
+function pf2TextoVacio(type) {
+    if (type.indexOf('steam_') === 0) {
+        var st = (pf2v() || {}).steam || {};
+        if (!st.configured) return 'Steam no está configurado en la web.';
+        if (!st.linked) return 'Conecta tu Steam en Personalizar.';
+        if (st['private']) return 'Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.';
+        if (type === 'steam_rare') return 'Aún no hay logros que enseñar.';
+    }
+    return 'Vacío: elige qué enseñar en Personalizar.';
+}
+function pf2Img(u, cls) {
+    return u ? '<img' + (cls ? ' class="' + cls + '"' : '') + ' src="' + esc(pf2Ruta(u)) + '" alt="" loading="lazy">' : '';
+}
+
+function renderPf2Expositores() {
+    var box = document.getElementById('pf2m-expo');
+    var v2 = pf2v();
+    if (!box || !v2) return;
+    var own = !STATE.viewingUser;
+    if (own && PF2E.editing) { renderPf2Edicion(box); return; }
+    box.innerHTML = '';
+    (v2.showcases || []).forEach(function(sc) {
+        var vacio = pf2Vacio(sc);
+        if (sc.locked || (vacio && !own)) return;
+        var t = sc.type === 'media' ? (PF2_MEDIA[(sc.config || {}).cat] || PF2_MEDIA.games) : PF2_TYPES[sc.type];
+        if (!t) return;
+        var sub = '';
+        if (sc.type === 'shots' && v2.stats) sub = (sc.data || []).length + ' de ' + ((v2.stats.counts || {}).shots || 0);
+        var w = document.createElement('div');
+        w.className = 'window pf2m-x';
+        w.innerHTML = '<div class="title-bar"><div class="title-bar-text">' + pf2Ic(t.icon) + esc(t.label) + (sub ? '<span>' + sub + '</span>' : '') +
+            '</div></div><div class="window-body"></div>';
+        var body = w.querySelector('.window-body');
+        if (vacio) body.innerHTML = '<div class="pf2m-vacio">' + esc(pf2TextoVacio(sc.type)) + '</div>';
+        else PF2_RENDER[sc.type](body, sc.data, sc);
+        box.appendChild(w);
+    });
+}
+
+/* Ficha al tocar, dentro del expositor (una abierta a la vez; tocar
+   otra vez o en cualquier otro sitio la cierra). */
+function pf2Ficha(body, html, y) {
+    var vieja = document.querySelector('.pf2m-tip');
+    var misma = vieja && vieja.parentNode === body && vieja.dataset.y === String(y);
+    if (vieja) vieja.remove();
+    if (misma) return;
+    var t = document.createElement('div');
+    t.className = 'pf2m-tip';
+    t.dataset.y = String(y);
+    t.style.top = y + 'px';
+    t.innerHTML = html;
+    body.appendChild(t);
+}
+document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-ficha]') || e.target.closest('.pf2m-tip')) return;
+    var t = document.querySelector('.pf2m-tip');
+    if (t) t.remove();
+});
+function pf2Ach(a) {
+    return '<b>' + esc(a.name) + '</b>' + (a.desc ? '<br>' + esc(a.desc) : '') + (a.game ? '<br><i>' + esc(a.game) + '</i>' : '') +
+        (a.percent != null ? '<br>Lo tiene el ' + String(a.percent).replace('.', ',') + ' % de los jugadores' : '');
+}
+/* Toca un elemento con data-ficha: la ficha sale debajo de él. */
+function pf2Fichas(body, fichas) {
+    body.querySelectorAll('[data-ficha]').forEach(function(el) {
+        el.addEventListener('click', function() {
+            var r = el.getBoundingClientRect(), rb = body.getBoundingClientRect();
+            pf2Ficha(body, fichas[+el.dataset.ficha], Math.round(r.bottom - rb.top + 2));
+        });
+    });
+}
+
+/* Mantener pulsado (500 ms, como en Amigos y Música): menú con
+   "▶ Reproducir" (en el PC, clic derecho). */
+function pf2Mantener(el, fn) {
+    var t = null, x = 0, y = 0;
+    var parar = function() { if (t) { clearTimeout(t); t = null; } el.classList.remove('long-pressing'); };
+    var empezar = function(px, py) {
+        parar(); x = px; y = py;
+        el.classList.add('long-pressing');
+        t = setTimeout(function() { t = null; el.classList.remove('long-pressing'); try { navigator.vibrate && navigator.vibrate(40); } catch (_) {} fn(); }, 500);
+    };
+    el.addEventListener('touchstart', function(e) { if (e.touches.length === 1) empezar(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    el.addEventListener('touchmove', function(e) { if (t && (Math.abs(e.touches[0].clientX - x) > 12 || Math.abs(e.touches[0].clientY - y) > 12)) parar(); }, { passive: true });
+    el.addEventListener('touchend', parar);
+    el.addEventListener('touchcancel', parar);
+    el.addEventListener('mousedown', function(e) { if (e.button === 0) empezar(e.clientX, e.clientY); });
+    el.addEventListener('mouseup', parar);
+    el.addEventListener('mouseleave', parar);
+    el.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+}
+function pf2Menu(titulo, items) {
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal"><div class="title-bar"><div class="title-bar-text">' + esc(titulo) + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div><div class="window-body">' +
+        items.map(function(it, i) { return '<div class="pfa-menu-item" data-i="' + i + '">' + esc(it.label) + '</div>'; }).join('') +
+        '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div></div></div>';
+    document.body.appendChild(bd);
+    var cerrar = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', cerrar);
+    bd.querySelector('[data-act="close"]').addEventListener('click', cerrar);
+    bd.addEventListener('click', function(e) { if (e.target === bd) cerrar(); });
+    bd.querySelectorAll('[data-i]').forEach(function(el) {
+        el.addEventListener('click', function() { cerrar(); items[+el.dataset.i].fn(); });
+    });
+}
+/* Playlist de cualquiera (shared-playlist, como melonPlayPlaylistById del
+   PC) en el reproductor de la carcasa (MuShell.loadQueue). */
+function pf2TocarPlaylist(id, desde) {
+    var SHELL = null;
+    try { SHELL = window.parent.MuShell; } catch (_) {}
+    fetch('../../assets/music/api.php?action=shared-playlist&id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(pl) {
+            if (!pl || !pl.ok) { pfAlert((pl && pl.error) || 'No se pudo abrir la playlist.'); return; }
+            var tracks = (pl.tracks || []).filter(function(t) { return t && t.videoId; });
+            if (!tracks.length || !SHELL || typeof SHELL.loadQueue !== 'function') return;
+            SHELL.loadQueue(tracks, Math.max(0, Math.min(desde | 0, tracks.length - 1)), pl.name || 'Playlist');
+        })
+        .catch(function() { pfAlert('Error de conexión'); });
+}
+
+var PF2_RENDER = {
+    media: function(body, data, sc) {
+        if ((sc.config || {}).cat === 'music') PF2_RENDER.music(body, data);
+        else PF2_RENDER.posters(body, data);
+    },
+    /* Juegos, películas, series, libros: tocar = su ficha (Steam y reseña). */
+    posters: function(body, data) {
+        var fichas = data.map(function(it) {
+            var h = '<b>' + esc(it.title) + '</b>';
+            var st = it.steam;
+            if (st && !st.inSteam) h += '<div class="pf2m-tr"><span>' + pf2Ic('steamIcon', 12) + 'No está en su Steam</span></div>';
+            else if (st) {
+                h += '<div class="pf2m-tr"><span>' + pf2Ic('steamIcon', 12) + 'Horas en Steam</span><b>' + st.hours.toLocaleString('es') + ' h</b></div>';
+                if (st.total) h += '<div class="pf2m-tr"><span>' + pf2Ic('bestOfTheYearIcon', 12) + 'Logros</span><b>' + st.achieved + ' / ' + st.total + '</b></div>' +
+                    '<div class="pf2m-hund pf2m-bar"><i style="width:' + Math.round(100 * st.achieved / st.total) + '%"></i></div>';
+            }
+            return h + '<div class="pf2m-tr"><span>Reseña</span>' + (it.stars != null ? '<span class="pf2m-stars">' + pf2Stars(it.stars) + '</span>' : '<b>Sin reseña</b>') + '</div>';
+        });
+        body.innerHTML = '<div class="pf2m-row3 pf2m-poster">' + data.map(function(it, i) {
+            return it.image ? '<img data-ficha="' + i + '" src="' + esc(pf2Ruta(it.image)) + '" alt="" loading="lazy">'
+                            : '<div class="pf2m-noimg" data-ficha="' + i + '">' + esc(it.title) + '</div>';
+        }).join('') + '</div>';
+        pf2Fichas(body, fichas);
+    },
+    /* Discos: portada del álbum y nombre; mantener pulsado = Reproducir. */
+    music: function(body, data) {
+        body.innerHTML = '<div class="pf2m-row3 pf2m-album">' + data.map(function(it) {
+            return '<div>' + (it.cover ? '<img src="' + esc(pf2Ruta(it.cover)) + '" alt="" loading="lazy">' : '<div class="pf2m-noimg">' + esc(it.title) + '</div>') +
+                '<span>' + esc(it.title) + '</span></div>';
+        }).join('') + '</div>';
+        body.querySelectorAll('.pf2m-album > div').forEach(function(el, i) {
+            var it = data[i];
+            pf2Mantener(el, function() {
+                pf2Menu(it.title + (it.artist ? ' — ' + it.artist : ''), [{ label: '▶ Reproducir', fn: function() {
+                    playMusicItem({ type: it.type, title: it.title, artist: it.artist, ytId: it.ytId, ytPlaylistId: it.ytPlaylistId, spotifyAlbumId: it.spotifyAlbumId });
+                } }]);
+            });
+        });
+    },
+    shots: function(body, data) {
+        var big = data[0];
+        body.innerHTML = '<div class="pf2m-shots">' + data.map(function(sh) { return pf2Img(sh.url); }).join('') +
+            ((big.caption || big.game) ? '<div class="pf2m-shot-cap">' + esc(big.caption || '') + (big.caption && big.game ? ' · ' : '') + (big.game ? '<i>' + esc(big.game) + '</i>' : '') + '</div>' : '') +
+            '</div>';
+    },
+    review: function(body, r) {
+        body.innerHTML = '<div class="pf2m-rev">' + pf2Img(r.image) + '<div><h3>' + esc(r.title) + (r.artist ? ' — ' + esc(r.artist) : '') +
+            ' <span class="pf2m-stars">' + pf2Stars(r.stars) + '</span></h3><small>' + esc(PF2_CAT_LABEL[r.category] || '') + '</small>' +
+            (r.comment ? '<p>' + esc(r.comment) + '</p>' : '') + '</div></div>';
+    },
+    /* Juego destacado: con Steam, horas, logros X / Y y los elegidos
+       (tocar = su ficha); sin Steam, la reseña. */
+    game_feat: function(body, g) {
+        var st = g.steam, der = '<h3>' + esc(g.title) + '</h3>', fichas = [];
+        if (st && st.inSteam) {
+            der += pf2Ic('steamIcon', 12) + ' <b>' + st.hours.toLocaleString('es') + ' h</b> jugadas';
+            if (st.total) {
+                var pct = Math.round(100 * st.achieved / st.total);
+                der += '<div class="pf2m-gf-p"><span>Logros <b>' + st.achieved + ' / ' + st.total + '</b></span><span>' + pct + ' %</span></div>' +
+                    '<div class="pf2m-hund pf2m-bar"><i style="width:' + pct + '%"></i></div>';
+            }
+            if ((st.items || []).length) der += '<div class="pf2m-gf-achs">' + st.items.map(function(a, i) {
+                fichas.push(pf2Ach(a));
+                return '<img data-ficha="' + i + '" class="' + (a.percent != null && a.percent < 10 ? 'raro' : '') + '" src="' + esc(a.icon) + '" alt="">';
+            }).join('') + '</div>';
+        } else {
+            if (st && !st.inSteam) der += '<div style="opacity:.8">' + pf2Ic('steamIcon', 12) + ' No está en su Steam</div>';
+            der += '<div style="margin-top:4px">Reseña ' + (g.stars != null ? '<span class="pf2m-stars">' + pf2Stars(g.stars) + '</span>' : '<b>Sin reseña</b>') + '</div>' +
+                (g.comment ? '<div style="margin-top:4px;line-height:1.4;white-space:pre-wrap">' + esc(g.comment) + '</div>' : '');
+        }
+        body.innerHTML = '<div class="pf2m-gf">' + (g.image ? pf2Img(g.image) : '<div class="pf2m-noimg">' + esc(g.title) + '</div>') +
+            '<div class="pf2m-gf-t">' + der + '</div></div>';
+        pf2Fichas(body, fichas);
+    },
+    playlist: function(body, pl) {
+        var fmt = function(sec) { sec = sec | 0; return sec ? Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2) : ''; };
+        body.innerHTML = '<div class="pf2m-pl">' + (pl.image ? pf2Img(pl.image) : '<div class="pf2m-noimg"></div>') +
+            '<div class="pf2m-pl-t"><h3>' + esc(pl.name) + '</h3><small>' + pl.count + (pl.count === 1 ? ' canción' : ' canciones') +
+                (pl.owner ? ' · playlist de ' + esc(pl.owner) : '') + '</small>' +
+            '<div class="pf2m-pl-btns">' +
+                (pl.count ? '<button type="button" class="button" data-a="play"><svg viewBox="0 0 8 8" width="8" height="8"><path d="M1 0l6 4-6 4z"/></svg>Reproducir</button>' : '') +
+                (window.melonCopyLink ? '<button type="button" class="button" data-a="link">Copiar enlace</button>' : '') +
+            '</div></div></div>' +
+            '<div class="pf2m-pl-tracks">' + (pl.tracks || []).map(function(t, i) {
+                return '<div class="pf2m-pl-row"><i>' + (i + 1) + '</i><span><b>' + esc(t.title) + '</b>' + (t.artist ? ' — ' + esc(t.artist) : '') +
+                    '</span><em>' + fmt(t.duration) + '</em></div>';
+            }).join('') + '</div>';
+        var pb = body.querySelector('[data-a="play"]');
+        if (pb) pb.addEventListener('click', function() { pf2TocarPlaylist(pl.id, 0); });
+        var lb = body.querySelector('[data-a="link"]');
+        if (lb) lb.addEventListener('click', function() { window.melonCopyLink('playlist', String(pl.id)); });
+        body.querySelectorAll('.pf2m-pl-row').forEach(function(row, i) {
+            pf2Mantener(row, function() {
+                var t = pl.tracks[i];
+                pf2Menu(t.title + (t.artist ? ' — ' + t.artist : ''), [{ label: '▶ Reproducir', fn: function() { pf2TocarPlaylist(pl.id, i); } }]);
+            });
+        });
+    },
+    steam_rare: function(body, d) { PF2_RENDER.logros(body, d); },
+    steam_ach:  function(body, d) { PF2_RENDER.logros(body, d); },
+    logros: function(body, d) {
+        var items = d.items || [], tot = d.totals || {};
+        body.innerHTML = '<div class="pf2m-ach7">' + items.map(function(a, i) {
+            return '<img data-ficha="' + i + '" class="' + (a.percent != null && a.percent < 10 ? 'raro' : '') + '" src="' + esc(a.icon) + '" alt="">';
+        }).join('') + '</div>' +
+            '<div class="pf2m-ach-stats"><div><b>' + (tot.games || 0).toLocaleString('es') + '</b><span>juegos</span></div>' +
+            '<div><b>' + (tot.hours || 0).toLocaleString('es') + '</b><span>horas jugadas</span></div></div>';
+        pf2Fichas(body, items.map(pf2Ach));
+    },
+    text: function(body, d) {
+        body.innerHTML = '<div class="pf2m-txt"></div>';
+        body.firstChild.textContent = d.text;
+    }
+};
+
+/* ─── Personalizar (expositores) ──────────────────────────────────────
+   Decidido así (7/11, boceto aprobado en
+   electron/.e2e/perfil-movil-mock/preview-personalizar.png): el botón
+   "Editar perfil" pasa a ser "Personalizar" y entra en este modo; los
+   datos (bio, cumpleaños…) se editan con el botón "Datos" de dentro.
+   Arriba ✓ Guardar · Datos · Cancelar. Cada expositor con su barra:
+   título (Media favorita: desplegable con el tipo), Editar y ✕; se
+   ORDENA manteniendo pulsada la barra y arrastrando (como el PC, con el
+   dedo). "＋ Añadir expositor" en los huecos libres y "Usas N de M
+   huecos". Los selectores (Editar) son los del PC (perfil-v2.js PICK) en
+   ventanitas del móvil. Nada cambia hasta Guardar (save-showcases, la
+   misma acción que el PC). */
+var PF2_PAID = ['review', 'game_feat', 'playlist'];
+var PF2_MEDIA_CATS = ['games', 'movies', 'series', 'books', 'music'];
+var PF2_MAX = { shots: 3, game_feat: 8, text: 1000 };
+var PF2_FAV_NOUN = { games: ['juego', 'juegos', false], movies: ['película', 'películas', true],
+                     series: ['serie', 'series', true], books: ['libro', 'libros', false] };
+var PF2E = { editing: false, draft: [], catalog: {}, myShots: null };
+
+function pf2Copia(o) { return JSON.parse(JSON.stringify(o)); }
+function pf2Api(action, body) {
+    return fetch(API + '?action=' + action, body === undefined ? { credentials: 'same-origin' } : {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); });
+}
+function pf2Perks() { return ((pf2v() || {}).perks) || {}; }
+function pf2MediaMax(cat) { return (pf2Perks().media || {})[cat] || 3; }
+function pf2AchMax(type) { return 7 * ((pf2Perks().steamRows || {})[type] || 1); }
+function pf2Libre(type) { return PF2_PAID.indexOf(type) < 0 || !!(pf2Perks().unlocked || {})[type]; }
+function pf2MediaUsadas(menos) {
+    return PF2E.draft.filter(function(s) { return s.type === 'media' && s !== menos; }).map(function(s) { return s.config.cat; });
+}
+function pf2Vacia(t, cat) {
+    if (t === 'review') return { config: { category: '', title: '' }, data: {} };
+    if (t === 'media') return { config: cat === 'music' ? { cat: cat, ids: [] } : { cat: cat, titles: [] }, data: [] };
+    if (t === 'steam_rare') return { config: {}, data: {} };
+    if (t === 'steam_ach') return { config: { items: [] }, data: {} };
+    if (t === 'game_feat') return { config: { title: '', ach: [] }, data: {} };
+    if (t === 'playlist') return { config: { id: 0 }, data: {} };
+    if (t === 'text') return { config: { text: '' }, data: {} };
+    return { config: { ids: [] }, data: [] };
+}
+function pf2OwnList(cat) { return (STATE.lists && STATE.lists[cat]) || []; }
+function pf2OwnReview(cat, title) {
+    var low = String(title).toLowerCase();
+    var it = pf2OwnList(cat).find(function(x) { return String(x.title).toLowerCase() === low; });
+    return it && it.review ? it.review : null;
+}
+function pf2CatImg(cat, t) { return PF2E.catalog[cat + '|' + String(t).toLowerCase()]; }
+function pf2SetCatImg(cat, t, img) { if (img) PF2E.catalog[cat + '|' + String(t).toLowerCase()] = img; }
+
+/* Entrar / salir del modo. */
+function pf2Editar(on) {
+    var v2 = pf2v();
+    if (on && !v2) return;
+    PF2E.editing = !!on;
+    if (on) PF2E.draft = pf2Copia(v2.showcases || []);
+    ['pf-edit-profile-btn', 'pf-link-btn'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !!on; });
+    ['pf2-guardar', 'pf2-datos', 'pf2-cancelar'].forEach(function(id) { var b = document.getElementById(id); if (b) b.hidden = !on; });
+    PF2E.steamEsperando = false;
+    PF2E.marco = undefined;   /* marco elegido sin guardar */
+    pf2VistaMarco();
+    if (on) pf2CargarMarcos();
+    renderPf2Steam();
+    renderPf2Expositores();
+    if (on) {
+        var box = document.getElementById('pf2m'), ex = document.getElementById('pf2m-expo');
+        if (box && ex) box.scrollTop = Math.max(0, ex.offsetTop - box.offsetTop - 6);
+    }
+}
+function pf2Guardar() {
+    var b = document.getElementById('pf2-guardar');
+    b.disabled = true;
+    var fr = PF2E.marcos;
+    /* El marco, solo si ha cambiado (como save() del PC). */
+    var marco = (PF2E.marco !== undefined && fr && PF2E.marco !== fr.active)
+        ? pf2Api('set-frame', { slug: PF2E.marco }).then(function(d) {
+            if (!d || !d.ok) return d || { error: 'No se pudo guardar el marco' };
+            fr.active = d.active || '';
+            /* Aquí y en la barra de la carcasa (mobile.php). */
+            if (window.MelonMarcos) MelonMarcos.set(USER_KEY, fr.active);
+            try { if (window.parent !== window && window.parent.MelonMarcos) window.parent.MelonMarcos.set(USER_KEY, fr.active); } catch (_) {}
+            return d;
+        }).catch(function() { return { error: 'Error de conexión al guardar el marco' }; })
+        : Promise.resolve({ ok: true });
+    var expos = pf2Api('save-showcases', { showcases: PF2E.draft.map(function(s) { return { type: s.type, config: s.config }; }) }).then(function(d) {
+        if (!d || !d.ok) return d || { error: 'No se pudieron guardar los expositores' };
+        var v2 = pf2v();
+        v2.showcases = d.showcases; v2.slots = d.slots; if (d.perks) v2.perks = d.perks;
+        return d;
+    }).catch(function() { return { error: 'Error de conexión' }; });
+    Promise.all([expos, marco]).then(function(r) {
+        b.disabled = false;
+        var err = (r[0] && r[0].error) || (r[1] && r[1].error);
+        if (err) { pfAlert(err); return; }
+        pf2Editar(false);
+    });
+}
+
+/* ── Steam (franja de Personalizar; assets/profile/steam.php) ──
+   Como "Conectar Steam" del PC, pero en la app de Android el inicio de
+   sesión de Steam se abre en el navegador del teléfono (no tiene la
+   sesión de aquí): steam-link-start da la URL con un código de un solo
+   uso. Al acabar, el timbre ('steam') o volver a la app ponen esto al día. */
+function renderPf2Steam() {
+    var box = document.getElementById('pf2m-steam');
+    if (!box) return;
+    var v2 = pf2v();
+    if (!PF2E.editing || !v2) { box.hidden = true; box.innerHTML = ''; return; }
+    var st = v2.steam || {};
+    var ico = '<img src="../../assets/img/appIcons/steamIcon.png" alt="">';
+    box.hidden = false;
+    /* Primero "Marco" (como en el PC, junto a lo de Steam). */
+    var marco = '<button type="button" class="button" data-a="marco">Marco</button>';
+    if (!st.configured) {
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + 'Steam no está configurado en la web</span>';
+    } else if (st.linked) {
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + '<b>' + esc(st.persona || 'Steam vinculado') + '</b></span>' +
+            '<button type="button" class="button" data-a="off">Desconectar</button>' +
+            (st['private'] ? '<div class="pf2m-steam-nota is-aviso">Tu perfil de Steam es privado: pon el perfil y "Detalles del juego" en público.</div>' : '');
+        box.querySelector('[data-a="off"]').addEventListener('click', function() {
+            pfConfirm('¿Desconectar tu cuenta de Steam?', 'Desconectar', function() {
+                pf2Api('steam-disconnect', {}).then(function(d) {
+                    if (!d || !d.ok) { pfAlert((d && d.error) || 'No se pudo desconectar'); return; }
+                    pf2SteamAlDia();
+                }).catch(function() { pfAlert('Error de conexión'); });
+            });
+        });
+    } else {
+        box.innerHTML = marco + '<span class="pf2m-steam-t">' + ico + 'Steam</span>' +
+            '<button type="button" class="button" data-a="on">' + ico + 'Conectar Steam</button>' +
+            (PF2E.steamEsperando ? '<div class="pf2m-steam-nota">Inicia sesión en Steam en el navegador y vuelve aquí.</div>' : '');
+        box.querySelector('[data-a="on"]').addEventListener('click', function() {
+            var b = this;
+            b.disabled = true;
+            pf2Api('steam-link-start', {}).then(function(d) {
+                b.disabled = false;
+                if (!d || !d.ok || !d.url) { pfAlert((d && d.error) || 'No se pudo abrir Steam'); return; }
+                /* Un enlace normal: la app lo abre fuera (como el icono de Steam
+                   del perfil); en el navegador, en otra pestaña. */
+                var a = document.createElement('a');
+                a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                document.body.appendChild(a); a.click(); a.remove();
+                PF2E.steamEsperando = true;
+                renderPf2Steam();
+            }).catch(function() { b.disabled = false; pfAlert('Error de conexión'); });
+        });
+    }
+    box.querySelector('[data-a="marco"]').addEventListener('click', pf2AbrirMarcos);
+}
+
+/* ── Racha diaria e invitaciones (assets/profile/racha.php) ──
+   Como el PC (perfil-v2.js renderRacha / openInvite): fueguito al lado
+   del nombre, apagado (gris) hasta que lo pulsas hoy y encendido después,
+   con los días. En el perfil de otra persona se ve su racha sin pulsar.
+   En el móvil no hay "title" al pasar el ratón: tocarlo cuando ya no se
+   puede encender enseña ese mismo texto en un aviso. */
+function pf2Fuego(on) {
+    var fuera = [[6,6],[5,6],[5,7],[4,7],[4,8],[3,8],[2,9],[2,9],[1,10],[1,10],[1,10],[2,9],[3,8],[4,7]];
+    var dentro = { 7: [5,6], 8: [4,7], 9: [4,7], 10: [4,7], 11: [5,6] };
+    var c1 = on ? '#ff7a1a' : '#8c8c8c', c2 = on ? '#ffd34d' : '#c8c8c8';
+    var r = '';
+    fuera.forEach(function(x, y) { r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c1 + '"/>'; });
+    Object.keys(dentro).forEach(function(y) { var x = dentro[y]; r += '<rect x="' + x[0] + '" y="' + y + '" width="' + (x[1] - x[0] + 1) + '" height="1" fill="' + c2 + '"/>'; });
+    return '<svg viewBox="0 0 12 14" shape-rendering="crispEdges" aria-hidden="true">' + r + '</svg>';
+}
+function pf2Dias(n) { return n + (n === 1 ? ' día' : ' días'); }
+/* Aviso de la carcasa (mToast de mobile.php); fuera de ella, la ventanita. */
+function pf2Aviso(titulo, texto) {
+    try {
+        if (window.parent !== window && window.parent.mToast) {
+            window.parent.mToast({ id: 'racha', title: esc(titulo), message: esc(texto), duration: 6000 });
+            return;
+        }
+    } catch (_) {}
+    pfAlert(titulo + (texto ? ' · ' + texto : ''));
+}
+function pf2RachaTexto(r, own) {
+    if (own && !r.today) {
+        var t = 'Enciende tu racha de hoy (+' + r.puntosHoy + ' puntos de autismo)';
+        if (r.enPeligro) t += '. Ayer no la encendiste: tu protector de racha la salva';
+        else if (r.current) t += '. Llevas ' + pf2Dias(r.current);
+        return t;
+    }
+    var s = 'Racha de ' + pf2Dias(r.current || 0) + ' · mejor: ' + pf2Dias(r.best || 0);
+    if (own) s += r.protector ? ' · protector de racha guardado' : ' · sin protector de racha';
+    return s;
+}
+function renderPf2Racha() {
+    var el = document.getElementById('pf2m-racha');
+    if (!el) return;
+    var v2 = pf2v(), r = v2 && v2.racha;
+    if (!r) { el.innerHTML = ''; return; }
+    var own = !STATE.viewingUser, on = !!r.today;
+    el.className = 'pf2m-racha ' + (on ? 'is-on' : 'is-off') + (own && !on ? ' is-btn' : '');
+    el.innerHTML = pf2Fuego(on) + '<b>' + (r.current || 0) + '</b>';
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', pf2RachaTexto(r, own));
+}
+var PF2_RACHA_PIDIENDO = false;
+(function setupPf2Racha() {
+    var el = document.getElementById('pf2m-racha');
+    if (!el) return;
+    el.addEventListener('click', function() {
+        var v2 = pf2v(), r = v2 && v2.racha;
+        if (!r) return;
+        var own = !STATE.viewingUser;
+        if (!own || r.today) { pf2Aviso(own ? 'Tu racha' : 'Racha de ' + (STATE.viewingLabel || '?'), pf2RachaTexto(r, own)); return; }
+        if (PF2_RACHA_PIDIENDO) return;
+        PF2_RACHA_PIDIENDO = true;
+        pf2Api('streak-claim', {}).then(function(d) {
+            PF2_RACHA_PIDIENDO = false;
+            if (!d || !d.ok) { if (d && d.error) pfAlert(d.error); return; }
+            v2.racha = d.racha;
+            renderPf2Racha();
+            var g = d.ganado || {};
+            var lineas = ['+' + g.dia + ' puntos de autismo'];
+            (g.hitos || []).forEach(function(h) { lineas.push('¡' + h.dias + ' días de racha! +' + h.puntos + ' puntos'); });
+            if (g.invitacion) lineas.push('Invitación cumplida: +' + g.invitacion + ' puntos');
+            if (g.protector) lineas.push('Tu protector de racha la ha salvado');
+            pf2Aviso('Racha de ' + pf2Dias(d.racha.current), lineas.join(' · '));
+        }).catch(function() { PF2_RACHA_PIDIENDO = false; pfAlert('Error de conexión'); });
     });
 })();
 
-/* Botón "Seguir" — solo aparece viendo otro perfil. Toggle. */
-document.getElementById('pf-follow-btn').addEventListener('click', function(){
-    if (!STATE.viewingUser) return;
-    var btn = this;
-    btn.disabled = true;
-    fetch(API + '?action=toggle-follow', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUser: STATE.viewingUser })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        btn.disabled = false;
-        if (d && typeof d.following === 'boolean') {
-            updateFollowBtn(d.following);
-            /* El server devuelve la lista canónica → la usamos. */
-            if (Array.isArray(d.list)) STATE.myFollowing = d.list.slice();
+/* Invitar (menú lateral): el enlace de invitación (enlace.php?invitar=…)
+   y cómo van mis invitaciones. Tocar una = su perfil. */
+function pf2AbrirInvitar() {
+    var v = pf2Ventana('Invitar a Melon Hub');
+    var url = window.melonLinkUrl ? window.melonLinkUrl('invitar', USER_KEY) : '';
+    v.body.innerHTML =
+        '<div class="pf2m-inv-txt">Si alguien se crea una cuenta con tu enlace y llega a 7 días de racha en sus primeros 14 días, os lleváis 500 puntos de autismo cada uno.</div>' +
+        '<div class="pf2m-inv-link"><input type="text" readonly aria-label="Enlace de invitación"><button type="button" class="button" data-a="copy">Copiar enlace</button></div>' +
+        '<div class="pf2m-inv-h">Mis invitaciones</div>' +
+        '<div class="pf2m-inv-list"><div class="pf2m-inv-vacio">Cargando…</div></div>' +
+        '<div class="modal-actions"><button type="button" class="button" data-a="cerrar">Cerrar</button></div>';
+    var input = v.body.querySelector('input');
+    input.value = url;
+    input.addEventListener('focus', function() { input.select(); });
+    v.body.querySelector('[data-a="copy"]').addEventListener('click', function() { if (window.melonCopyLink) window.melonCopyLink('invitar', USER_KEY); });
+    v.body.querySelector('[data-a="cerrar"]').addEventListener('click', v.close);
+    var list = v.body.querySelector('.pf2m-inv-list');
+    pf2Api('invites').then(function(d) {
+        var inv = (d && d.invites) || [];
+        if (!inv.length) { list.innerHTML = '<div class="pf2m-inv-vacio">Aún no has invitado a nadie.</div>'; return; }
+        list.innerHTML = inv.map(function(i) {
+            var st = i.estado === 'cobrada' ? '+' + d.puntos + ' puntos conseguidos'
+                   : i.estado === 'caducada' ? 'Caducada'
+                   : 'Racha ' + i.racha + ' / ' + d.racha + ' · quedan ' + pf2Dias(i.quedan);
+            return '<div class="pf2m-inv-row is-' + esc(i.estado) + '" data-key="' + esc(i.key) + '">' +
+                '<span class="pf2m-inv-av" data-marco-user="' + esc(i.key) + '">' +
+                (i.image ? '<img src="' + esc(pf2Ruta(i.image)) + '" alt="">' : esc((i.label || '?').slice(0, 2))) + '</span>' +
+                '<span class="pf2m-inv-name">' + esc(i.label) + '</span><span class="pf2m-inv-st">' + esc(st) + '</span></div>';
+        }).join('');
+        list.querySelectorAll('[data-key]').forEach(function(row) {
+            row.addEventListener('click', function() { v.close(); viewOtherUser(row.dataset.key); });
+        });
+    }).catch(function() { list.innerHTML = '<div class="pf2m-inv-vacio">No se han podido cargar.</div>'; });
+}
+
+/* ── Marco de la foto (assets/profile/marcos.php; en el PC, el botón
+   "Marco" de Personalizar) ──
+   Ventanita con tu foto en cada marco comprado (pestaña Perfil de la
+   tienda) y "Sin marco". Aceptar lo enseña ya en la cabecera
+   (data-marco-preview); se guarda con "Guardar" y "Cancelar" lo quita. */
+function pf2CargarMarcos() {
+    PF2E.marcosP = pf2Api('my-frames').then(function(d) {
+        if (d && d.ok) PF2E.marcos = { owned: d.owned || [], active: d.active || '' };
+    }).catch(function() {});
+    return PF2E.marcosP;
+}
+function pf2VistaMarco() {
+    var el = document.getElementById('pf-userbar-avatar');
+    if (!el) return;
+    if (PF2E.editing && PF2E.marco !== undefined) el.setAttribute('data-marco-preview', PF2E.marco);
+    else el.removeAttribute('data-marco-preview');
+}
+function pf2AbrirMarcos() {
+    (PF2E.marcosP || pf2CargarMarcos()).then(function() {
+        var fr = PF2E.marcos || { owned: [], active: '' };
+        var sel = PF2E.marco !== undefined ? PF2E.marco : fr.active;
+        var img = document.querySelector('#pf-userbar-avatar img');
+        var foto = img ? '<img src="' + esc(img.getAttribute('src')) + '" alt="">' : '<span class="pf2m-mk-ph"></span>';
+        var v = pf2Ventana('Marco de la foto');
+        var grid = document.createElement('div');
+        grid.className = 'pf2m-mk-grid';
+        grid.innerHTML = [{ slug: '', nombre: 'Sin marco' }].concat(fr.owned).map(function(m) {
+            return '<div class="pf2m-mk' + (m.slug === sel ? ' on' : '') + '" data-slug="' + esc(m.slug) + '">' +
+                '<div class="pf2m-mk-hueco"><span class="pf2m-mk-foto" data-marco-preview="' + esc(m.slug) + '">' + foto + '</span></div>' +
+                '<div class="pf2m-mk-t">' + esc(m.nombre) + '</div></div>';
+        }).join('');
+        grid.addEventListener('click', function(e) {
+            var c = e.target.closest('.pf2m-mk');
+            if (!c) return;
+            sel = c.dataset.slug;
+            grid.querySelectorAll('.pf2m-mk').forEach(function(x) { x.classList.toggle('on', x === c); });
+        });
+        v.body.appendChild(grid);
+        var info = pf2Pie(v, function() { PF2E.marco = sel; pf2VistaMarco(); });
+        info.textContent = fr.owned.length ? 'Se guarda al pulsar "Guardar".' : 'Aún no tienes marcos: están en la tienda, pestaña Perfil.';
+    });
+}
+
+/* Vuelve a pedir el estado de Steam (y el icono de Steam de la cabecera,
+   que el vincular y el desconectar cambian). Los expositores en edición
+   se quedan como están: solo se repintan (el texto de los vacíos de
+   Steam depende de si está conectado). */
+function pf2SteamAlDia() {
+    return pf2Api('get-profile').then(function(p) {
+        var v2 = pf2v();
+        if (!p || !p.v2 || !v2 || STATE.viewingUser) return;
+        var antes = !!(v2.steam && v2.steam.linked);
+        v2.steam = p.v2.steam;
+        if (STATE.profile) { STATE.profile.steam = p.steam; renderAbout(STATE.profile); }
+        if (v2.steam && v2.steam.linked !== antes) PF2E.steamEsperando = false;
+        renderPf2Steam();
+        renderPf2Expositores();
+    }).catch(function() {});
+}
+(function setupPf2Steam() {
+    function siEspera() { if (PF2E.editing && PF2E.steamEsperando) pf2SteamAlDia(); }
+    var t = timbreMovil();
+    if (t) {
+        var baja = t.on('steam', function() { if (PF2E.editing) pf2SteamAlDia(); });
+        window.addEventListener('pagehide', function() { try { baja(); } catch (_) {} });
+    }
+    /* Al volver del navegador (por si el timbre tarda). */
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) siEspera(); });
+    window.addEventListener('focus', siEspera);
+})();
+
+/* Los expositores en modo Personalizar (lo llama renderPf2Expositores). */
+function renderPf2Edicion(box) {
+    var v2 = pf2v();
+    box.innerHTML = '';
+    PF2E.draft.forEach(function(sc, i) {
+        var t = sc.type === 'media' ? (PF2_MEDIA[sc.config.cat] || PF2_MEDIA.games) : PF2_TYPES[sc.type];
+        if (!t) return;
+        var titulo = '<span class="pf2m-ed-t">' + esc(t.label) + '</span>';
+        if (sc.type === 'media') {
+            var usadas = pf2MediaUsadas(sc);
+            titulo = '<select class="pf2m-ed-sel" aria-label="Tipo">' + PF2_MEDIA_CATS.filter(function(c) {
+                return c === sc.config.cat || usadas.indexOf(c) < 0;
+            }).map(function(c) {
+                return '<option value="' + c + '"' + (c === sc.config.cat ? ' selected' : '') + '>' + esc(PF2_MEDIA[c].label) + '</option>';
+            }).join('') + '</select>';
         }
-    })
-    .catch(function(){ btn.disabled = false; });
+        var w = document.createElement('div');
+        w.className = 'window pf2m-x pf2m-ed';
+        w.dataset.idx = i;
+        w.innerHTML = '<div class="title-bar pf2m-ed-bar"><div class="title-bar-text"><span class="pf2m-ed-asa" aria-hidden="true">⠿</span>' + pf2Ic(t.icon) + titulo +
+            (sc.type === 'steam_rare' || sc.locked ? '' : '<button type="button" class="button pf2m-ed-btn" data-a="edit">Editar</button>') +
+            '<button type="button" class="button pf2m-ed-btn" data-a="del" aria-label="Quitar expositor">✕</button></div></div><div class="window-body"></div>';
+        var body = w.querySelector('.window-body');
+        if (sc.locked) body.innerHTML = '<div class="pf2m-vacio pf2m-ed-lock">Bloqueado: cómpralo en la tienda (pestaña Perfil) para que salga en tu perfil.</div>';
+        else if (pf2Vacio(sc)) {
+            /* Lo de Steam explica qué falta; lo demás, que se elige con Editar. */
+            var tv = pf2TextoVacio(sc.type);
+            body.innerHTML = '<div class="pf2m-vacio">' + esc(/^Vacío/.test(tv) ? 'Pulsa "Editar" para elegir qué enseñar.' : tv) + '</div>';
+        }
+        else PF2_RENDER[sc.type](body, sc.data, sc);
+        var sel = w.querySelector('.pf2m-ed-sel');
+        if (sel) sel.addEventListener('change', function() {
+            var b = pf2Vacia('media', sel.value);
+            sc.config = b.config; sc.data = b.data;
+            renderPf2Expositores();
+        });
+        var eb = w.querySelector('[data-a="edit"]');
+        if (eb) eb.addEventListener('click', function() { pf2AbrirSelector(i); });
+        w.querySelector('[data-a="del"]').addEventListener('click', function() {
+            PF2E.draft.splice(i, 1);
+            renderPf2Expositores();
+        });
+        pf2Arrastrable(w, box);
+        box.appendChild(w);
+    });
+    var usados = PF2E.draft.length, huecos = v2.slots || 2, max = v2.maxSlots || 5;
+    for (var k = usados; k < huecos; k++) {
+        var add = document.createElement('div');
+        add.className = 'pf2m-slot add';
+        add.textContent = '＋ Añadir expositor';
+        add.addEventListener('click', pf2AbrirTipos);
+        box.appendChild(add);
+    }
+    var info = document.createElement('div');
+    info.className = 'pf2m-slot-info';
+    info.innerHTML = 'Usas <b>' + usados + ' de ' + huecos + '</b> huecos' +
+        (huecos < max ? ' · consigue más en la tienda de puntos (hasta ' + max + ')' : ' (máximo)');
+    box.appendChild(info);
+}
+
+/* Ordenar: mantener pulsado el expositor (500 ms; en cualquier sitio
+   menos los botones y el desplegable, que en Media favorita ocupa casi
+   toda la barra) y arrastrar. Mientras se
+   arrastra no hay scroll de la página (se mueve sola cerca de los
+   bordes) y el expositor se coloca delante del primero cuyo centro queda
+   por debajo del dedo. Al soltar, el borrador toma el orden nuevo. */
+function pf2Arrastrable(w, box) {
+    var bar = w;
+    var t = null, x0 = 0, y0 = 0, arr = false, scrollT = null, ultY = 0;
+    var scroller = document.getElementById('pf2m');
+    var parar = function() { if (t) { clearTimeout(t); t = null; } bar.classList.remove('long-pressing'); };
+    var empezar = function(x, y, e) {
+        if (e.target.closest('button, select')) return;
+        parar(); x0 = x; y0 = y;
+        bar.classList.add('long-pressing');
+        t = setTimeout(function() {
+            t = null; arr = true; ultY = y0;
+            bar.classList.remove('long-pressing');
+            w.classList.add('pf2m-arrastra');
+            try { navigator.vibrate && navigator.vibrate(40); } catch (_) {}
+            scrollT = setInterval(function() {
+                var r = scroller.getBoundingClientRect();
+                if (ultY < r.top + 50) scroller.scrollTop -= 12;
+                else if (ultY > r.bottom - 50) scroller.scrollTop += 12;
+                else return;
+                colocar(ultY);
+            }, 30);
+        }, 500);
+    };
+    var colocar = function(y) {
+        var otros = Array.prototype.filter.call(box.querySelectorAll('.pf2m-ed'), function(x) { return x !== w; });
+        var antes = otros.find(function(x) { var r = x.getBoundingClientRect(); return y < r.top + r.height / 2; });
+        if (antes) { if (w.nextSibling !== antes) box.insertBefore(w, antes); }
+        else {
+            var ultimo = otros[otros.length - 1];
+            if (ultimo && ultimo.nextSibling !== w) box.insertBefore(w, ultimo.nextSibling);
+        }
+    };
+    var mover = function(x, y, e) {
+        if (t && (Math.abs(x - x0) > 12 || Math.abs(y - y0) > 12)) parar();
+        if (!arr) return;
+        if (e.cancelable) e.preventDefault();
+        ultY = y;
+        colocar(y);
+    };
+    var soltar = function() {
+        parar();
+        if (!arr) return;
+        arr = false;
+        clearInterval(scrollT);
+        w.classList.remove('pf2m-arrastra');
+        var orden = Array.prototype.map.call(box.querySelectorAll('.pf2m-ed'), function(x) { return +x.dataset.idx; });
+        PF2E.draft = orden.map(function(i) { return PF2E.draft[i]; });
+        renderPf2Expositores();
+    };
+    bar.addEventListener('touchstart', function(e) { if (e.touches.length === 1) empezar(e.touches[0].clientX, e.touches[0].clientY, e); }, { passive: true });
+    bar.addEventListener('touchmove', function(e) { mover(e.touches[0].clientX, e.touches[0].clientY, e); }, { passive: false });
+    bar.addEventListener('touchend', soltar);
+    bar.addEventListener('touchcancel', soltar);
+    bar.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    /* Ratón (pruebas en el escritorio): el mismo gesto. */
+    bar.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        empezar(e.clientX, e.clientY, e);
+        var mm = function(ev) { mover(ev.clientX, ev.clientY, ev); };
+        var mu = function() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); soltar(); };
+        document.addEventListener('mousemove', mm);
+        document.addEventListener('mouseup', mu);
+    });
+}
+
+/* "＋ Añadir expositor": los tipos que faltan (Media favorita mientras
+   quede algún tipo libre; los de pago, solo comprados, como el PC). */
+function pf2AbrirTipos() {
+    var usados = PF2E.draft.map(function(s) { return s.type; });
+    var libres = PF2_MEDIA_CATS.filter(function(c) { return pf2MediaUsadas(null).indexOf(c) < 0; });
+    var filas = [];
+    libres.forEach(function(c) { filas.push({ t: 'media', cat: c, label: PF2_MEDIA[c].label, icon: PF2_MEDIA[c].icon }); });
+    Object.keys(PF2_TYPES).forEach(function(t) {
+        if (t === 'media' || usados.indexOf(t) >= 0 || !pf2Libre(t)) return;
+        filas.push({ t: t, label: PF2_TYPES[t].label, icon: PF2_TYPES[t].icon, pago: PF2_PAID.indexOf(t) >= 0 });
+    });
+    var bd = pf2Ventana('Añadir expositor');
+    bd.body.innerHTML = (filas.length ? filas.map(function(f, i) {
+        return '<div class="pf2m-tipo" data-i="' + i + '">' + pf2Ic(f.icon) + esc(f.label) + (f.pago ? '<small>De pago</small>' : '') + '</div>';
+    }).join('') : '<div class="pf2m-vacio">Ya tienes todos los tipos.</div>') +
+        '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div>';
+    bd.body.querySelector('[data-act="close"]').addEventListener('click', bd.close);
+    bd.body.querySelectorAll('[data-i]').forEach(function(el) {
+        el.addEventListener('click', function() {
+            var f = filas[+el.dataset.i], b = pf2Vacia(f.t, f.cat);
+            bd.close();
+            PF2E.draft.push({ type: f.t, config: b.config, data: b.data });
+            renderPf2Expositores();
+            /* Los raros se calculan solos al guardar. */
+            if (f.t !== 'steam_rare') pf2AbrirSelector(PF2E.draft.length - 1);
+        });
+    });
+}
+
+/* Ventanita del móvil (como pfConfirm) para los selectores. */
+function pf2Ventana(titulo) {
+    var bd = document.createElement('div');
+    bd.className = 'pf-modal-backdrop';
+    bd.innerHTML = '<div class="window pf-modal pf2m-picker"><div class="title-bar"><div class="title-bar-text">' + esc(titulo) + '</div>' +
+        '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div></div><div class="window-body"></div></div>';
+    document.body.appendChild(bd);
+    var close = function() { if (bd.parentNode) bd.parentNode.removeChild(bd); window.__pf2mAfterAdd = null; };
+    bd.querySelector('.title-bar-controls button').addEventListener('click', close);
+    return { bd: bd, body: bd.querySelector('.window-body'), close: close };
+}
+/* Pie: información + Aceptar / Cancelar. */
+function pf2Pie(v, onOk) {
+    var f = document.createElement('div');
+    f.className = 'pf2m-pie';
+    f.innerHTML = '<span></span><button type="button" class="button" data-a="ok">Aceptar</button><button type="button" class="button" data-a="no">Cancelar</button>';
+    f.querySelector('[data-a="ok"]').addEventListener('click', function() { if (onOk() === false) return; v.close(); renderPf2Expositores(); });
+    f.querySelector('[data-a="no"]').addEventListener('click', v.close);
+    v.body.appendChild(f);
+    return f.querySelector('span');
+}
+function pf2AbrirSelector(idx) {
+    var sc = PF2E.draft[idx];
+    if (!sc || sc.locked) return;
+    if (sc.type === 'media') { if (sc.config.cat === 'music') PF2_PICK.music(sc); else PF2_PICK.fav(sc, sc.config.cat); return; }
+    if (PF2_PICK[sc.type]) PF2_PICK[sc.type](sc);
+}
+/* Casilla de una cuadrícula de selector (póster, cuadrada o 16:9). */
+function pf2Casilla(attr, valor, img, titulo, n, forma) {
+    return '<div class="pf2m-pk ' + (forma || 'portrait') + (n ? ' on' : '') + '" data-' + attr + '="' + esc(valor) + '">' +
+        (img ? '<img src="' + esc(pf2Ruta(img)) + '" alt="" loading="lazy">' : '<div class="pf2m-pk-ph"></div>') +
+        (n ? '<span class="pf2m-pk-n">' + n + '</span>' : '') + '<div class="pf2m-pk-t">' + esc(titulo) + '</div></div>';
+}
+function pf2Marcar(grid, attr, sel, conv) {
+    grid.querySelectorAll('.pf2m-pk').forEach(function(e) {
+        var v = e.dataset[attr], n = sel.indexOf(conv ? conv(v) : v) + 1;
+        e.classList.toggle('on', n > 0);
+        var b = e.querySelector('.pf2m-pk-n');
+        if (n && !b) { b = document.createElement('span'); b.className = 'pf2m-pk-n'; e.insertBefore(b, e.querySelector('.pf2m-pk-t')); }
+        if (n) b.textContent = n; else if (b) b.remove();
+    });
+}
+/* Portada del álbum de un disco sin portada (find-album, como el PC). */
+function pf2BuscarPortada(it) {
+    var key = 'pf2:cover:' + (it.ytId || (it.title + '|' + it.artist));
+    try { var c = localStorage.getItem(key); if (c) return Promise.resolve(c); } catch (_) {}
+    var q = '../../assets/music/api.php?action=find-album&title=' + encodeURIComponent(it.title || '') +
+        '&artist=' + encodeURIComponent(it.artist || '') + (it.ytId ? '&videoId=' + encodeURIComponent(it.ytId) : '');
+    return fetch(q, { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
+        var url = (d && (d.albumImage || d.image)) || '';
+        if (url) { try { localStorage.setItem(key, url); } catch (_) {} }
+        return url;
+    }).catch(function() { return ''; });
+}
+function pf2EsMiniYt(u) { return /ytimg\.com|youtube\.com|img\.youtube/i.test(u || ''); }
+
+/* Google Drive de la Galería (mismo permiso, carpeta y token que
+   galeria-mobile.php): para Capturas. */
+var PF2_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+var PF2_DRIVE_FOLDER = 'Scrapbook Melon - Galería';
+function pf2DriveToken() {
+    try { var t = JSON.parse(localStorage.getItem('galeria_drive_token') || 'null'); if (t && t.expires_at > Date.now() + 30000) return t; } catch (_) {}
+    return null;
+}
+function pf2DriveConectar(cb) {
+    var listo = function() { return window.google && google.accounts && google.accounts.oauth2; };
+    var seguir = function() {
+        if (!PF2_GOOGLE_CLIENT_ID) { cb(new Error('Google no está configurado en la web')); return; }
+        google.accounts.oauth2.initTokenClient({ client_id: PF2_GOOGLE_CLIENT_ID, scope: PF2_DRIVE_SCOPE, callback: function(resp) {
+            if (resp.error) { cb(new Error(resp.error)); return; }
+            var t = { access_token: resp.access_token, expires_at: Date.now() + resp.expires_in * 1000 - 60000 };
+            try { localStorage.setItem('galeria_drive_token', JSON.stringify(t)); localStorage.setItem('galeria_drive_ever_auth', '1'); } catch (_) {}
+            cb(null, t);
+        } }).requestAccessToken({ prompt: '' });
+    };
+    if (listo()) { seguir(); return; }
+    if (!document.querySelector('script[data-pf2-gis]')) {
+        var s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.setAttribute('data-pf2-gis', '1');
+        document.head.appendChild(s);
+    }
+    var n = 0, iv = setInterval(function() {
+        if (listo()) { clearInterval(iv); seguir(); }
+        else if (++n > 80) { clearInterval(iv); cb(new Error('no se pudo cargar el inicio de sesión de Google')); }
+    }, 250);
+}
+function pf2Drive(url, opts) {
+    var t = pf2DriveToken();
+    if (!t) return Promise.reject({ auth: true });
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + t.access_token });
+    return fetch(url, opts).then(function(r) {
+        if (r.status === 401) { try { localStorage.removeItem('galeria_drive_token'); } catch (_) {} throw { auth: true }; }
+        if (!r.ok) return r.text().then(function(x) { throw new Error('Drive ' + r.status + ': ' + x.slice(0, 120)); });
+        return r;
+    });
+}
+function pf2Galeria() {
+    var q = "mimeType='application/vnd.google-apps.folder' and name='" + PF2_DRIVE_FOLDER.replace(/'/g, "\\'") + "' and trashed=false";
+    return pf2Drive('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)&spaces=drive')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.files || !d.files.length) return [];
+            var q2 = "'" + d.files[0].id + "' in parents and trashed=false and mimeType contains 'image/'";
+            return pf2Drive('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q2) +
+                '&fields=files(id,name,mimeType,thumbnailLink)&orderBy=modifiedTime desc&pageSize=200')
+                .then(function(r) { return r.json(); })
+                .then(function(x) { return (x.files || []).filter(function(f) { return !/\.(psd|kra|ora|csp)$/i.test(f.name); }); });
+        });
+}
+function pf2DriveMini(f, ph) {
+    var poner = function(url) {
+        var img = new Image();
+        img.alt = ''; img.referrerPolicy = 'no-referrer'; img.src = url;
+        if (ph.parentNode) ph.parentNode.replaceChild(img, ph);
+    };
+    var blob = function() {
+        pf2Drive('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media').then(function(r) { return r.blob(); })
+            .then(function(b) { poner(URL.createObjectURL(b)); }).catch(function() {});
+    };
+    if (!f.thumbnailLink) { blob(); return; }
+    var p = new Image();
+    p.referrerPolicy = 'no-referrer';
+    p.onload = function() { poner(f.thumbnailLink); };
+    p.onerror = blob;
+    p.src = f.thumbnailLink;
+}
+function pf2DrivePublico(id) {
+    return pf2Drive('https://www.googleapis.com/drive/v3/files/' + id + '/permissions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    }).catch(function(e) {
+        if (e && e.auth) throw new Error('Tu conexión con Google Drive ha caducado: vuelve a abrir Capturas.');
+        if (!/duplicate|alreadyExists|exists/i.test((e && e.message) || '')) throw e;
+    });
+}
+
+var PF2_PICK = {
+    /* Juegos, películas, series, libros: del catálogo de todos; los
+       elegidos salen primero, numerados por orden. "＋ Crear …" abre el
+       diálogo de añadir a la lista y lo deja elegido. */
+    fav: function(sc, cat) {
+        var noun = PF2_FAV_NOUN[cat], fem = noun[2], max = pf2MediaMax(cat);
+        var sel = (sc.config.titles || []).slice(0, max), res = [];
+        var v = pf2Ventana(PF2_MEDIA[cat].label);
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar ' + noun[0] + '…"><button type="button" class="button" data-a="new">＋ Crear ' + noun[0] + '</button></div>' +
+            '<div class="pf2m-pk-grid pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var info = pf2Pie(v, function() {
+            var prev = sc.data || [];
+            sc.config = { cat: cat, titles: sel.slice() };
+            sc.data = sel.map(function(t) {
+                var rv = pf2OwnReview(cat, t);
+                var own = pf2OwnList(cat).find(function(x) { return x.title.toLowerCase() === t.toLowerCase(); });
+                var old = prev.find(function(x) { return x && x.title === t; });
+                var d = { title: t, image: pf2CatImg(cat, t) || (own && own.image) || '', stars: rv ? rv.stars : null };
+                if (old && old.steam !== undefined) d.steam = old.steam;
+                return d;
+            });
+        });
+        var pintar = function() {
+            var titulos = sel.concat(res.map(function(g) { return g.title; }).filter(function(t) { return sel.indexOf(t) < 0; }));
+            grid.innerHTML = titulos.length ? titulos.map(function(t) {
+                return pf2Casilla('t', t, pf2CatImg(cat, t), t, sel.indexOf(t) + 1);
+            }).join('') : '<div class="pf2m-vacio">No hay ' + noun[1] + ' con ese nombre. Puedes ' + (fem ? 'crearla' : 'crearlo') + '.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var t = el.dataset.t, k = sel.indexOf(t);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(t);
+                    pf2Marcar(grid, 't', sel);
+                    info.textContent = sel.length + ' de ' + max + ' · toca para elegir; el número es el orden';
+                });
+            });
+            info.textContent = sel.length + ' de ' + max + ' · toca para elegir; el número es el orden';
+        };
+        var timer = null;
+        var buscar = function() {
+            pf2Api('game-catalog&cat=' + cat + '&q=' + encodeURIComponent(input.value.trim())).then(function(d) {
+                res = (d && d.games) || [];
+                res.forEach(function(x) { pf2SetCatImg(cat, x.title, x.image); });
+                pintar();
+            });
+        };
+        input.addEventListener('input', function() { clearTimeout(timer); timer = setTimeout(buscar, 250); });
+        v.body.querySelector('[data-a="new"]').addEventListener('click', function() {
+            window.__pf2mAfterAdd = function(c, item) {
+                if (c !== cat) return;
+                pf2SetCatImg(cat, item.title, item.image);
+                if (sel.indexOf(item.title) < 0 && sel.length < max) sel.push(item.title);
+                buscar();
+            };
+            openAddItemDialog(cat);
+        });
+        sel.forEach(function(t) {
+            var own = pf2OwnList(cat).find(function(x) { return x.title.toLowerCase() === t.toLowerCase(); });
+            if (own && own.image && !pf2CatImg(cat, t)) pf2SetCatImg(cat, t, own.image);
+        });
+        (sc.data || []).forEach(function(d) { pf2SetCatImg(cat, d.title, d.image); });
+        buscar();
+    },
+    /* Música favorita: de mi lista de música (hasta 3, 5 con mejoras). */
+    music: function(sc) {
+        var max = pf2MediaMax('music'), sel = (sc.config.ids || []).slice(0, max);
+        var items = pf2OwnList('music').filter(function(it) { return /^\d+$/.test(String(it.id)); });
+        var v = pf2Ventana('Música favorita');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-grid pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var info = pf2Pie(v, function() {
+            sc.config = { cat: 'music', ids: sel.slice() };
+            sc.data = sel.map(function(id) {
+                var it = items.find(function(x) { return +x.id === id; });
+                if (!it) return null;
+                var prev = (sc.data || []).find(function(d) { return d && d.id === id; });
+                return { id: id, title: it.title, artist: it.artist || '', type: it.type || 'song', ytId: it.ytId || '',
+                         ytPlaylistId: it.ytPlaylistId || '', spotifyAlbumId: it.spotifyAlbumId || '',
+                         cover: (prev && prev.cover) || (pf2EsMiniYt(it.image) ? '' : (it.image || '')) };
+            }).filter(Boolean);
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = items.filter(function(it) { return !q || (it.title + ' ' + (it.artist || '')).toLowerCase().indexOf(q) >= 0; });
+            grid.innerHTML = r.length ? r.map(function(it) {
+                return pf2Casilla('id', it.id, pf2EsMiniYt(it.image) ? '' : it.image, it.title, sel.indexOf(+it.id) + 1, 'square');
+            }).join('') : '<div class="pf2m-vacio">No tienes música en tu lista.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                var ph = el.querySelector('.pf2m-pk-ph');
+                if (ph) {
+                    var it = items.find(function(x) { return String(x.id) === el.dataset.id; });
+                    if (it) pf2BuscarPortada(it).then(function(url) { if (url && ph.parentNode) ph.outerHTML = '<img src="' + esc(url) + '" alt="">'; });
+                }
+                el.addEventListener('click', function() {
+                    var id = +el.dataset.id, k = sel.indexOf(id);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < max) sel.push(id);
+                    pf2Marcar(grid, 'id', sel, Number);
+                    info.textContent = sel.length + ' de ' + max;
+                });
+            });
+            info.textContent = sel.length + ' de ' + max;
+        };
+        input.addEventListener('input', pintar);
+        pintar();
+    },
+    /* Reseña destacada: una de mis reseñas. */
+    review: function(sc) {
+        var cur = sc.config && sc.config.title ? sc.config.category + '|' + sc.config.title.toLowerCase() : '';
+        var filas = [];
+        PF2_MEDIA_CATS.forEach(function(cat) { pf2OwnList(cat).forEach(function(it) { if (it.review && it.review.stars != null) filas.push({ cat: cat, it: it }); }); });
+        var v = pf2Ventana('Reseña destacada');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-list pf2m-hund"></div>';
+        var input = v.body.querySelector('input'), list = v.body.querySelector('.pf2m-pk-list');
+        pf2Pie(v, function() {
+            var x = filas.find(function(r) { return r.cat + '|' + r.it.title.toLowerCase() === cur; });
+            if (!x) return;
+            sc.config = { category: x.cat, title: x.it.title };
+            sc.data = { category: x.cat, title: x.it.title, artist: x.it.artist || '', image: x.it.image || '', stars: x.it.review.stars, comment: x.it.review.comment || '' };
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = filas.filter(function(x) { return !q || x.it.title.toLowerCase().indexOf(q) >= 0; });
+            list.innerHTML = r.length ? r.map(function(x) {
+                var k = x.cat + '|' + x.it.title.toLowerCase();
+                return '<div class="pf2m-pk-row' + (k === cur ? ' on' : '') + '" data-k="' + esc(k) + '">' +
+                    (x.it.image ? '<img src="' + esc(pf2Ruta(x.it.image)) + '" alt="">' : '<span class="pf2m-pk-ri"></span>') +
+                    '<span class="pf2m-pk-rt">' + esc(x.it.title) + ' <small>(' + PF2_CAT_LABEL[x.cat] + ')</small></span>' +
+                    '<span class="pf2m-stars">' + pf2Stars(x.it.review.stars) + '</span></div>';
+            }).join('') : '<div class="pf2m-vacio">No tienes reseñas todavía.</div>';
+            list.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    cur = el.dataset.k;
+                    list.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', e === el); });
+                });
+            });
+        };
+        input.addEventListener('input', pintar);
+        pintar();
+    },
+    /* Playlist destacada: una de mis playlists (propias o colaborativas). */
+    playlist: function(sc) {
+        var cur = sc.config.id || 0, todas = [];
+        var v = pf2Ventana('Playlist destacada');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar…"></div><div class="pf2m-pk-list pf2m-hund"><div class="pf2m-vacio">Cargando tus playlists…</div></div>';
+        var input = v.body.querySelector('input'), list = v.body.querySelector('.pf2m-pk-list');
+        pf2Pie(v, function() {
+            var p = todas.find(function(x) { return x.id === cur; });
+            if (!p) return;
+            sc.config = { id: p.id };
+            sc.data = p;
+        });
+        var pintar = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = todas.filter(function(p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; });
+            list.innerHTML = r.length ? r.map(function(p) {
+                return '<div class="pf2m-pk-row' + (p.id === cur ? ' on' : '') + '" data-id="' + p.id + '">' +
+                    (p.image ? '<img src="' + esc(pf2Ruta(p.image)) + '" alt="">' : '<span class="pf2m-pk-ri"></span>') +
+                    '<span class="pf2m-pk-rt">' + esc(p.name) + (p.owner ? ' <small>(de ' + esc(p.owner) + ')</small>' : '') + '</span>' +
+                    '<small>' + p.count + (p.count === 1 ? ' canción' : ' canciones') + '</small></div>';
+            }).join('') : '<div class="pf2m-vacio">' + (todas.length ? 'Ninguna con ese nombre.' : 'No tienes playlists todavía.') + '</div>';
+            list.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    cur = +el.dataset.id;
+                    list.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', e === el); });
+                });
+            });
+        };
+        input.addEventListener('input', pintar);
+        pf2Api('my-playlists').then(function(d) { todas = (d && d.playlists) || []; pintar(); });
+    },
+    /* Texto libre. */
+    text: function(sc) {
+        var v = pf2Ventana('Texto libre');
+        v.body.innerHTML = '<textarea class="pf2m-ta" rows="9" maxlength="' + PF2_MAX.text + '"></textarea>';
+        var ta = v.body.querySelector('textarea');
+        ta.value = sc.config.text || '';
+        var info = pf2Pie(v, function() {
+            var t = ta.value.replace(/\r\n?/g, '\n').trim().slice(0, PF2_MAX.text);
+            sc.config = { text: t };
+            sc.data = { text: t };
+        });
+        var cuenta = function() { info.textContent = ta.value.length + ' / ' + PF2_MAX.text; };
+        ta.addEventListener('input', cuenta);
+        cuenta();
+    },
+    /* Juego destacado: un juego del catálogo y, con Steam, hasta 8 de sus
+       logros conseguidos. */
+    game_feat: function(sc) {
+        var cur = sc.config.title || '', ach = (sc.config.ach || []).slice();
+        var st = (pf2v() || {}).steam || {};
+        var steamOn = !!(st.configured && st.linked && !st['private']);
+        var match = null, achList = [], res = [];
+        var v = pf2Ventana('Juego destacado');
+        v.body.innerHTML = '<div class="pf2m-buscar"><input type="search" placeholder="Buscar juego…"><button type="button" class="button" data-a="new">＋ Crear juego</button></div>' +
+            '<div class="pf2m-pk-grid pf2m-hund pf2m-pk-corta"></div><div class="pf2m-pk-h"></div>' +
+            '<div class="pf2m-pk-list pf2m-hund" data-r="ach"></div>';
+        var input = v.body.querySelector('input'), grid = v.body.querySelector('.pf2m-pk-grid');
+        var achH = v.body.querySelector('.pf2m-pk-h'), achL = v.body.querySelector('[data-r="ach"]');
+        var info = pf2Pie(v, function() {
+            if (!cur) return;
+            var rv = pf2OwnReview('games', cur);
+            var own = pf2OwnList('games').find(function(x) { return x.title.toLowerCase() === cur.toLowerCase(); });
+            var inSteam = !!(match && match.inSteam);
+            sc.config = { title: cur, ach: inSteam ? ach.slice() : [] };
+            sc.data = { title: cur, image: pf2CatImg('games', cur) || (own && own.image) || '', stars: rv ? rv.stars : null, comment: (rv && rv.comment) || '',
+                steam: !steamOn ? null : !inSteam ? { inSteam: false } : { inSteam: true, appid: match.appid, hours: match.hours, achieved: match.achieved, total: match.total,
+                    items: ach.map(function(a) { return achList.find(function(x) { return x.apiname === a; }); }).filter(Boolean) } };
+        });
+        var pintarRes = function() {
+            var titulos = res.map(function(g) { return g.title; });
+            if (cur && titulos.indexOf(cur) < 0) titulos.unshift(cur);
+            grid.innerHTML = titulos.length ? titulos.map(function(t) { return pf2Casilla('t', t, pf2CatImg('games', t), t, t === cur ? 1 : 0); }).join('')
+                : '<div class="pf2m-vacio">No hay juegos con ese nombre. Puedes crearlo.</div>';
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    if (el.dataset.t === cur) return;
+                    cur = el.dataset.t; ach = [];
+                    pf2Marcar(grid, 't', [cur]);
+                    cargarSteam();
+                });
+            });
+        };
+        var pintarAch = function() {
+            achL.innerHTML = achList.length ? achList.map(function(a) {
+                var n = ach.indexOf(a.apiname) + 1;
+                return '<div class="pf2m-pk-row' + (n ? ' on' : '') + '" data-api="' + esc(a.apiname) + '"><img src="' + esc(a.icon) + '" alt="">' +
+                    '<span class="pf2m-pk-rt"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc || '') + '</small></span>' +
+                    (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+            }).join('') : '<div class="pf2m-vacio">' + (match && match.total ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>';
+            achL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var k = ach.indexOf(el.dataset.api);
+                    if (k >= 0) ach.splice(k, 1); else if (ach.length < PF2_MAX.game_feat) ach.push(el.dataset.api);
+                    el.classList.toggle('on', ach.indexOf(el.dataset.api) >= 0);
+                    info.textContent = ach.length + ' de ' + PF2_MAX.game_feat + ' logros';
+                });
+            });
+            info.textContent = match && match.inSteam ? ach.length + ' de ' + PF2_MAX.game_feat + ' logros' : '';
+        };
+        var cargarSteam = function() {
+            match = null; achList = []; achL.style.display = 'none'; info.textContent = '';
+            if (!cur) { achH.textContent = ''; return; }
+            if (!steamOn) { achH.textContent = pf2TextoVacio('steam_ach') + ' Sin Steam se enseñan la portada y tu reseña.'; return; }
+            var t = cur;
+            achH.textContent = 'Buscando el juego en tu Steam…';
+            pf2Api('steam-game-match&title=' + encodeURIComponent(t)).then(function(d) {
+                if (t !== cur) return;
+                match = d && d.steam;
+                if (!match || !match.inSteam) { achH.textContent = 'Este juego no está en tu Steam: se enseñan la portada y tu reseña.'; return; }
+                achH.textContent = 'Logros que se enseñan (máx. ' + PF2_MAX.game_feat + ') · ' + match.hours.toLocaleString('es') + ' h jugadas:';
+                achL.style.display = '';
+                achL.innerHTML = '<div class="pf2m-vacio">Cargando logros…</div>';
+                return pf2Api('steam-game-achievements&appid=' + match.appid).then(function(r) {
+                    if (t !== cur) return;
+                    achList = (r && r.achievements) || [];
+                    ach = ach.filter(function(x) { return achList.some(function(a) { return a.apiname === x; }); });
+                    pintarAch();
+                });
+            });
+        };
+        var timer = null;
+        var buscar = function() {
+            pf2Api('game-catalog&q=' + encodeURIComponent(input.value.trim())).then(function(d) {
+                res = (d && d.games) || [];
+                res.forEach(function(x) { pf2SetCatImg('games', x.title, x.image); });
+                pintarRes();
+            });
+        };
+        input.addEventListener('input', function() { clearTimeout(timer); timer = setTimeout(buscar, 250); });
+        v.body.querySelector('[data-a="new"]').addEventListener('click', function() {
+            window.__pf2mAfterAdd = function(c, item) {
+                if (c !== 'games') return;
+                pf2SetCatImg('games', item.title, item.image);
+                cur = item.title; ach = [];
+                buscar(); cargarSteam();
+            };
+            openAddItemDialog('games');
+        });
+        if (sc.data && sc.data.image) pf2SetCatImg('games', sc.data.title, sc.data.image);
+        buscar();
+        cargarSteam();
+    },
+    /* Logros de Steam a elegir: primero el juego, debajo sus logros. */
+    steam_ach: function(sc) {
+        var st = (pf2v() || {}).steam || {};
+        var v = pf2Ventana('Logros de Steam');
+        if (!st.linked) { v.body.innerHTML = '<div class="pf2m-vacio">' + esc(pf2TextoVacio('steam_ach')) + '</div>'; pf2Pie(v, function() {}); return; }
+        var max = pf2AchMax('steam_ach');
+        var sel = ((sc.data && sc.data.items) || []).slice(0, max), juegos = [], curJ = null;
+        var clave = function(a) { return a.appid + '|' + a.apiname; };
+        v.body.innerHTML = '<div class="pf2m-pk-h">Elegidos (máx. ' + max + '):</div><div class="pf2m-ach-sel pf2m-hund"></div>' +
+            '<div class="pf2m-buscar"><input type="search" placeholder="Buscar juego…"></div>' +
+            '<div class="pf2m-pk-list pf2m-hund pf2m-pk-corta" data-r="games"></div><div class="pf2m-pk-list pf2m-hund" data-r="ach"><div class="pf2m-vacio">Elige un juego.</div></div>';
+        var selL = v.body.querySelector('.pf2m-ach-sel'), input = v.body.querySelector('input');
+        var gamesL = v.body.querySelector('[data-r="games"]'), achL = v.body.querySelector('[data-r="ach"]');
+        var info = pf2Pie(v, function() {
+            sc.config = { items: sel.map(function(a) { return { appid: a.appid, apiname: a.apiname }; }) };
+            sc.data = { items: sel.slice(), totals: { games: st.games || 0, hours: st.hours || 0 } };
+        });
+        var pintarSel = function() {
+            selL.innerHTML = sel.length ? sel.map(function(a, i) {
+                return '<span class="pf2m-ach-it" data-k="' + esc(clave(a)) + '"><img src="' + esc(a.icon) + '" alt=""><i>' + (i + 1) + '</i></span>';
+            }).join('') : '<div class="pf2m-vacio">Ninguno todavía.</div>';
+            selL.querySelectorAll('[data-k]').forEach(function(el) {
+                el.addEventListener('click', function() { sel = sel.filter(function(x) { return clave(x) !== el.dataset.k; }); pintarSel(); marcarAch(); });
+            });
+            info.textContent = sel.length + ' de ' + max;
+        };
+        var marcarAch = function() {
+            if (!curJ) return;
+            achL.querySelectorAll('.pf2m-pk-row').forEach(function(e) {
+                e.classList.toggle('on', sel.some(function(x) { return x.appid === curJ.appid && x.apiname === e.dataset.api; }));
+            });
+        };
+        var pintarJuegos = function() {
+            var q = input.value.trim().toLowerCase();
+            var r = juegos.filter(function(g) { return !q || g.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 300);
+            gamesL.innerHTML = r.map(function(g) {
+                return '<div class="pf2m-pk-row' + (curJ && curJ.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span class="pf2m-pk-rt">' + esc(g.name) + '</span><small>' + g.hours + ' h</small></div>';
+            }).join('') || '<div class="pf2m-vacio">Sin juegos.</div>';
+            gamesL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    curJ = juegos.find(function(g) { return g.appid === +el.dataset.app; });
+                    gamesL.querySelectorAll('.pf2m-pk-row').forEach(function(e) { e.classList.toggle('on', +e.dataset.app === curJ.appid); });
+                    verJuego(curJ);
+                });
+            });
+        };
+        var verJuego = function(g) {
+            achL.innerHTML = '<div class="pf2m-vacio">Cargando logros…</div>';
+            pf2Api('steam-game-achievements&appid=' + g.appid).then(function(d) {
+                if (!curJ || curJ.appid !== g.appid) return;
+                var list = (d && d.achievements) || [];
+                if (!list.length) { achL.innerHTML = '<div class="pf2m-vacio">' + ((d && d.total) ? 'Aún no tienes logros de este juego.' : 'Este juego no tiene logros.') + '</div>'; return; }
+                achL.innerHTML = list.map(function(a) {
+                    var on = sel.some(function(x) { return x.appid === g.appid && x.apiname === a.apiname; });
+                    return '<div class="pf2m-pk-row' + (on ? ' on' : '') + '" data-api="' + esc(a.apiname) + '"><img src="' + esc(a.icon) + '" alt="">' +
+                        '<span class="pf2m-pk-rt"><b>' + esc(a.name) + '</b><br><small>' + esc(a.desc || '') + '</small></span>' +
+                        (a.percent != null ? '<small>' + String(a.percent).replace('.', ',') + ' %</small>' : '') + '</div>';
+                }).join('');
+                achL.querySelectorAll('.pf2m-pk-row').forEach(function(el) {
+                    el.addEventListener('click', function() {
+                        var a = list.find(function(x) { return x.apiname === el.dataset.api; });
+                        var k = g.appid + '|' + a.apiname, at = sel.findIndex(function(x) { return clave(x) === k; });
+                        if (at >= 0) sel.splice(at, 1); else if (sel.length < max) sel.push(Object.assign({}, a, { appid: g.appid, game: g.name }));
+                        pintarSel(); marcarAch();
+                    });
+                });
+            });
+        };
+        input.addEventListener('input', pintarJuegos);
+        pintarSel();
+        gamesL.innerHTML = '<div class="pf2m-vacio">Cargando tu biblioteca…</div>';
+        pf2Api('steam-games').then(function(d) {
+            if (!d || !d.ok) { gamesL.innerHTML = '<div class="pf2m-vacio"></div>'; gamesL.firstChild.textContent = (d && d.error) || 'No se pudo leer tu Steam'; return; }
+            juegos = d.games; pintarJuegos();
+        });
+    },
+    /* Capturas: de la Galería (Google Drive), hasta 3, con pie y juego. */
+    shots: function(sc) {
+        var v = pf2Ventana('Capturas');
+        v.body.innerHTML = '<div class="pf2m-pk-h"></div><div class="pf2m-pk-grid pf2m-hund pf2m-pk-wide"></div><div class="pf2m-shot-meta"></div>';
+        var msg = v.body.querySelector('.pf2m-pk-h'), grid = v.body.querySelector('.pf2m-pk-grid'), metaBox = v.body.querySelector('.pf2m-shot-meta');
+        var files = [], sel = [], meta = {};
+        var info = pf2Pie(v, function() {
+            var ok = v.body.querySelector('[data-a="ok"]');
+            ok.disabled = true; ok.textContent = 'Guardando…';
+            Promise.all(sel.map(pf2DrivePublico)).then(function() {
+                return pf2Api('gallery-screenshots', { items: sel.map(function(id) { var m = meta[id] || {}; return { driveId: id, caption: m.caption || '', game: m.game || '' }; }) });
+            }).then(function(d) {
+                if (!d || !d.ok) throw new Error((d && d.error) || 'No se pudo guardar');
+                sc.config = { ids: d.shots.map(function(x) { return x.id; }) };
+                sc.data = d.shots;
+                PF2E.myShots = null;
+                v.close();
+                renderPf2Expositores();
+            }).catch(function(e) { ok.disabled = false; ok.textContent = 'Aceptar'; pfAlert((e && e.message) || 'No se pudo guardar'); });
+            return false;   /* se cierra cuando acaba */
+        });
+        var ok = v.body.querySelector('[data-a="ok"]');
+        var marcar = function() {
+            pf2Marcar(grid, 'id', sel);
+            metaBox.innerHTML = sel.map(function(id, i) {
+                var m = meta[id] || { caption: '', game: '' };
+                return '<div class="pf2m-shot-row"><b>' + (i + 1) + '</b>' +
+                    '<input type="text" data-id="' + esc(id) + '" data-f="caption" maxlength="200" placeholder="Pie de foto (opcional)" value="' + esc(m.caption) + '">' +
+                    '<input type="text" data-id="' + esc(id) + '" data-f="game" maxlength="200" placeholder="Juego (opcional)" value="' + esc(m.game) + '"></div>';
+            }).join('');
+            metaBox.querySelectorAll('input').forEach(function(inp) {
+                inp.addEventListener('input', function() { var m = meta[inp.dataset.id] || (meta[inp.dataset.id] = { caption: '', game: '' }); m[inp.dataset.f] = inp.value; });
+            });
+            info.textContent = sel.length + ' de ' + PF2_MAX.shots;
+        };
+        var pintar = function() {
+            grid.innerHTML = files.map(function(f) { return pf2Casilla('id', f.id, '', f.name, sel.indexOf(f.id) + 1, 'wide'); }).join('');
+            grid.querySelectorAll('.pf2m-pk').forEach(function(el) {
+                var f = files.find(function(x) { return x.id === el.dataset.id; });
+                pf2DriveMini(f, el.querySelector('.pf2m-pk-ph'));
+                el.addEventListener('click', function() {
+                    var k = sel.indexOf(f.id);
+                    if (k >= 0) sel.splice(k, 1); else if (sel.length < PF2_MAX.shots) sel.push(f.id);
+                    marcar();
+                });
+            });
+            marcar();
+        };
+        var pedirConexion = function() {
+            msg.innerHTML = 'Para elegir capturas de tu Galería tienes que conectar tu Google Drive (el mismo que usa la Galería). ' +
+                '<button type="button" class="button" data-a="drive">Conectar Google Drive</button>';
+            grid.innerHTML = ''; metaBox.innerHTML = ''; ok.disabled = true;
+            msg.querySelector('[data-a="drive"]').addEventListener('click', function() {
+                pf2DriveConectar(function(err) {
+                    if (err) { msg.textContent = 'No se pudo conectar: ' + err.message; return; }
+                    ok.disabled = false;
+                    empezar();
+                });
+            });
+        };
+        var empezar = function() {
+            if (!pf2DriveToken()) { pedirConexion(); return; }
+            msg.textContent = 'Cargando tu Galería…';
+            pf2Galeria().then(function(list) {
+                files = list;
+                msg.textContent = files.length ? 'Elige hasta ' + PF2_MAX.shots + ' imágenes de tu Galería (la primera sale grande):' : 'Tu Galería está vacía: sube imágenes desde la app Galería.';
+                pintar();
+            }).catch(function(e) {
+                if (e && e.auth) { pedirConexion(); return; }
+                msg.textContent = 'No se pudo leer tu Galería: ' + ((e && e.message) || 'error');
+            });
+        };
+        var mias = PF2E.myShots ? Promise.resolve(PF2E.myShots) : pf2Api('my-screenshots').then(function(d) { return (PF2E.myShots = (d && d.shots) || []); });
+        mias.then(function(shots) {
+            shots.forEach(function(x) { if (x.driveId) meta[x.driveId] = { caption: x.caption || '', game: x.game || '' }; });
+            (sc.config.ids || []).forEach(function(id) { var x = shots.find(function(y) { return y.id === id; }); if (x && x.driveId) sel.push(x.driveId); });
+            empezar();
+        });
+    }
+};
+
+/* Comentarios del muro (wall-comment / delete-wall-comment, como el PC). */
+function renderPf2Comentarios() {
+    var box = document.getElementById('pf2m-com');
+    var v2 = pf2v();
+    if (!box || !v2) return;
+    var list = v2.comments || [];
+    box.innerHTML = '<div class="title-bar"><div class="title-bar-text"><img src="../../assets/img/appIcons/chatIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;">' +
+        'Comentarios<span>' + list.length + '</span></div></div><div class="window-body">' +
+        '<div class="pf2m-new"><input type="text" maxlength="500" placeholder="Escribe un comentario…"><button type="button" class="button">Publicar</button></div>' +
+        '<div class="pf2m-com-list"></div></div>';
+    var input = box.querySelector('input'), btn = box.querySelector('.pf2m-new .button');
+    var enviar = function() {
+        var text = input.value.trim();
+        if (!text || btn.disabled) return;
+        btn.disabled = true;
+        fetch(API + '?action=wall-comment', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: pf2ProfileKey(), text: text })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            btn.disabled = false;
+            if (d && d.ok) { v2.comments = d.comments; renderPf2Comentarios(); }
+            else pfAlert((d && d.error) || 'No se pudo publicar');
+        }).catch(function() { btn.disabled = false; pfAlert('Error de conexión'); });
+    };
+    btn.addEventListener('click', enviar);
+    input.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); enviar(); } });
+    var ul = box.querySelector('.pf2m-com-list');
+    if (!list.length) { ul.innerHTML = '<div class="pf2m-vacio">Aún no hay comentarios.</div>'; return; }
+    list.forEach(function(cm) {
+        var d = document.createElement('div');
+        d.className = 'pf2m-com';
+        d.innerHTML = '<span class="pf2m-com-av" data-marco-user="' + esc(cm.authorKey) + '">' +
+                (cm.avatar ? '<img src="' + esc(pf2Ruta(cm.avatar)) + '" alt="">' : '') + '</span>' +
+            '<div class="pf2m-com-main"><span class="pf2m-com-who">' + esc(cm.author) + '</span><span class="pf2m-com-when">' + esc(relTime(cm.ts)) + '</span>' +
+                (cm.text ? '<div class="pf2m-com-txt">' + esc(cm.text) + '</div>' : '') +
+                (cm.imageUrl ? '<div class="pf2m-com-img"><img src="' + esc(cm.imageUrl) + '" alt="" loading="lazy"></div>' : '') +
+            '</div>' + (cm.canDelete ? '<button type="button" class="button pf2m-del" title="Borrar comentario">✕</button>' : '');
+        var abrir = function() { if (cm.authorKey !== USER_KEY) viewOtherUser(cm.authorKey); };
+        d.querySelector('.pf2m-com-who').addEventListener('click', abrir);
+        d.querySelector('.pf2m-com-av').addEventListener('click', abrir);
+        var del = d.querySelector('.pf2m-del');
+        if (del) del.addEventListener('click', function() {
+            pfConfirm('¿Borrar este comentario?', 'Borrar', function() {
+                fetch(API + '?action=delete-wall-comment', {
+                    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: cm.id })
+                }).then(function(r) { return r.json(); }).then(function(r) {
+                    if (r && r.ok) { v2.comments = r.comments; renderPf2Comentarios(); }
+                    else pfAlert((r && r.error) || 'No se pudo borrar');
+                }).catch(function() { pfAlert('Error de conexión'); });
+            });
+        });
+        ul.appendChild(d);
+    });
+}
+
+/* 🔗 Enlace del perfil que se está viendo (el mío si no). */
+document.getElementById('pf-link-btn').addEventListener('click', function(){
+    if (window.melonCopyLink) window.melonCopyLink('perfil', STATE.viewingUser || USER_KEY);
 });
-function updateFollowBtn(isFollowing) {
+
+/* Botón de amistad de la cabecera (solo viendo otro perfil), como en el
+   PC: + Agregar amigo / Solicitud enviada (cancela) / Aceptar solicitud /
+   ✓ Amigos (eliminar, con confirmación). */
+var amistadVista = 'ninguna';
+document.getElementById('pf-follow-btn').addEventListener('click', function(){
+    var uk = STATE.viewingUser;
+    if (!uk) return;
+    var btn = this;
+    if (amistadVista === 'amigos') {
+        pfConfirm('¿Eliminar a ' + (STATE.viewingLabel || amUser(uk).label) + ' de tus amigos?', 'Eliminar', function(){ amigosAccion('friend-remove', uk); });
+        return;
+    }
+    var act = { ninguna: 'friend-request', enviada: 'friend-cancel', recibida: 'friend-accept' }[amistadVista] || 'friend-request';
+    btn.disabled = true;
+    amigosAccion(act, uk).then(function(){ btn.disabled = false; }, function(){ btn.disabled = false; });
+});
+function updateFollowBtn(estado) {
+    if (estado === true) estado = 'amigos';
+    if (!estado) estado = 'ninguna';
+    amistadVista = estado;
     var btn = document.getElementById('pf-follow-btn');
-    btn.textContent = isFollowing ? '✓ Siguiendo' : '+ Seguir';
+    btn.textContent = { ninguna: '+ Agregar amigo', enviada: 'Solicitud enviada', recibida: 'Aceptar solicitud', amigos: '✓ Amigos' }[estado] || '+ Agregar amigo';
 }
 
 /* Helper alert para JS sin window.alert. */
@@ -4611,81 +6282,187 @@ function pfAlert(msg) {
     pfConfirm(msg, 'OK', function(){});  /* reuso del confirm como info simple */
 }
 
-/* ─── Social view ──────────────────────────────────────────────── */
-function renderSocial() {
-    var gridEl = document.getElementById('pf-friends-grid');
-    if (!gridEl) return;
-    var friends = STATE.myFollowing || [];
-    var html = '';
-    friends.forEach(function(uKey){
-        var uInfo = PROFILE_USERS[uKey];
-        if (!uInfo) return;
-        var avHtml = uInfo.image
-            ? '<img src="' + esc(uInfo.image) + '" alt="">'
-            : '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
-        /* Chat ya no se abre desde aquí — la app dedicada chat-mobile
-           lo gestiona. Solo dejamos el avatar + nombre + presencia. */
-        html +=
-            '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                '<div class="pf-friend-av has-presence-dot">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
-                '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
-            '</div>';
-    });
-    /* "+ Explorar" tile al final. */
-    html +=
-        '<div class="pf-friend-card is-explore" data-act="explore">' +
-            '<div class="pf-friend-av"><span class="pf-friend-av-plus">+</span></div>' +
-            '<div class="pf-friend-label">Explorar</div>' +
-        '</div>';
-    gridEl.innerHTML = html;
-    gridEl.querySelectorAll('[data-user]').forEach(function(card){
-        card.addEventListener('click', function(){ viewOtherUser(card.dataset.user); });
-    });
-    /* Re-aplica el estado de presencia conocido sin esperar al fetch. */
-    if (window.__pfApplyPresence) window.__pfApplyPresence();
-    /* (Antes había aquí un handler de chat — el chat se ha movido a la
-       app dedicada chat-mobile.php.) */
-    var exploreBtn = gridEl.querySelector('[data-act="explore"]');
-    if (exploreBtn) exploreBtn.addEventListener('click', openExploreDialog);
-    /* Re-aplica los badges al render — el grid se acaba de regenerar y
-       perdió cualquier badge previo del estado actual de unreadChats. */
-    renderUnreadBadges();
+/* ─── Amigos (estilo Steam; assets/profile/amigos.php) ─────────────
+   Decidido así (7/11): "Social" del menú pasa a ser "Amigos", como la
+   página del PC: pestañas Tus amigos (filas con foto, nombre y estado;
+   "En línea" arriba y "Desconectados" por última conexión, con filtro) ·
+   Agregar amigo (buscador) · Solicitudes (recibidas y enviadas, con
+   "(N)" en texto normal: sin contadores rojos). Tocar = su perfil;
+   mantener pulsado un amigo = Enviar mensaje / Ver perfil / Eliminar
+   amigo. Los avisos de solicitudes salen en la carcasa (mobile.php,
+   mNotifSystem); la página se pone al día con el timbre ('amigos'). */
+var AMIGOS = { amigos: [], recibidas: [], enviadas: [], tab: 'amigos', cargado: false, busqueda: '' };
+var __pfLastNp = {}, __pfLastSeen = {};
+
+function amPost(action, user) {
+    return fetch(API + '?action=' + action, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: user })
+    }).then(function(r){ return r.json(); });
+}
+function amigosCargar() {
+    return fetch(API + '?action=friends', { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (d && d.ok) amigosAplicar(d); })
+        .catch(function(){});
+}
+function amigosAplicar(d) {
+    AMIGOS.amigos = d.amigos || []; AMIGOS.recibidas = d.recibidas || []; AMIGOS.enviadas = d.enviadas || [];
+    AMIGOS.cargado = true;
+    /* Amigos = mutuos: lo que miran isMutual (botón Chat) y compañía. */
+    STATE.myFollowing = AMIGOS.amigos.slice();
+    STATE.myFollowers = AMIGOS.amigos.slice();
+    if (STATE.view === 'social') renderSocial();
+    if (STATE.viewingUser) toggleProfileActions();
+}
+/* Tras cualquier acción: la página y, si se está viendo a esa persona,
+   el botón de su cabecera. */
+function amigosAccion(action, uk) {
+    return amPost(action, uk).then(function(d){
+        if (!d || !d.ok) { pfAlert((d && d.error) || 'No se ha podido'); return d; }
+        amigosAplicar(d);
+        if (STATE.viewingUser === uk) updateFollowBtn(d.amistad);
+        return d;
+    }).catch(function(){ pfAlert('Error de conexión'); });
 }
 
-/* Modal de explorar — lista de usuarios que NO sigo. */
-function openExploreDialog() {
-    var others = Object.keys(PROFILE_USERS).filter(function(k){
-        return k !== USER_KEY && STATE.myFollowing.indexOf(k) === -1;
-    });
-    var listHtml = '';
-    if (!others.length) {
-        listHtml = '<p class="pf-form-hint" style="text-align:center;padding:10px;">Ya sigues a todo el mundo 🎉</p>';
-    } else {
-        listHtml = '<div class="pf-friends-grid">';
-        others.forEach(function(uKey){
-            var uInfo = PROFILE_USERS[uKey];
-            if (!uInfo) return;
-            var avHtml = uInfo.image
-                ? '<img src="' + esc(uInfo.image) + '" alt="">'
-                : '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
-            listHtml +=
-                '<div class="pf-friend-card" data-user="' + esc(uKey) + '">' +
-                    '<div class="pf-friend-av has-presence-dot">' + avHtml + '<span class="pf-presence-dot" data-userkey="' + esc(uKey) + '"></span></div>' +
-                    '<div class="pf-friend-label">' + esc(uInfo.label) + '</div>' +
-                '</div>';
-        });
-        listHtml += '</div>';
+function amUser(k) { return PROFILE_USERS[k] || { label: k, image: '' }; }
+function amAvatar(k) {
+    var u = amUser(k);
+    var dentro = u.image ? '<img src="' + esc(u.image) + '" alt="">'
+        : '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:18px;height:18px;object-fit:contain;image-rendering:pixelated;">';
+    return '<div class="pfa-av has-presence-dot" data-marco-user="' + esc(k) + '">' + dentro +
+           '<span class="pf-presence-dot" data-userkey="' + esc(k) + '"></span></div>';
+}
+function amHace(ts) {
+    if (!ts) return '';
+    var s = Math.max(0, Date.now() / 1000 - ts);
+    if (s < 3600) return 'hace ' + Math.max(1, Math.round(s / 60)) + ' min';
+    if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+    var d = Math.round(s / 86400);
+    return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+}
+/* Como en el PC: escuchando > no molestar > ausente > en línea; si no,
+   desconectado (hace X). */
+function amEstado(k) {
+    if (__pfLastOnline[k]) {
+        var np = __pfLastNp[k];
+        if (np && np.title) return { cls: 'np', txt: 'Escuchando: ' + np.title + (np.artist ? ' — ' + np.artist : '') };
+        if (__pfLastDnd[k])  return { cls: 'dnd',  txt: 'No molestar' };
+        if (__pfLastAway[k]) return { cls: 'away', txt: 'Ausente' };
+        return { cls: 'on', txt: 'En línea' };
     }
+    var ts = __pfLastSeen[k] || 0;
+    return { cls: 'off', txt: 'Desconectado' + (ts ? ' · ' + amHace(ts) : '') };
+}
+function amNombre(a, b) {
+    var la = (amUser(a).label || '').toLowerCase(), lb = (amUser(b).label || '').toLowerCase();
+    return la < lb ? -1 : la > lb ? 1 : 0;
+}
+function amBoton(txt, act, deshab) {
+    return '<button class="button" type="button" data-act="' + act + '"' + (deshab ? ' disabled' : '') + '>' + txt + '</button>';
+}
+function amBotonesPara(estado) {
+    if (estado === 'amigos')   return amBoton('Ya sois amigos', '', true);
+    if (estado === 'enviada')  return amBoton('Solicitud enviada', '', true) + amBoton('Cancelar', 'friend-cancel');
+    if (estado === 'recibida') return amBoton('Aceptar', 'friend-accept') + amBoton('Rechazar', 'friend-reject');
+    return amBoton('Agregar amigo', 'friend-request');
+}
+function amFila(k, botones, extra) {
+    return '<div class="pfa-fila" data-user="' + esc(k) + '">' + amAvatar(k) +
+        '<div class="pfa-txt"><div class="pfa-nom">' + esc(amUser(k).label) + '</div>' + (extra ? '<div class="pfa-est">' + esc(extra) + '</div>' : '') + '</div>' +
+        '<div class="pfa-btns">' + botones + '</div></div>';
+}
+
+function amPintarLista() {
+    var box = document.getElementById('pfa-lista');
+    if (!box) return;
+    document.getElementById('pfa-n-amigos').textContent = AMIGOS.cargado ? '(' + AMIGOS.amigos.length + ')' : '';
+    if (!AMIGOS.cargado) return;
+    if (!AMIGOS.amigos.length) {
+        box.innerHTML = '<div class="pfa-vacio">Todavía no tienes amigos. Búscalos en "Agregar amigo".</div>';
+        return;
+    }
+    var f = (document.getElementById('pfa-filtro').value || '').trim().toLowerCase();
+    var lista = AMIGOS.amigos.filter(function(k){ return !f || (amUser(k).label || '').toLowerCase().indexOf(f) !== -1; });
+    var on = lista.filter(function(k){ return __pfLastOnline[k]; }).sort(amNombre);
+    var off = lista.filter(function(k){ return !__pfLastOnline[k]; }).sort(function(a, b){
+        return (__pfLastSeen[b] || 0) - (__pfLastSeen[a] || 0) || amNombre(a, b);
+    });
+    var grupo = function(tit, keys) {
+        if (!keys.length) return '';
+        return '<div class="pfa-grupo">' + tit + ' — ' + keys.length + '</div>' + keys.map(function(k){
+            var e = amEstado(k);
+            return '<div class="pfa-fila pfa-amigo pfa-' + e.cls + '" data-user="' + esc(k) + '">' + amAvatar(k) +
+                '<div class="pfa-txt"><div class="pfa-nom">' + esc(amUser(k).label) + '</div>' +
+                '<div class="pfa-est">' + esc(e.txt) + '</div></div></div>';
+        }).join('');
+    };
+    box.innerHTML = grupo('En línea', on) + grupo('Desconectados', off) +
+        (!on.length && !off.length ? '<div class="pfa-vacio">Ningún amigo se llama así.</div>' : '');
+    applyPresence();
+}
+function amPintarSolicitudes() {
+    var r = document.getElementById('pfa-recibidas'), e = document.getElementById('pfa-enviadas');
+    if (!r) return;
+    document.getElementById('pfa-n-sol').textContent = AMIGOS.recibidas.length ? '(' + AMIGOS.recibidas.length + ')' : '';
+    if (!AMIGOS.cargado) return;
+    r.innerHTML = AMIGOS.recibidas.length
+        ? AMIGOS.recibidas.map(function(k){ return amFila(k, amBotonesPara('recibida'), 'Quiere ser tu amigo'); }).join('')
+        : '<div class="pfa-vacio">No tienes solicitudes nuevas.</div>';
+    e.innerHTML = AMIGOS.enviadas.length
+        ? AMIGOS.enviadas.map(function(k){ return amFila(k, amBotonesPara('enviada'), 'Esperando respuesta'); }).join('')
+        : '<div class="pfa-vacio">No has enviado ninguna.</div>';
+    applyPresence();
+}
+function amBuscar() {
+    var q = (document.getElementById('pfa-q').value || '').trim();
+    var box = document.getElementById('pfa-resultados');
+    AMIGOS.busqueda = q;
+    if (!q) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="pfa-vacio">Buscando…</div>';
+    fetch(API + '?action=friend-search&q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (q !== AMIGOS.busqueda) return;
+            var res = (d && d.resultados) || [];
+            box.innerHTML = res.length
+                ? res.map(function(x){
+                    if (!PROFILE_USERS[x.key]) PROFILE_USERS[x.key] = { label: x.nombre, image: '' };
+                    return amFila(x.key, amBotonesPara(x.estado));
+                }).join('')
+                : '<div class="pfa-vacio">No hay ningún perfil con ese nombre.</div>';
+            applyPresence();
+        })
+        .catch(function(){ box.innerHTML = '<div class="pfa-vacio">Sin conexión, prueba otra vez.</div>'; });
+}
+function amTab(t) {
+    AMIGOS.tab = t;
+    document.querySelectorAll('#pf-view-social [data-amtab]').forEach(function(b){ b.classList.toggle('active', b.dataset.amtab === t); });
+    document.querySelectorAll('#pf-view-social [data-ampanel]').forEach(function(p){ p.hidden = p.dataset.ampanel !== t; });
+}
+/* Nombre de antes (lo llaman showView y amigosAplicar). */
+function renderSocial() {
+    amPintarLista();
+    amPintarSolicitudes();
+}
+
+/* Mantener pulsado un amigo: Enviar mensaje / Ver perfil / Eliminar. */
+function amMenu(k) {
     var bd = document.createElement('div');
     bd.className = 'pf-modal-backdrop';
     bd.innerHTML =
         '<div class="window pf-modal">' +
             '<div class="title-bar">' +
-                '<div class="title-bar-text">🌐 Explorar</div>' +
+                '<div class="title-bar-text">' + esc(amUser(k).label) + '</div>' +
                 '<div class="title-bar-controls"><button aria-label="Close" type="button"></button></div>' +
             '</div>' +
-            '<div class="window-body">' + listHtml +
-                '<div class="modal-actions"><button class="button default" data-act="close" type="button">Cerrar</button></div>' +
+            '<div class="window-body">' +
+                '<div class="pfa-menu-item" data-m="chat">Enviar mensaje</div>' +
+                '<div class="pfa-menu-item" data-m="perfil">Ver perfil</div>' +
+                '<div class="pfa-menu-item peligro" data-m="eliminar">Eliminar amigo</div>' +
+                '<div class="modal-actions"><button class="button" data-act="close" type="button">Cerrar</button></div>' +
             '</div>' +
         '</div>';
     document.body.appendChild(bd);
@@ -4693,13 +6470,87 @@ function openExploreDialog() {
     bd.querySelector('.title-bar-controls button').addEventListener('click', close);
     bd.querySelector('[data-act="close"]').addEventListener('click', close);
     bd.addEventListener('click', function(e){ if (e.target === bd) close(); });
-    bd.querySelectorAll('[data-user]').forEach(function(card){
-        card.addEventListener('click', function(){
+    bd.querySelectorAll('[data-m]').forEach(function(it){
+        it.addEventListener('click', function(){
             close();
-            viewOtherUser(card.dataset.user);
+            if (it.dataset.m === 'chat') openChat(k);
+            else if (it.dataset.m === 'perfil') viewOtherUser(k);
+            else pfConfirm('¿Eliminar a ' + amUser(k).label + ' de tus amigos?', 'Eliminar', function(){ amigosAccion('friend-remove', k); });
         });
     });
 }
+
+(function setupAmigos() {
+    var view = document.getElementById('pf-view-social');
+    if (!view) return;
+    view.querySelectorAll('[data-amtab]').forEach(function(b){
+        b.addEventListener('click', function(){ amTab(b.dataset.amtab); });
+    });
+    document.getElementById('pfa-filtro').addEventListener('input', amPintarLista);
+    var tBuscar = null;
+    document.getElementById('pfa-q').addEventListener('input', function(){ clearTimeout(tBuscar); tBuscar = setTimeout(amBuscar, 300); });
+    document.getElementById('pfa-buscar-form').addEventListener('submit', function(e){ e.preventDefault(); amBuscar(); });
+
+    /* Mantener pulsado (500 ms, como en Música) sobre un amigo. */
+    var lp = null, lpX = 0, lpY = 0, lpHecho = false;
+    function lpEmpezar(el, x, y) {
+        lpCancelar();
+        lpX = x; lpY = y; lpHecho = false;
+        el.classList.add('long-pressing');
+        lp = { el: el, t: setTimeout(function(){
+            lpHecho = true;
+            el.classList.remove('long-pressing');
+            lp = null;
+            try { navigator.vibrate && navigator.vibrate(40); } catch (_) {}
+            amMenu(el.dataset.user);
+        }, 500) };
+    }
+    function lpCancelar() {
+        if (!lp) return;
+        clearTimeout(lp.t);
+        lp.el.classList.remove('long-pressing');
+        lp = null;
+    }
+    function lpMover(x, y) { if (lp && (Math.abs(x - lpX) > 12 || Math.abs(y - lpY) > 12)) lpCancelar(); }
+    view.addEventListener('touchstart', function(e){
+        var a = e.target.closest('.pfa-amigo');
+        if (a && e.touches && e.touches.length === 1) lpEmpezar(a, e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    view.addEventListener('touchmove', function(e){ if (e.touches[0]) lpMover(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    view.addEventListener('touchend', lpCancelar);
+    view.addEventListener('touchcancel', lpCancelar);
+    view.addEventListener('mousedown', function(e){
+        var a = e.target.closest('.pfa-amigo');
+        if (a && e.button === 0) lpEmpezar(a, e.clientX, e.clientY);
+    });
+    view.addEventListener('mousemove', function(e){ lpMover(e.clientX, e.clientY); });
+    view.addEventListener('mouseup', lpCancelar);
+    view.addEventListener('mouseleave', lpCancelar);
+    /* Android también lanza contextmenu al mantener pulsado. */
+    view.addEventListener('contextmenu', function(e){ if (e.target.closest('.pfa-amigo')) e.preventDefault(); });
+
+    view.addEventListener('click', function(e){
+        if (lpHecho) { lpHecho = false; e.preventDefault(); e.stopPropagation(); return; }
+        var btn = e.target.closest('button[data-act]');
+        var fila = e.target.closest('.pfa-fila[data-user]');
+        if (btn && fila) {
+            if (!btn.dataset.act) return;
+            btn.disabled = true;
+            amigosAccion(btn.dataset.act, fila.dataset.user).then(function(){ if (AMIGOS.busqueda) amBuscar(); });
+            return;
+        }
+        if (fila && !e.target.closest('button')) viewOtherUser(fila.dataset.user);
+    });
+
+    /* Solicitudes nuevas, aceptadas o canceladas (desde aquí, el PC o el
+       aviso de la carcasa): el timbre de la carcasa avisa. */
+    var t = timbreMovil();
+    if (t) {
+        var baja = t.on('amigos', amigosCargar);
+        window.addEventListener('pagehide', function(){ try { baja(); } catch (_) {} });
+    }
+    amigosCargar();
+})();
 
 /* ─── View other user ──────────────────────────────────────────── */
 function viewOtherUser(userKey) {
@@ -4731,11 +6582,12 @@ function viewOtherUserInPlace(userKey) {
             if (!d || d.error) { pfAlert((d && d.error) || 'No se pudo cargar el perfil'); return; }
             STATE.viewingUser  = d.userKey;
             STATE.viewingLabel = d.label;
-            STATE.profile      = d.profile;
+            STATE.profile      = d.profile || {};
+            /* view-user manda el perfil nuevo aparte (get-profile, dentro). */
+            if (d.v2) STATE.profile.v2 = d.v2;
             STATE.lists        = d.lists;
             updateHeaderForViewing();
-            updateFollowBtn(!!d.isFollowing);
-            /* Render: dirige al usuario directo a la sección de posts. */
+            updateFollowBtn(d.amistad || !!d.isFollowing);
             renderAbout(STATE.profile);
             ['movies','series','books','games','music'].forEach(function(cat){
                 var arr = (STATE.lists && STATE.lists[cat]) || [];
@@ -4784,6 +6636,7 @@ function updateHeaderForViewing() {
             avatarEl.innerHTML = '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
         }
         attachPresenceDot(avatarEl, STATE.viewingUser);
+        avatarEl.setAttribute('data-marco-user', STATE.viewingUser);   /* marco (melon-marcos.js) */
     } else {
         nameEl.textContent  = USER_LABEL;
         greetEl.textContent = 'Perfil de';
@@ -4794,6 +6647,7 @@ function updateHeaderForViewing() {
             avatarEl.innerHTML = '<span><img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"></span>';
         }
         attachPresenceDot(avatarEl, USER_KEY);
+        avatarEl.setAttribute('data-marco-user', USER_KEY);   /* marco (melon-marcos.js) */
     }
     toggleProfileActions();
 }
@@ -4859,7 +6713,7 @@ function openChat(uKey) {
         '<div class="window pf-modal pf-chat-modal">' +
             '<div class="title-bar">' +
                 '<div class="title-bar-text" style="display:flex;align-items:center;gap:6px;">' +
-                    '<span id="pf-chat-title-av" style="position:relative;width:18px;height:18px;display:inline-block;background:var(--inset-bg,#fff);box-shadow:-1px -1px 0 var(--bezel-dark-1,#0a0a0a), 1px 1px 0 var(--bezel-light-1,#fff);flex-shrink:0;">' + avHtml + '</span>' +
+                    '<span id="pf-chat-title-av" data-marco-user="' + esc(uKey) + '" style="position:relative;width:18px;height:18px;display:inline-block;background:var(--inset-bg,#fff);box-shadow:-1px -1px 0 var(--bezel-dark-1,#0a0a0a), 1px 1px 0 var(--bezel-light-1,#fff);flex-shrink:0;">' + avHtml + '</span>' +
                     '<span>' + esc(uInfo.label) + '</span>' +
                 '</div>' +
                 '<div class="title-bar-controls">' +
@@ -4930,11 +6784,33 @@ function openChat(uKey) {
     }
 
     loadChatMessages();
-    CHAT.pollTimer = setInterval(loadChatMessages, 1500);
+    programarChat();
+}
+
+/* Timbre de la carcasa del móvil (window.parent.melonTimbre,
+   assets/js/timbre.js), si estamos dentro de ella. */
+function timbreMovil() {
+    try { return window.parent !== window ? window.parent.melonTimbre || null : null; } catch (e) { return null; }
+}
+/* Chat abierto: lo nuevo llega por el timbre ('chat': mensajes, editados,
+   borrados, leídos), que con un chat abierto se mira cada segundo; aquí
+   solo se repasa cada 10 s (el "entregado"). Antes se pedía cada 1,5 s.
+   Sin timbre (o si deja de responder), cada 1,5 s como antes. */
+function programarChat() {
+    if (CHAT.pollTimer) clearTimeout(CHAT.pollTimer);
+    var t = timbreMovil();
+    if (t) t.rapido('chat', true);
+    CHAT.pollTimer = setTimeout(function() {
+        if (!CHAT.withUser) return;
+        loadChatMessages();
+        programarChat();
+    }, t && t.ok() ? 10000 : 1500);
 }
 
 function closeChat() {
-    if (CHAT.pollTimer) { clearInterval(CHAT.pollTimer); CHAT.pollTimer = null; }
+    if (CHAT.pollTimer) { clearTimeout(CHAT.pollTimer); CHAT.pollTimer = null; }
+    var t = timbreMovil();
+    if (t) t.rapido('chat', false);
     CHAT.withUser = null;
     CHAT.lastId   = null;
     var bd = document.getElementById('pf-chat-backdrop');
@@ -5152,9 +7028,23 @@ if (window.__MOBILE_VIEWING_KEY) {
 fetchFollowers();
 fetchLists();
 showView('profile');
-/* Polling de chats sin leer — primera carga + intervalo. */
+/* Chats sin leer: primera carga y, dentro de la carcasa del móvil, cuando
+   su timbre dice que hay algo nuevo ('chat'; también el chat abierto). Si
+   el timbre no responde, o sin carcasa, cada UNREAD_POLL_MS como antes.
+   Al salir de esta página, se da de baja. */
 loadUnreadChats();
-setInterval(loadUnreadChats, UNREAD_POLL_MS);
+(function() {
+    var t = timbreMovil();
+    if (!t) { setInterval(loadUnreadChats, UNREAD_POLL_MS); return; }
+    var bajas = [
+        t.on('chat', loadUnreadChats, UNREAD_POLL_MS),
+        t.on('chat', function() { if (CHAT.withUser) loadChatMessages(); })
+    ];
+    window.addEventListener('pagehide', function() {
+        bajas.forEach(function(b) { try { b(); } catch (e) {} });
+        try { t.rapido('chat', false); } catch (e) {}
+    });
+})();
 
 /* Deep-link desde notificación push: #chat=USERKEY
    La notif del SO abrió la PWA con este hash. Esperamos a que

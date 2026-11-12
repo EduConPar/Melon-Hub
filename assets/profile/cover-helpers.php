@@ -40,29 +40,34 @@ function cv_ensureTables(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS cover_cache (
-                hash       CHAR(40) PRIMARY KEY,      /* sha1 de la URL original */
-                source_url VARCHAR(2000) NOT NULL,
-                mime       VARCHAR(20) NOT NULL,
-                data       MEDIUMBLOB NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ");
-        /* Intentos de arreglo por (categoría, título, foto caída): evita
-           repetir la búsqueda en cada visita cuando no hay sustituta y
-           cuenta los errores pasajeros para dar el enlace por muerto si
-           siguen pasando. */
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS cover_checks (
-                hash       CHAR(40) PRIMARY KEY,
-                fails      INT NOT NULL DEFAULT 0,
-                gave_up_at TIMESTAMP NULL DEFAULT NULL,
-                checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ");
-    } catch (Throwable $e) { /* silencio */ }
+    /* Una vez por versión de este archivo (melon_esquema), no en
+       cada petición: ver .claude/notas/rendimiento.md. */
+    require_once dirname(__DIR__) . '/php/esquema.php';
+    melon_esquema($pdo, 'portadas', __FILE__, function (PDO $pdo) {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS cover_cache (
+                    hash       CHAR(40) PRIMARY KEY,      /* sha1 de la URL original */
+                    source_url VARCHAR(2000) NOT NULL,
+                    mime       VARCHAR(20) NOT NULL,
+                    data       MEDIUMBLOB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ");
+            /* Intentos de arreglo por (categoría, título, foto caída): evita
+               repetir la búsqueda en cada visita cuando no hay sustituta y
+               cuenta los errores pasajeros para dar el enlace por muerto si
+               siguen pasando. */
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS cover_checks (
+                    hash       CHAR(40) PRIMARY KEY,
+                    fails      INT NOT NULL DEFAULT 0,
+                    gave_up_at TIMESTAMP NULL DEFAULT NULL,
+                    checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ");
+        } catch (Throwable $e) { /* silencio */ }
+    });
 }
 
 /* ── Rutas ─────────────────────────────────────────────────────────── */

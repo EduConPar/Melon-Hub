@@ -1,0 +1,58 @@
+# Flatpak de Melon Hub para Linux. Lo construye electron/build.sh dentro de
+# un contenedor: empaqueta la app ya compilada por electron-builder
+# (dist/linux-unpacked) sobre la base de Electron de Flathub, que trae
+# zypak para que el sandbox de Chromium funcione dentro de Flatpak.
+app-id: es.melonhub.MelonHub
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '26.08'
+command: melonhub
+separate-locales: false
+finish-args:
+  - --share=ipc
+  - --share=network
+  # X11 siempre (también en escritorios Wayland, vía XWayland): el
+  # lanzador (melonhub.sh) abre la app en X11 para que el reproductor
+  # flotante pueda quedarse encima. Wayland queda de reserva si no hay X11.
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  # Notificaciones del sistema y, más adelante, el icono de la bandeja.
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Controles del sistema (MPRIS): teclas multimedia y el reproductor de
+  # KDE / GNOME. Chromium se registra como chromium.instance<pid>.
+  - --own-name=org.mpris.MediaPlayer2.chromium.*
+  # Guardar descargas (imagen del Wrapped…). Para subir fotos se usa el
+  # selector de archivos del sistema (portal), que no necesita permisos.
+  - --filesystem=xdg-download
+  # Presencia en Discord (discord.js): el socket discord-ipc-0 de Discord o
+  # Vesktop (un enlace en XDG_RUNTIME_DIR) y la carpeta del Discord de
+  # Flathub. Permiso añadido en la 0.3.3: esa versión no se actualiza con el
+  # botón del haro, hay que hacer `flatpak update` una vez.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+modules:
+  - name: melonhub
+    buildsystem: simple
+    build-commands:
+      - cp -a linux-unpacked /app/melonhub
+      - install -Dm755 melonhub.sh /app/bin/melonhub
+      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/es.melonhub.MelonHub.png
+      - install -Dm644 es.melonhub.MelonHub.desktop -t /app/share/applications
+      - install -Dm644 es.melonhub.MelonHub.metainfo.xml -t /app/share/metainfo
+    sources:
+      - type: dir
+        path: ../dist/linux-unpacked
+        dest: linux-unpacked
+      - type: file
+        path: ../icon.png
+      - type: file
+        path: melonhub.sh
+      - type: file
+        path: es.melonhub.MelonHub.desktop
+      - type: file
+        path: es.melonhub.MelonHub.metainfo.xml

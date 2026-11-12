@@ -1,0 +1,4 @@
+node_modules/
+##Clave de firma del APK: nunca al repo (es público). Guárdala fuera y haz copia.
+*.jks
+*.keystore

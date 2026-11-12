@@ -21,16 +21,19 @@
     if (!/Mobi|Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/.test(ua)) return;
     if (/iPad|Tablet/i.test(ua)) return;
 
+    /* La app de Android (Capacitor) añade "MelonHubApp" al
+       User-Agent: cuenta como PWA instalada. */
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-                  || window.navigator.standalone === true;
+                  || window.navigator.standalone === true
+                  || /MelonHubApp/.test(ua);
     if (standalone) return;
 
-    /* Calculamos la URL de la landing relativa a /scrapbookOnline/ para
-       que funcione llamado desde cualquier profundidad (apps/X.php o
-       /mobile.php). */
-    var path = window.location.pathname;
-    var marker = '/scrapbookOnline/';
-    var idx = path.indexOf(marker);
-    var base = idx >= 0 ? path.slice(0, idx + marker.length) : marker;
-    window.location.replace(base + 'mobile-landing.php');
+    /* La landing está en la raíz del proyecto, dos carpetas por encima de
+       este script (assets/js/): se calcula desde su propia URL, así vale
+       llamado desde cualquier profundidad (apps/mobile/X.php o mobile.php)
+       y en cualquier dominio. Antes se buscaba "/scrapbookOnline/" (la
+       carpeta de XAMPP) y en el hosting acababa en un 404. */
+    var me = document.currentScript && document.currentScript.src;
+    var landing = me ? new URL('../../mobile-landing.php', me).href : '/mobile-landing.php';
+    window.location.replace(landing);
 })();

@@ -13,6 +13,28 @@ require_once __DIR__ . '/assets/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/assets/themes/theme-helpers.php';
 
+/* Enlaces compartidos (assets/links.php): ?abrir=<tipo>:<valor> espera en
+   la sesión (aunque haya que iniciarla antes) y lo abre el escritorio o
+   mobile.php. Va antes de la redirección de los móviles para no perderse.
+   "Escuchar conmigo" de la presencia de Discord (?escuchar=<user_key>,
+   también el de versiones viejas de la app) pasa por enlace.php para
+   intentar abrir la app; dentro de la app de Android, directo. */
+require_once __DIR__ . '/assets/links.php';
+if (isset($_GET['abrir'])) {
+    $_abrir = melonParseLinkString((string)$_GET['abrir']);
+    if ($_abrir !== null) $_SESSION['abrir'] = $_abrir;
+}
+if (isset($_GET['escuchar'])) {
+    $_esc = melonParseLink('escuchar', (string)$_GET['escuchar']);
+    if ($_esc !== null) {
+        if (strpos($_SERVER['HTTP_USER_AGENT'] ?? '', 'MelonHubApp') === false) {
+            header('Location: enlace.php?escuchar=' . rawurlencode(substr($_esc, strlen('escuchar:'))));
+            exit;
+        }
+        $_SESSION['abrir'] = $_esc;
+    }
+}
+
 /* Móviles SIEMPRE entran por la landing. Es la única puerta a Melon
    Hub — la landing decide client-side qué hacer:
      - Standalone (la PWA está abierta) + sesión → mobile.php?pwa=1.
@@ -22,6 +44,24 @@ require_once __DIR__ . '/assets/themes/theme-helpers.php';
    Override con ?desktop=1 (o cookie force_desktop). */
 if (isMobileDevice()) {
     header('Location: mobile-landing.php');
+    exit;
+}
+
+/* Con la sesión abierta (o recordada, ver assets/remember-login.php) se
+   entra directo al escritorio, sin introducción ni selector de usuario:
+   así la app de escritorio abre ya dentro. Para volver al selector hay
+   que cerrar sesión (logout.php). */
+require_once __DIR__ . '/assets/remember-login.php';
+/* El enlace pendiente ($_SESSION['abrir'], arriba) lo recoge el propio
+   escritorio (desktop-base.php). */
+function desktopUrlFor(string $label): string {
+    return 'desktops/' . strtolower($label) . '-desktop.php';
+}
+$rememberedUser = restoreRememberedLogin($pdo);
+if ($rememberedUser !== null && isset($loginUsers[$rememberedUser]) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $rememberedLabel = $loginUsers[$rememberedUser]['label'];
+    ensureDesktopStub($rememberedLabel);
+    header('Location: ' . desktopUrlFor($rememberedLabel));
     exit;
 }
 
@@ -160,13 +200,14 @@ if ($selectedUser && isset($users[$selectedUser])) {
     if (isset($_POST['password'])) {
         if (password_verify($_POST['password'], $users[$selectedUser]['password'])) {
             $_SESSION['user'] = $selectedUser;
+            rememberLogin($pdo, $selectedUser);
             /* Móviles → menú feature-phone. PC/tablet → escritorio Win98.
                ensureDesktopStub() regenera el stub si fue borrado en algún
                momento — el usuario aterriza en su escritorio en vez de 404. */
             ensureDesktopStub($selectedLabel);
             $target = isMobileDevice()
                 ? 'mobile.php'
-                : 'desktops/' . strtolower($selectedLabel) . '-desktop.php';
+                : desktopUrlFor($selectedLabel);
             header('Location: ' . $target);
             exit;
         }

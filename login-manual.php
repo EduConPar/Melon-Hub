@@ -40,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($matchedKey !== null && password_verify($password, $loginUsers[$matchedKey]['password'])) {
             $_SESSION['user'] = $matchedKey;
+            require_once __DIR__ . '/db.php';
+            require_once __DIR__ . '/assets/remember-login.php';
+            rememberLogin($pdo, $matchedKey);
             /* Self-heal del stub si fue borrado: lo regeneramos antes del
                redirect para que el usuario aterrice en su escritorio en
                vez de en un 404. */
@@ -67,6 +70,8 @@ foreach (['png','jpg','jpeg','webp','gif'] as $ext) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <!-- Color de las barras del sistema en la app de Android (MainActivity) y en Chrome. -->
+    <meta name="theme-color" content="#000000">
     <title>Iniciar sesión — Scrapbook Melon</title>
     <link rel="icon" href="assets/img/mobile/icon.png" type="image/png">
     <link rel="stylesheet" href="assets/css/98.css">

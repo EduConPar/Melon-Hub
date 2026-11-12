@@ -11,8 +11,8 @@
     position: fixed;
     left: 8vw;
     top: 4vh;
-    width: 860px;
-    height: 620px;
+    width: 1000px;     /* perfil nuevo: más ancho (expositores + columna) */
+    height: 700px;
     min-width: 520px;
     min-height: 380px;
     z-index: 500;
@@ -55,10 +55,6 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-}
-
-#profile-social-section {
-    margin-top: 6px;
 }
 
 #profile-melon-section {
@@ -1521,6 +1517,37 @@
     min-width: 70px;
 }
 
+/* Cumpleaños en el editor: 98.css no estiliza <input type="date">;
+   lo igualamos a los de texto de al lado (Kawaii pone su borde con
+   !important y sigue mandando). */
+#profile-info-meta input[type="date"] {
+    border: none;
+    border-radius: 0;
+    height: 21px;
+    padding: 3px 4px;
+}
+
+/* Clip de "copiar enlace del perfil", debajo del país (renderProfileInfo). */
+.pinfo-link {
+    display: inline-flex;
+    align-self: flex-start;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    cursor: pointer;
+}
+.pinfo-link svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.pinfo-link:hover svg { stroke: var(--accent-deep, var(--accent)); }
+.pinfo-link:focus-visible { outline: 1px dotted var(--text); outline-offset: 1px; }
+
 .pinfo-line {
     font-size: 10px;
     color: var(--text);
@@ -2593,3 +2620,416 @@
     min-height: 200px;
     max-height: 90vh;
 }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   PERFIL NUEVO (estilo Steam, fase 1) — #profile-view-default
+   Cabecera (foto, datos, bio, redes, botones), expositores a la
+   izquierda, columna lateral (nivel, medallas, amigos, actividad) y
+   comentarios del muro. Lo pinta assets/js/perfil-v2.js. Todo con las
+   variables del tema; sin emojis de interfaz (iconos del pack).
+   ════════════════════════════════════════════════════════════════════ */
+/* Todo el texto del perfil nuevo con el color del tema (si no, hereda el
+   casi negro de 98.css y en temas oscuros no se ve). */
+#profile-view-default { background: var(--win-bg); color: var(--text); }
+#pf2-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.pf2-ic { image-rendering: pixelated; object-fit: contain; }
+
+/* Cabecera: de serie, degradado del tema (los fondos llegan en la fase 4). */
+#pf2-head { position: relative; display: flex; gap: 12px; align-items: stretch; padding: 12px 12px 10px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.10), rgba(0,0,0,.45)), linear-gradient(135deg, var(--titlebar-start), var(--titlebar-end));
+    border-bottom: 1px solid var(--border); color: #fff; min-height: 96px; }
+#pf2-head #profile-avatar-col { width: auto; padding: 0; border: 0; box-shadow: none; display: block; flex-shrink: 0; }
+#pf2-head .profile-avatar-frame { width: 84px; height: 84px; padding: 3px; box-sizing: border-box; background: var(--win-bg);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
+#pf2-head .profile-avatar-img { width: 100%; height: 100%; }
+/* Con marco (assets/css/marcos.css): la foto llena el hueco (sin el borde
+   hundido, que se veía entre el marco y la foto) y se le deja alrededor
+   lo que sobresale el marco (--mk-*), para que no se corte por arriba ni
+   tape el nombre. */
+#pf2-head .profile-avatar-frame[data-marco] { padding: 0; background: none; box-shadow: none;
+    margin: calc(84px * var(--mk-t)) calc(84px * var(--mk-r)) calc(84px * var(--mk-b)) calc(84px * var(--mk-l)); }
+#pf2-head .profile-avatar-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.pf2-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+/* Hueco para los botones de arriba a la derecha (solo en las dos primeras líneas). */
+.pf2-name, .pf2-status { padding-right: 190px; }
+.pf2-name { font-size: 18px; font-weight: bold; text-shadow: 1px 1px 0 #000; }
+.pf2-status { font-size: 10px; text-shadow: 1px 1px 0 #000; min-height: 12px; }
+.pf2-status b { font-weight: bold; }
+.pf2-status.is-online b { color: #9be36d; }
+.pf2-status.is-away b   { color: #ffd34d; }
+.pf2-status.is-dnd b    { color: #ff7a7a; }
+.pf2-status.is-offline b { color: #d0d0d0; }
+#pf2-head #profile-info-meta { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 2px 10px; min-width: 0; }
+#pf2-head .pinfo-line { color: #fff; text-shadow: 1px 1px 0 #000; }
+#pf2-head .pinfo-link svg { stroke: #fff; }
+#pf2-head .pinfo-link:hover svg { stroke: var(--accent-text, #fff); opacity: .8; }
+#pf2-head #profile-info-meta input { color: var(--input-text); text-shadow: none; max-width: 220px; }
+/* Bio: letra fija (sin el ajuste automático de fitBioText, que con bios
+   largas la dejaba diminuta), hasta 3 líneas. */
+#pf2-head #profile-info-bio { margin: auto 0 0; height: auto; min-height: 0; max-height: none; padding: 4px 8px; color: var(--accent); text-shadow: none; flex: none;
+    justify-content: flex-start; text-align: left; line-height: 1.35;
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1); }
+#pf2-head #profile-info-bio:empty { display: none; }
+#pf2-head .pinfo-bio-text { font-size: 11px !important; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+#pf2-head #profile-info-bio textarea { color: var(--input-text); }
+/* Redes: todas en un recuadro Win98 cuadrado, cuadrícula 2×2, abajo a
+   la derecha (en columna estiraban la cabecera y se metían debajo de los
+   botones). Sin redes no se pinta (al editar queda el "+"). */
+#pf2-head #profile-info-links { display: grid; grid-template-columns: repeat(2, 24px); grid-template-rows: repeat(2, 24px); gap: 4px; padding: 5px;
+    align-self: flex-end; place-items: center; flex-shrink: 0; background: var(--win-bg);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
+#pf2-head #profile-info-links:empty { display: none; }
+#pf2-head #profile-info-links .pinfo-social img { width: 20px !important; height: 20px !important; }
+#pf2-head #profile-info-links .pinfo-social-add { width: 22px; height: 22px; min-width: 0; min-height: 0; padding: 0; }
+.pf2-head-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; }
+.pf2-head-btns .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; }
+.pf2-head-btns #profile-notif-btn { width: 22px; height: 20px; }
+
+/* Cuerpo: expositores a la izquierda, columna lateral a la derecha. */
+.pf2-body { display: flex; gap: 8px; padding: 8px; align-items: flex-start; }
+.pf2-col-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+#pf2-showcases { display: flex; flex-direction: column; gap: 8px; }
+.pf2-col-r { width: 176px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.pf2-panel { background: var(--win-bg); padding: 2px;
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1), inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
+.pf2-panel-head { gap: 6px; padding: 3px 6px; }
+.pf2-panel-head .pf2-sub { margin-left: auto; font-weight: normal; font-size: 10px; opacity: .85; letter-spacing: 0; }
+.pf2-panel-body { padding: 6px; }
+.pf2-empty { font-size: 11px; color: var(--text); padding: 6px; text-align: center; }
+
+/* Juegos favoritos + ventanita al pasar el ratón. */
+.pf2-games { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.pf2-game { position: relative; aspect-ratio: 2 / 3; cursor: default; background: var(--inset-bg, #808080); }
+.pf2-game img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-game-noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; padding: 6px; color: var(--text); }
+.pf2-game:hover img { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pf2-tip { display: none; position: absolute; top: 4px; left: calc(100% + 6px); width: 150px; z-index: 20; }
+.pf2-game.flip .pf2-tip { left: auto; right: calc(100% + 6px); }
+.pf2-game:hover .pf2-tip { display: block; }
+.pf2-tip .title-bar-text { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf2-tip .window-body { margin: 4px; font-size: 10px; display: flex; flex-direction: column; gap: 4px; }
+.pf2-tip-row { display: flex; align-items: center; gap: 5px; }
+.pf2-tip-row b { margin-left: auto; }
+.pf2-stars { color: var(--accent); letter-spacing: 1px; }
+.pf2-bar { height: 6px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1); }
+.pf2-bar > i { display: block; height: 100%; background: var(--accent); }
+
+/* Capturas: una grande + miniaturas. */
+.pf2-shots { display: grid; grid-template-columns: 2fr 1fr; gap: 6px; }
+.pf2-shots.n1 { grid-template-columns: 1fr; }
+.pf2-shot-big { position: relative; }
+.pf2-shot-big img, .pf2-shot-thumbs img { width: 100%; display: block; object-fit: cover; aspect-ratio: 16 / 9; box-shadow: 0 0 0 1px var(--bezel-dark-1); cursor: zoom-in; }
+.pf2-shot-cap { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; color: #fff; padding: 3px 6px; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.pf2-shot-thumbs { display: grid; grid-template-columns: 1fr; gap: 6px; align-content: start; }
+
+/* Reseña destacada. */
+.pf2-review { display: flex; gap: 8px; }
+.pf2-review img { width: 64px; aspect-ratio: 2/3; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); flex-shrink: 0; }
+.pf2-review-t { font-weight: bold; font-size: 12px; }
+.pf2-review-txt { font-size: 11px; margin-top: 4px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; }
+
+/* Música favorita: portadas del álbum, cuadradas; clic derecho → Reproducir. */
+.pf2-music { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.pf2-album { min-width: 0; cursor: default; }
+.pf2-album img, .pf2-album .pf2-album-ph { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); background: var(--inset-bg, #808080); }
+.pf2-album div { font-size: 9px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf2-album:hover img { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pf2-menu { position: fixed; z-index: 3000; display: none; padding: 2px; min-width: 140px; }
+.pf2-menu { color: var(--text); }   /* si no, hereda el casi negro de 98.css */
+.pf2-menu div { padding: 4px 18px 4px 10px; font-size: 11px; cursor: default; color: var(--text); }
+.pf2-menu div:hover { background: var(--accent); color: var(--accent-text); }
+
+/* Comentarios del muro. */
+.pf2-new-comment { display: flex; gap: 4px; margin-bottom: 6px; }
+.pf2-new-comment input { flex: 1; min-width: 0; }
+.pf2-comment { display: flex; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 11px; }
+.pf2-comment:first-of-type { border-top: 0; }
+.pf2-comment-av { flex-shrink: 0; width: 28px; height: 28px; }
+.pf2-comment-av > img { width: 28px; height: 28px; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); flex-shrink: 0; cursor: pointer; }
+.pf2-comment-main { flex: 1; min-width: 0; }
+.pf2-comment-who { font-weight: bold; cursor: pointer; }
+.pf2-comment-when { color: var(--text-faint, #808080); font-size: 9px; margin-left: 4px; font-weight: normal; }
+.pf2-comment-txt { white-space: pre-wrap; word-break: break-word; }
+.pf2-comment .profile-post-img img { max-width: 100%; max-height: 220px; margin-top: 4px; display: block; cursor: zoom-in; }
+.pf2-del { min-width: 0 !important; width: 20px; height: 18px !important; min-height: 0 !important; padding: 0 !important; font-size: 9px; align-self: flex-start; }
+
+/* Columna lateral. */
+.pf2-lvl { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.pf2-level { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border); display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; background: var(--accent); color: var(--accent-text); flex-shrink: 0; }
+.pf2-xp { margin-top: 4px; font-size: 9px; color: var(--text-faint, #808080); }
+.pf2-medals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pf2-medal { position: relative; display: flex; justify-content: center; cursor: default; }
+.pf2-medal svg { width: 34px; height: 40px; display: block; }
+/* Medallas con sprite (PNG pixel 64×64): a 40 px, la altura del SVG. */
+.pf2-medal .pf2-medal-img { width: 40px; height: 40px; display: block; image-rendering: pixelated; }
+.pf2-mtip { display: none; position: absolute; right: 0; top: calc(100% + 2px); width: 160px; z-index: 20; font-size: 10px;
+    background: var(--warning-bg, #fffbe6); color: var(--warning-text, #444); border: 1px solid var(--bezel-dark-2); padding: 4px 6px; line-height: 1.35; }
+.pf2-medal:hover .pf2-mtip { display: block; }
+.pf2-mtip .pf2-bar { margin-top: 3px; }
+.pf2-friends { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+/* Con algún marco puesto, más separación para que no se monten. */
+.pf2-friends:has([data-marco]) { gap: 12px; padding: 6px; }
+.pf2-friend { display: block; }
+.pf2-friends img, .pf2-friends .pf2-friend-ph { width: 100%; aspect-ratio: 1; object-fit: cover; box-shadow: 0 0 0 1px var(--bezel-dark-1); cursor: pointer; display: block; }
+.pf2-friend-ph { display: flex !important; align-items: center; justify-content: center; font-size: 11px; background: var(--inset-bg, #808080); }
+.pf2-counts { font-size: 11px; display: flex; flex-direction: column; }
+.pf2-counts div { display: flex; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.pf2-counts div:last-child { border-bottom: 0; }
+.pf2-counts b { margin-left: auto; }
+
+/* Personalizar: arrastrar para ordenar, quitar, editar contenido y huecos. */
+.pf2-editing .pf2-show { outline: 1px dashed var(--accent); outline-offset: 2px; cursor: grab; }
+.pf2-editing .pf2-show.dragging { opacity: .45; }
+.pf2-edit-ctl { display: none; }
+.pf2-editing .pf2-edit-ctl { display: inline-flex; }
+.pf2-handle { cursor: grab; letter-spacing: -2px; margin-right: 2px; }
+.pf2-hbtn { min-width: 0 !important; height: 15px !important; min-height: 0 !important; padding: 0 5px !important; font-size: 9px; align-items: center; justify-content: center; margin-left: 4px; }
+.pf2-slot { border: 1px dashed var(--border); padding: 10px; text-align: center; font-size: 11px; color: var(--text); }
+.pf2-slot.add { cursor: pointer; }
+/* Como los menús del reproductor (.pl-menu-item): acento al pasar el
+   ratón (con el fondo de los campos, el texto claro de algunos temas
+   no se veía). */
+.pf2-slot.add:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.pf2-slot b { color: var(--text); }
+
+/* Ventanas de elegir contenido (selectores). */
+.pf2-picker { color: var(--text); position: fixed; z-index: 2500; width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 60px); display: flex; flex-direction: column; }
+.pf2-picker .window-body { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; flex: 1; }
+.pf2-pick-list { overflow-y: auto; max-height: 340px; background: var(--input-bg, #fff); padding: 4px;
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1), inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2); }
+.pf2-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.pf2-pick { position: relative; cursor: pointer; font-size: 10px; color: var(--input-text, #000); }
+.pf2-pick img, .pf2-pick .pf2-pick-ph { width: 100%; object-fit: cover; display: block; background: var(--inset-bg, #808080); }
+.pf2-pick.portrait img, .pf2-pick.portrait .pf2-pick-ph { aspect-ratio: 2/3; }
+.pf2-pick.square img, .pf2-pick.square .pf2-pick-ph { aspect-ratio: 1; }
+.pf2-pick.wide img { aspect-ratio: 16/9; }
+.pf2-pick .pf2-pick-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.pf2-pick.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pf2-pick .pf2-pick-n { position: absolute; top: 2px; left: 2px; background: var(--accent); color: var(--accent-text); font-size: 10px; padding: 0 4px; }
+.pf2-pick .pf2-pick-x { position: absolute; top: 2px; right: 2px; min-width: 0; min-height: 0; width: 16px; height: 14px; padding: 0; font-size: 8px; }
+.pf2-pick-row { display: flex; align-items: center; gap: 6px; padding: 4px; cursor: pointer; font-size: 11px; color: var(--input-text, #000); }
+.pf2-pick-row img { width: 32px; height: 32px; object-fit: cover; }
+.pf2-pick-row.on { background: var(--accent); color: var(--accent-text); }
+.pf2-pick-foot { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+.pf2-pick-foot .pf2-pick-info { margin-right: auto; font-size: 10px; color: var(--text-faint, #808080); }
+.pf2-upload { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; align-items: center; }
+/* Las capturas reutilizan el visor a pantalla completa de los posts
+   (.profile-post-img), pero sin su marco ni su altura máxima. */
+.pf2-shots .profile-post-img { margin: 0; padding: 0; background: none; box-shadow: none; }
+.pf2-shots .profile-post-img img { max-height: none; max-width: none; object-fit: cover; }
+
+/* ── Steam (fase 2) ── */
+#pf2-steam-ctl { position: absolute; right: 8px; top: 34px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end;
+    max-width: 240px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000; }
+#pf2-steam-ctl .button { font-size: 10px; min-width: 0; min-height: 20px; padding: 0 8px; text-shadow: none; }
+.pf2-marco-btn { order: -1; }
+/* Selector de marco: la foto con cada marco. Todas las fotos a la misma
+   altura, con sitio arriba y abajo para el marco que más sobresale
+   (Overdose 28 % por arriba, polaroid 35 % por abajo, de 64 px), y cada
+   una movida a un lado lo justo para que su marco quede centrado en la
+   tarjeta (--mk-l / --mk-r de marcos.css). */
+.pf2-marco-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 14px; padding: 12px; }
+.pf2-marco-prev { display: block; width: 64px; height: 64px; margin: 0 auto 26px; }
+.pf2-marco-prev[data-marco] { margin-left: calc(50% - 32px + 32px * (var(--mk-l) - var(--mk-r))); margin-right: 0; }
+.pf2-marco-prev > img, .pf2-marco-prev > .pf2-pick-ph { width: 64px; height: 64px; object-fit: cover; }
+.pf2-pick-marco { text-align: center; padding: 20px 2px 2px; }
+.pf2-pick-marco .pf2-pick-t { white-space: normal; overflow: visible; }
+.pf2-steam-warn { width: 100%; text-align: right; color: #ffd34d; }
+.pf2-ach { display: flex; gap: 8px; align-items: flex-start; }
+.pf2-ach-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.pf2-ach-it { position: relative; width: 52px; text-align: center; font-size: 9px; }
+.pf2-ach-it img { width: 48px; height: 48px; display: block; margin: 0 auto 2px; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-ach-it .pf2-mtip { left: 0; right: auto; width: 180px; }
+.pf2-ach-it.flip .pf2-mtip { left: auto; right: 0; }
+.pf2-ach-it:hover .pf2-mtip { display: block; }
+.pf2-ach-sum { text-align: right; font-size: 10px; flex-shrink: 0; }
+
+/* Juego destacado: portada grande a la izquierda; con Steam, horas,
+   logros X / Y con su barra y los logros elegidos en grande (64 px). */
+.pf2-feat { display: flex; gap: 10px; align-items: flex-start; }
+.pf2-feat-cover { position: relative; width: 150px; aspect-ratio: 2 / 3; flex-shrink: 0; background: var(--inset-bg, #808080); }
+.pf2-feat-cover img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-feat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.pf2-feat-t { font-weight: bold; font-size: 14px; word-break: break-word; }
+.pf2-feat-hours, .pf2-feat-rev { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+.pf2-feat-prog { font-size: 11px; display: flex; gap: 4px; }
+.pf2-feat-prog span { margin-left: auto; }
+.pf2-feat .pf2-bar { height: 10px; }
+.pf2-feat-achs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.pf2-feat-ach { position: relative; }
+.pf2-feat-ach img { width: 64px; height: 64px; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-feat-ach .pf2-mtip { left: 0; right: auto; width: 180px; }
+.pf2-feat-ach.flip .pf2-mtip { left: auto; right: 0; }
+.pf2-feat-ach:hover .pf2-mtip { display: block; }
+
+/* Playlist destacada: portada, nombre, botones y las primeras canciones. */
+.pf2-pl { display: flex; gap: 10px; align-items: flex-start; }
+.pf2-pl-cover { width: 120px; height: 120px; object-fit: cover; flex-shrink: 0; display: block; background: var(--inset-bg, #808080); box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-pl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pf2-pl-name { font-weight: bold; font-size: 14px; word-break: break-word; }
+.pf2-pl-meta { font-size: 10px; color: var(--text-faint, #808080); }
+.pf2-pl-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.pf2-pl-tracks { margin-top: 2px; }
+.pf2-pl-row { display: flex; gap: 6px; align-items: baseline; font-size: 11px; padding: 2px 4px; cursor: default; }
+.pf2-pl-row:hover { background: var(--accent); color: var(--accent-text); }
+.pf2-pl-n { width: 14px; text-align: right; flex-shrink: 0; opacity: .8; }
+.pf2-pl-tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf2-pl-d { flex-shrink: 0; opacity: .8; }
+
+/* Texto libre. */
+.pf2-text { font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+
+/* Media favorita: hasta 5 portadas por fila (3 de base + mejoras) y, en
+   Personalizar, el desplegable del tipo en la barra del expositor. */
+.pf2-games.pf2-games5 { grid-template-columns: repeat(5, 1fr); }
+.pf2-media-sel { font-size: 11px; height: 18px; padding: 0 2px; margin-left: 2px; min-width: 0; letter-spacing: 0; font-weight: normal; }
+.pf2-locked { padding: 10px; }
+
+/* Logros de Steam: filas de 7 (hasta 3), de arriba abajo, en un
+   bloque centrado y compacto con aire entre los iconos; los raros (menos
+   del 10 %) con brillo del acento; debajo, juegos y horas. */
+.pf2-achs { display: grid; grid-template-columns: repeat(7, 52px); gap: 12px 24px; justify-content: center; padding: 6px 4px; }
+.pf2-achg { position: relative; width: 52px; height: 52px; }
+.pf2-achg img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+.pf2-achg.raro img { box-shadow: 0 0 0 2px var(--accent), 0 0 7px 2px var(--accent); }
+.pf2-achg .pf2-mtip { left: 0; right: auto; width: 180px; }
+.pf2-achg.flip .pf2-mtip { left: auto; right: 0; }
+.pf2-achg:hover .pf2-mtip { display: block; }
+.pf2-ach-stats { display: flex; gap: 36px; width: calc(7 * 52px + 6 * 24px); margin: 8px auto 2px; padding-top: 6px; border-top: 1px solid var(--bezel-dark-1); }
+.pf2-ach-stats b { display: block; font-size: 20px; line-height: 1; font-weight: normal; }
+.pf2-ach-stats span { font-size: 10px; }
+
+/* Media favorita: los elementos siempre centrados, tengas los que tengas
+   (cada uno del ancho de 1/5 de la fila). */
+.pf2-games.pf2-games5, .pf2-music { display: flex; justify-content: center; gap: 6px; }
+.pf2-games.pf2-games5 > .pf2-game, .pf2-music > .pf2-album { width: calc((100% - 24px) / 5); flex: 0 0 auto; }
+
+/* ── Racha diaria (fueguito junto al nombre) e invitaciones ──
+   assets/profile/racha.php + perfil-v2.js (renderRacha / openInvite). */
+.pf2-racha { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; vertical-align: -2px; font-size: 13px; }
+.pf2-racha:empty { display: none; }
+.pf2-racha svg { width: 15px; height: 18px; display: block; filter: drop-shadow(1px 1px 0 #000); }
+.pf2-racha b { font-weight: bold; }
+.pf2-racha.is-off b { color: #d0d0d0; }
+.pf2-racha.is-btn { cursor: pointer; }
+.pf2-racha.is-btn:hover svg { transform: translateY(-1px); }
+.pf2-racha.is-btn:focus-visible { outline: 1px dotted #fff; outline-offset: 2px; }
+.pf2-inv-txt { font-size: 11px; line-height: 1.4; }
+.pf2-inv-link { display: flex; gap: 4px; }
+.pf2-inv-link input { flex: 1; min-width: 0; }
+.pf2-inv-list { max-height: 240px; }
+.pf2-inv-row .mh-marco-av img, .pf2-inv-row .pf2-friend-ph { width: 28px; height: 28px; object-fit: cover; display: flex; align-items: center; justify-content: center; }
+.pf2-inv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf2-inv-st { font-size: 10px; color: var(--text-faint, #808080); }
+.pf2-inv-row.is-cobrada .pf2-inv-st { color: var(--accent); font-weight: bold; }
+
+/* ══════════════════════════════════════════════════════════════════
+   AMIGOS ESTILO STEAM (assets/profile/amigos.php, apps/perfil.php)
+   Pestañas Win98 (98.css: menu[role=tablist] + .window[role=tabpanel]),
+   lista agrupada En línea / Desconectados, buscador y solicitudes.
+   Todo con las variables del tema.
+   ══════════════════════════════════════════════════════════════════ */
+#profile-view-social { flex-direction: column; min-height: 0; }
+/* Pestañas y panel: 98.css los pinta con colores fijos (plateado, blanco,
+   gris) y con selectores más fuertes (menu[role=tablist] > li[…]); aquí,
+   con más especificidad, todo con las variables del tema. */
+.am-tabs { margin: 8px 0 -2px; padding-left: 3px; }
+#profile-view-social menu[role=tablist] > li {
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px 0 var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px 0 var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+#profile-view-social menu[role=tablist] > li[aria-selected=true] { background-color: var(--win-bg); }
+#profile-view-social menu[role=tablist] > li > a { color: var(--text); }
+#profile-view-social menu[role=tablist] > li > a:focus { outline: 1px dotted var(--text); }
+#profile-view-social .window.am-panelwin {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+/* Confirmación de "Eliminar amigo", también con el tema. */
+#am-confirm.window {
+    background: var(--win-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
+}
+#am-confirm .title-bar { background: linear-gradient(90deg, var(--titlebar-start), var(--titlebar-end)); }
+#am-confirm .title-bar-text { color: var(--titlebar-text); }
+.am-panelwin > .window-body { flex: 1; overflow: auto; margin: 8px; }
+.am-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.am-sec { font-weight: bold; margin: 10px 0 6px; color: var(--text); }
+.am-sec:first-child { margin-top: 0; }
+.am-nota { color: var(--text-muted); margin-bottom: 8px; }
+.am-buscar { display: flex; gap: 6px; }
+.am-buscar .am-input { margin-bottom: 0; flex: 1; }
+.am-vacio { color: var(--text-muted); padding: 8px 2px; }
+.am-grupo {
+    margin: 10px 0 6px; padding-bottom: 3px; font-weight: bold; color: var(--text);
+    border-bottom: 1px solid var(--bezel-dark-2);
+}
+.am-grupo:first-child { margin-top: 0; }
+.am-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+/* Cada amigo: foto con marco y punto, nombre y estado. */
+.am-amigo, .am-fila {
+    display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer;
+    background: var(--input-bg); color: var(--input-text);
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-2);
+}
+.am-amigo:hover, .am-fila:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+.am-fila { margin-bottom: 4px; cursor: default; }
+.am-fila .am-av { cursor: pointer; }
+.am-av { width: 36px; height: 36px; flex-shrink: 0; }
+.am-av .profile-avatar-img { width: 100%; height: 100%; object-fit: cover; }
+/* Sin foto: el 👤 del perfil es enorme (58 px); aquí, a la medida del cuadro. */
+.am-av .profile-avatar-placeholder {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1; overflow: hidden;
+}
+.am-txt { min-width: 0; flex: 1; }
+.am-nom { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-est { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+/* Colores del estado como en Steam (en línea, ausente, no molestar,
+   escuchando), legibles en fondo claro y oscuro. */
+.am-on .am-est   { color: #3a9d3a; }
+.am-away .am-est { color: #c99a0e; }
+.am-dnd .am-est  { color: #d04040; }
+.am-np .am-est   { color: var(--accent); }
+.am-off { opacity: .75; }
+.am-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.am-btns .button { min-width: 0; padding: 0 10px; }
+/* Desactivado: 98.css le pone sombra blanca fija; aquí, texto apagado del tema. */
+.am-btns .button:disabled, .am-notif-btns .button:disabled { text-shadow: none; color: var(--text-muted); }
+.am-notif-btns { display: flex; gap: 4px; margin-top: 4px; }
+.am-notif-btns .button { min-width: 0; padding: 0 10px; }
+/* Menú del clic derecho, como los de Win98. */
+.am-menu {
+    position: fixed; z-index: 10005; min-width: 150px; padding: 2px;
+    background: var(--btn-bg); color: var(--text);
+    box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1),
+                inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2);
+}
+.am-menu > div[data-m] { padding: 4px 18px; cursor: default; }
+.am-menu > div[data-m]:hover { background: var(--accent); color: var(--accent-text); }
+.am-menu-sep { height: 1px; margin: 3px 2px; background: var(--bezel-dark-2); border-bottom: 1px solid var(--bezel-light-1); }
+
+/* ── Bloque Amigos del perfil, como en Steam (perfil-v2.js pintaAmigos):
+   los 6 de más nivel con foto y marco, nombre, estado y su nivel en el
+   mismo círculo que el nivel del perfil (.pf2-level). Colores del tema. */
+.pf2-fr-head { color: inherit; text-decoration: none; }
+.pf2-fr-head:hover { text-decoration: underline; }
+.pf2-frs { display: flex; flex-direction: column; gap: 6px; }
+.pf2-fr { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 3px 2px; }
+.pf2-fr:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.pf2-fr-av { position: relative; width: 32px; height: 32px; flex-shrink: 0; display: block; }
+.pf2-fr-av img, .pf2-fr-av .pf2-friend-ph { width: 32px; height: 32px; object-fit: cover; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1px var(--bezel-dark-1); }
+/* Sitio para el marco (lo que sobresale, --mk-* de marcos.css). */
+.pf2-fr-av[data-marco] { margin: calc(var(--mk-t) * 32px) calc(var(--mk-r) * 32px) calc(var(--mk-b) * 32px) calc(var(--mk-l) * 32px); }
+.pf2-fr-txt { flex: 1; min-width: 0; }
+.pf2-fr-nom { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.pf2-fr-est { font-size: 9px; color: var(--text-muted); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pf2-fr-on .pf2-fr-nom, .pf2-fr-np .pf2-fr-nom, .pf2-fr-on .pf2-fr-est, .pf2-fr-np .pf2-fr-est { color: var(--accent); }
+.pf2-fr-lvl { width: 26px; height: 26px; font-size: 11px; }

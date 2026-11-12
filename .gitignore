@@ -19,6 +19,15 @@ Thumbs.db
 # VS Code
 .vscode/
 
+# Claude Code: notas y ajustes locales del asistente y sus pruebas. No se
+# suben a GitHub.
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
+# Pruebas del reproductor flotante (Electron + API falsa).
+/electron/.e2e/
+
 # ─── Contenido generado por usuarios en producción ─────────────────
 # El auto-deploy de Hostinger hace `git reset --hard` y revierte todo
 # lo tracked → si dejamos estas rutas en el repo, cada push borra las
@@ -93,3 +102,20 @@ Thumbs.db
 # desde la BD si faltan.
 /uploads/covers/*
 !/uploads/covers/.gitkeep
+# Capturas del perfil (expositor "Capturas"; copia en la BD, profile_screenshots)
+/uploads/screenshots/*
+!/uploads/screenshots/.gitkeep
+
+# Timbre (assets/php/timbre.php): JSON que PHP reescribe al cambiar algo
+# (partidas, torneos, avisos por usuario). Solo se sube su .htaccess.
+/rt/*
+!/rt/.htaccess
+
+# Marcas de las migraciones hechas (assets/php/esquema.php).
+/uploads/esquema/
+
+# Avisos push de la app de Android (FCM): clave de la cuenta de servicio
+# de Firebase (da acceso a todo el proyecto: NUNCA al repo, que es
+# público; se sube a mano al servidor) y el access token que se guarda.
+/assets/push/*firebase-adminsdk*.json
+/assets/push/fcm-token.cache

@@ -82,9 +82,11 @@ function listInterfaces(): array {
 function listInterfacesForUser(PDO $pdo, ?int $userId): array {
     $all = listInterfaces();
     if ($userId === null) return $all;
-    /* Slugs con fila premium activa en la tienda. */
+    /* Slugs con fila en la tienda. Sin mirar `activo`: una interfaz
+       premium quitada del catálogo (assets/tienda/catalogo.json) no pasa
+       a ser gratis, solo deja de venderse; quien la compró la conserva. */
     $stmt = $pdo->prepare("SELECT slug, precio FROM tienda_items
-                           WHERE categoria = 'interfaces' AND activo = 1 AND slug <> ''");
+                           WHERE categoria = 'interfaces' AND slug <> ''");
     $stmt->execute();
     $shopRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$shopRows) return $all;
@@ -136,6 +138,14 @@ function emitInterfaceCss(string $relPrefix = ''): void {
     $cssV   = is_file($cssAbs) ? filemtime($cssAbs) : 0;
     echo '<link rel="stylesheet" id="active-interface-link" href="'
         . htmlspecialchars($rel) . '?v=' . $cssV . '">';
+
+    /* Fuente elegida para esta interfaz (cookie melonFuente; la pone
+       desktop-base.php desde la BD). Ver assets/php/fuentes.php. */
+    $fuente = preg_replace('/[^a-z0-9_-]/', '', (string)($_COOKIE['melonFuente'] ?? ''));
+    if ($fuente !== '') {
+        require_once __DIR__ . '/fuentes.php';
+        echo melonFuenteHead($fuente, $name);
+    }
 
     /* init.js opcional. */
     $jsAbs = dirname(__DIR__, 2) . '/assets/interfaces/' . $name . '/init.js';
