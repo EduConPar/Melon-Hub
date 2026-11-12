@@ -34,6 +34,7 @@
    POST  ?action=set-frame             { slug }            ('' = sin marco)
    POST  ?action=streak-claim          {}                  (racha: racha.php)
    GET   ?action=invites                                   (invitaciones: racha.php)
+   GET   ?action=steam-search-games&q=…   (juegos de la tienda que no tiene pero con logros suyos)
    GET   ?action=steam-game-achievements&appid=N
    POST  ?action=save-info             { bio, pronouns, birthday, country, steam, ... }
    POST  ?action=save-lists            { category, items[] }
@@ -2541,10 +2542,30 @@ case 'steam-games': {
     if ($sid === '') jsonError('No tienes Steam vinculado');
     $owned = steam_owned($sid);
     if ($owned === null) jsonError('Tu perfil de Steam (o "Detalles del juego") es privado');
-    usort($owned, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
+    /* Mezclados con los que no tiene (familia, devueltos) de los que tiene
+       logros: por horas; los que no tienen horas conocidas, al final. */
+    $all = array_values($owned + steam_extraGames($pdo, $uid, $sid, $owned));
+    usort($all, fn($a, $b) => [$b['minutes'] ?? -1, $a['name']] <=> [$a['minutes'] ?? -1, $b['name']]);
     jsonResponse(['ok' => true, 'games' => array_map(fn($g) => [
-        'appid' => $g['appid'], 'name' => $g['name'], 'hours' => round($g['minutes'] / 60, 1),
-    ], array_values($owned))]);
+        'appid' => $g['appid'], 'name' => $g['name'], 'hours' => steam_hours($g), 'owned' => $g['owned'],
+    ], $all)]);
+}
+
+/* Buscar en la tienda un juego que no sale en la lista (no lo tiene y no
+   lo ha jugado hace poco): solo los que tienen algún logro suyo. */
+case 'steam-search-games': {
+    require_once __DIR__ . '/perfil2.php';
+    $uid = pf_uid($pdo, $userKey);
+    $sid = steam_idOf($pdo, $uid);
+    if ($sid === '') jsonError('No tienes Steam vinculado');
+    $q = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 100);
+    if (mb_strlen($q) < 2) jsonResponse(['ok' => true, 'games' => []]);
+    $owned = steam_owned($sid) ?? [];
+    $items = array_diff_key(array_slice(steam_storeSearch([$q])[$q] ?? [], 0, 10, true), $owned);
+    $n = steam_myAchCounts($sid, array_keys($items));
+    $out = [];
+    foreach ($items as $app => $g) if (!empty($n[$app])) $out[] = ['appid' => $app, 'name' => $g['name'], 'hours' => null, 'owned' => false];
+    jsonResponse(['ok' => true, 'games' => $out]);
 }
 
 /* Logros que tengo de un juego (los desbloqueados). */

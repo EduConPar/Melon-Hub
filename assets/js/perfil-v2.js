@@ -271,7 +271,8 @@
         if (!st) return '';
         if (!st.inSteam) return '<div class="pf2-tip-row" style="opacity:.8;">' + ic('steamIcon', 12, 3) + 'No está en su Steam</div>';
         var pct = st.total ? Math.round(100 * st.achieved / st.total) : 0;
-        return '<div class="pf2-tip-row">' + ic('steamIcon', 12, 3) + 'Horas en Steam <b>' + st.hours.toLocaleString('es') + ' h</b></div>' +
+        /* hours null: no lo tiene (familia, devuelto) y no se saben. */
+        return (st.hours != null ? '<div class="pf2-tip-row">' + ic('steamIcon', 12, 3) + 'Horas en Steam <b>' + st.hours.toLocaleString('es') + ' h</b></div>' : '') +
             (st.total ? '<div class="pf2-tip-row">' + ic('bestOfTheYearIcon', 12, 3) + 'Logros <b>' + st.achieved + ' / ' + st.total + '</b></div>' +
                         '<div class="pf2-bar"><i style="width:' + pct + '%"></i></div>' : '');
     }
@@ -364,7 +365,7 @@
             var right = '<div class="pf2-feat-t">' + esc(g.title) + '</div>';
             if (st && st.inSteam) {
                 var pct = st.total ? Math.round(100 * st.achieved / st.total) : 0;
-                right += '<div class="pf2-feat-hours">' + ic('steamIcon', 12, 3) + '<b>' + st.hours.toLocaleString('es') + ' h</b> jugadas</div>';
+                if (st.hours != null) right += '<div class="pf2-feat-hours">' + ic('steamIcon', 12, 3) + '<b>' + st.hours.toLocaleString('es') + ' h</b> jugadas</div>';
                 if (st.total) {
                     right += '<div class="pf2-feat-prog">Logros <b>' + st.achieved + ' / ' + st.total + '</b><span>' + pct + ' %</span></div>' +
                         '<div class="pf2-bar"><i style="width:' + pct + '%"></i></div>';
@@ -1308,7 +1309,8 @@
                     if (t !== cur) return;
                     match = d && d.steam;
                     if (!match || !match.inSteam) { achH.textContent = 'Este juego no está en tu Steam: se enseñan la portada y tu reseña.'; return; }
-                    achH.textContent = 'Logros que se enseñan (máx. ' + MAX.game_feat + ') · ' + match.hours.toLocaleString('es') + ' h jugadas:';
+                    achH.textContent = 'Logros que se enseñan (máx. ' + MAX.game_feat + ')' +
+                        (match.hours != null ? ' · ' + match.hours.toLocaleString('es') + ' h jugadas' : match.owned === false ? ' · no lo tienes' : '') + ':';
                     showSteam(true);
                     achL.innerHTML = '<div class="pf2-empty">Cargando logros…</div>';
                     return api('steam-game-achievements&appid=' + match.appid).then(function (r) {
@@ -1543,6 +1545,9 @@
             var selL = body.querySelector('[data-r="sel"] .pf2-ach-list'), gamesL = body.querySelector('[data-r="games"]'), achL = body.querySelector('[data-r="ach"]');
             var input = body.querySelector('input');
             var games = [], info, curGame = null;
+            /* Lo que se busca en la tienda (juegos fuera de la lista que no
+               tiene y de los que tiene logros): por texto buscado. */
+            var buscados = {}, buscaT = null;
             var key = function (a) { return a.appid + '|' + a.apiname; };
             var paintSel = function () {
                 syncStrip(selL, sel.map(key), function (k) {
@@ -1560,15 +1565,23 @@
                     e.classList.toggle('on', sel.some(function (x) { return x.appid === curGame.appid && x.apiname === e.dataset.api; }));
                 });
             };
+            /* Mezclados: los que no tiene (familia, devueltos) llevan "no lo
+               tienes" en vez de las horas. Si lo buscado no está en la lista,
+               se busca también en la tienda de Steam. */
             var paintGames = function () {
                 var q = input.value.trim().toLowerCase();
-                var r = games.filter(function (g) { return !q || g.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 300);
+                var r = games.filter(function (g) { return !q || g.name.toLowerCase().indexOf(q) >= 0; });
+                var extra = q.length >= 2 && buscados[q] && buscados[q] !== 'buscando'
+                    ? buscados[q].filter(function (g) { return !games.some(function (x) { return x.appid === g.appid; }); }) : [];
+                r = r.concat(extra).slice(0, 300);
                 gamesL.innerHTML = r.map(function (g) {
-                    return '<div class="pf2-pick-row' + (curGame && curGame.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span style="flex:1;">' + esc(g.name) + '</span><small>' + g.hours + ' h</small></div>';
-                }).join('') || '<div class="pf2-empty">Sin juegos.</div>';
+                    return '<div class="pf2-pick-row' + (curGame && curGame.appid === g.appid ? ' on' : '') + '" data-app="' + g.appid + '"><span style="flex:1;">' + esc(g.name) + '</span><small>' +
+                        (g.owned === false ? 'no lo tienes' : g.hours + ' h') + '</small></div>';
+                }).join('') + (q.length >= 2 && buscados[q] === 'buscando' ? '<div class="pf2-empty">Buscando en Steam…</div>' : '') ||
+                    '<div class="pf2-empty">Sin juegos.</div>';
                 gamesL.querySelectorAll('.pf2-pick-row').forEach(function (el) {
                     el.addEventListener('click', function () {
-                        curGame = games.find(function (g) { return g.appid === +el.dataset.app; });
+                        curGame = r.find(function (g) { return g.appid === +el.dataset.app; });
                         gamesL.querySelectorAll('.pf2-pick-row').forEach(function (e) { e.classList.toggle('on', +e.dataset.app === curGame.appid); });
                         showGame(curGame);
                     });
@@ -1598,9 +1611,22 @@
                     });
                 });
             };
-            input.addEventListener('input', paintGames);
+            var buscarSteam = function () {
+                var q = input.value.trim().toLowerCase();
+                if (q.length < 2 || buscados[q]) return;
+                buscados[q] = 'buscando'; paintGames();
+                api('steam-search-games&q=' + encodeURIComponent(q)).then(function (d) {
+                    buscados[q] = (d && d.games) || [];
+                    if (input.value.trim().toLowerCase() === q) paintGames();
+                });
+            };
+            input.addEventListener('input', function () {
+                paintGames();
+                clearTimeout(buscaT);
+                buscaT = setTimeout(buscarSteam, 500);
+            });
             info = pickerFoot(body, '', function () {
-                sc.config = { items: sel.map(function (a) { return { appid: a.appid, apiname: a.apiname }; }) };
+                sc.config = { items: sel.map(function (a) { return { appid: a.appid, apiname: a.apiname, game: a.game || '' }; }) };
                 sc.data = { items: sel.slice(), totals: { games: st.games || 0, hours: st.hours || 0 } };
             });
             paintSel();

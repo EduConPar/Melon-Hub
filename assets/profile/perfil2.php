@@ -495,7 +495,10 @@ function pf2_cleanConfig(string $type, $cfg): array {
             foreach ((array)($cfg['items'] ?? []) as $it) {
                 $app = (int)($it['appid'] ?? 0);
                 $api = mb_substr(trim((string)($it['apiname'] ?? '')), 0, 120);
-                if ($app > 0 && $api !== '') $items[$app . '|' . $api] = ['appid' => $app, 'apiname' => $api];
+                /* game: nombre del juego (los que no están en su biblioteca no
+                   lo traen de Steam; steam_picked). */
+                $game = mb_substr(trim((string)($it['game'] ?? '')), 0, 200);
+                if ($app > 0 && $api !== '') $items[$app . '|' . $api] = ['appid' => $app, 'apiname' => $api, 'game' => $game];
             }
             return ['items' => array_slice(array_values($items), 0, PF2_MAX_STEAM_ACH)];
     }
