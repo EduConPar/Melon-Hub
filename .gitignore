@@ -119,3 +119,6 @@ CLAUDE.local.md
 # público; se sube a mano al servidor) y el access token que se guarda.
 /assets/push/*firebase-adminsdk*.json
 /assets/push/fcm-token.cache
+
+# Paquete del bot de Discord (se sube a Discloud a mano): no va en la web.
+/nodejs.tar
