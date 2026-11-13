@@ -21,13 +21,21 @@
 
 if (!function_exists('melon_devEsquema')) {
 
+    /* Devs de partida (usuarios.username, en minúsculas), además del de
+       menor id. Solo se aplica al crear la columna: si luego se les quita
+       la tag desde la página, no vuelve al desplegar otra versión. */
+    define('MELON_DEVS_INICIALES', ['unrod', 'angie']);
+
     function melon_devEsquema(PDO $pdo): void {
         require_once __DIR__ . '/esquema.php';
         melon_esquema($pdo, 'dev-acceso', __FILE__, function (PDO $pdo) {
+            $habia = (bool)$pdo->query("SHOW COLUMNS FROM usuarios LIKE 'es_dev'")->fetch();
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS es_dev TINYINT(1) NOT NULL DEFAULT 0");
-            if (!(int)$pdo->query("SELECT COUNT(*) FROM usuarios WHERE es_dev = 1")->fetchColumn()) {
-                $pdo->exec("UPDATE usuarios SET es_dev = 1 ORDER BY id ASC LIMIT 1");
-            }
+            if ($habia) return;
+            $pdo->exec("UPDATE usuarios SET es_dev = 1 ORDER BY id ASC LIMIT 1");
+            $marcas = implode(',', array_fill(0, count(MELON_DEVS_INICIALES), '?'));
+            $pdo->prepare("UPDATE usuarios SET es_dev = 1 WHERE LOWER(username) IN ($marcas)")
+                ->execute(MELON_DEVS_INICIALES);
         });
     }
 

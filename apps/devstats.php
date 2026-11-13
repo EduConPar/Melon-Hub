@@ -255,7 +255,7 @@ function barras(array $serie, string $unidad = ''): string {
     $h = '<div class="ds-barras" style="--n:' . $n . '">';
     foreach ($serie as $d => $v) {
         $t = date('d/m', strtotime($d)) . ': ' . num($v) . ($unidad ? ' ' . $unidad : '');
-        $h .= '<div class="ds-barra" title="' . e($t) . '"><i style="height:' . round($v / $max * 100, 1) . '%"></i></div>';
+        $h .= '<div class="ds-barra" data-tip="' . e($t) . '"><i style="height:' . round($v / $max * 100, 1) . '%"></i></div>';
     }
     $claves = array_keys($serie);
     $h .= '</div><div class="ds-eje"><span>' . e(date('d/m', strtotime($claves[0]))) . '</span><span>máx. ' . num($max) . '</span><span>'
@@ -298,15 +298,26 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
             font-size: 11px;
             font-family: 'Pixelated MS Sans Serif', 'ms_sans_serif', Tahoma, sans-serif;
         }
-        body { padding: 16px; box-sizing: border-box; }
+        /* La ventana ocupa toda la pantalla (de alto, como mínimo: si el
+           contenido es más largo, la página baja con la barra normal). */
+        body { padding: 0; box-sizing: border-box; }
         .ds-win.window {
-            max-width: 1100px; margin: 0 auto;
+            margin: 0; min-height: 100vh; box-sizing: border-box;
+            display: flex; flex-direction: column;
             background: var(--win-bg); color: var(--text);
             box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-2),
                         inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-1);
         }
         .ds-win .title-bar { background: linear-gradient(90deg, var(--titlebar-start), var(--titlebar-end)); }
         .ds-win .title-bar-text { color: var(--titlebar-text); }
+        .ds-win > .window-body { flex: 1; display: flex; flex-direction: column; }
+        .ds-win .window[role=tabpanel] { flex: 1; }
+
+        /* Valor de una barra al pasar el ratón, al momento (el title del
+           navegador tarda ~1 s). Mismo aspecto que los avisos del perfil. */
+        #ds-tip { position: fixed; z-index: 50; pointer-events: none; display: none; white-space: nowrap;
+            background: var(--warning-bg, #fffbe6); color: var(--warning-text, #444);
+            border: 1px solid var(--bezel-dark-2); padding: 2px 6px; }
         .ds-win button { background: var(--btn-bg); text-shadow: 0 0 var(--btn-text);
             box-shadow: inset -1px -1px var(--bezel-dark-1), inset 1px 1px var(--bezel-light-1),
                         inset -2px -2px var(--bezel-dark-2), inset 2px 2px var(--bezel-light-2); }
@@ -365,7 +376,7 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
         .ds-eje { display: flex; justify-content: space-between; color: var(--text-muted); margin-top: 3px; }
 
         .ds-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        @media (max-width: 760px) { .ds-dos { grid-template-columns: 1fr; } body { padding: 8px 0; } }
+        @media (max-width: 760px) { .ds-dos { grid-template-columns: 1fr; } }
 
         .ds-tabla-env { overflow: auto; max-height: 520px; background: var(--input-bg);
             box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-2),
@@ -706,6 +717,24 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
                 filas.forEach(function (f) { cuerpo.appendChild(f); });
             });
         });
+    });
+
+    /* Valor de la barra bajo el ratón: sale al entrar y sigue al ratón,
+       por encima (o por debajo si no cabe) y sin salirse por los lados. */
+    var tip = document.createElement('div');
+    tip.id = 'ds-tip';
+    document.body.appendChild(tip);
+    function moverTip(ev) {
+        var r = tip.getBoundingClientRect();
+        var x = Math.max(4, Math.min(ev.clientX - r.width / 2, window.innerWidth - r.width - 4));
+        var y = ev.clientY - r.height - 10;
+        if (y < 4) y = ev.clientY + 18;
+        tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    }
+    document.querySelectorAll('.ds-barra[data-tip]').forEach(function (b) {
+        b.addEventListener('mouseenter', function (ev) { tip.textContent = b.dataset.tip; tip.style.display = 'block'; moverTip(ev); });
+        b.addEventListener('mousemove', moverTip);
+        b.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
     });
 
     /* Buscar en la lista de usuarios. */
