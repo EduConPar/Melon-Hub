@@ -5335,6 +5335,21 @@ window.MuShell = (function(){
         function escHtml(s){
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
+        /* La última versión arriba (pedido así): changelog.md se sigue
+           escribiendo con lo nuevo al FINAL (así lo lee también el bot de
+           Discord, assets/php/changelog-discord.php); aquí se parte por los
+           "# Versión" y se da la vuelta. Los "---" se vuelven a poner entre
+           versiones. */
+        function ultimaPrimero(md){
+            var bloques = [], actual = null;
+            String(md).replace(/\r/g, '').split('\n').forEach(function(l){
+                if (/^#\s/.test(l)) { actual = [l]; bloques.push(actual); return; }
+                if (/^-{3,}\s*$/.test(l)) return;
+                if (actual) actual.push(l); else { actual = [l]; bloques.push(actual); }
+            });
+            return bloques.reverse().map(function(b){ return b.join('\n').trim(); })
+                .filter(Boolean).join('\n\n---\n\n');
+        }
         function mdToHtml(md){
             var lines = String(md).split(/\r?\n/);
             var out = [], i = 0, inUl = false, inOl = false, inCode = false;
@@ -5407,7 +5422,7 @@ window.MuShell = (function(){
             clBody.textContent = 'Cargando…';
             fetch('changelog.md?ts=' + Date.now())
                 .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-                .then(function(md){ clBody.innerHTML = mdToHtml(md); })
+                .then(function(md){ clBody.innerHTML = mdToHtml(ultimaPrimero(md)); })
                 .catch(function(err){
                     clBody.innerHTML = '<p style="color:var(--error-text,#c00);">Error al cargar el changelog: ' + escHtml(err.message) + '</p>';
                 });

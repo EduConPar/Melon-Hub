@@ -172,6 +172,11 @@ ensureLoginUsers();
 require_once __DIR__ . '/php/dev-acceso.php';
 melon_puertaDev();
 
+/* Changelog → Discord (solo main): si changelog.md ha cambiado (un stat),
+   publica la versión nueva con @everyone al acabar la petición. */
+require_once __DIR__ . '/php/changelog-discord.php';
+melon_changelogComprobar();
+
 function getUserImage($label)
 {
     $safe = preg_replace('/[^A-Za-z0-9_-]/', '', $label);
