@@ -805,7 +805,8 @@ case 'discord-publish': {
         $rel = getUserImage($label);
         if ($rel) {
             /* __DIR__ aquí = .../assets/profile. Subir 2 niveles → raíz del proyecto. */
-            $candidate = dirname(__DIR__, 2) . '/' . $rel;
+            /* getUserImage lleva "?v=…" (caché): aquí hace falta el archivo. */
+            $candidate = dirname(__DIR__, 2) . '/' . strtok($rel, '?');
             if (is_file($candidate)) {
                 $avatarFsPath = $candidate;
                 $avatarExt    = strtolower(pathinfo($candidate, PATHINFO_EXTENSION));

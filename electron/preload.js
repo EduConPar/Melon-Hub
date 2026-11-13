@@ -91,5 +91,8 @@ contextBridge.exposeInMainWorld('melonDesktop', {
         fit(width, height) {
             ipcRenderer.send('melon:mini-fit', width, height);
         },
+        /* La ventana se estira por los bordes (0.3.12): la página quita el
+           tirador de la esquina. Con apps anteriores no existe y lo deja. */
+        bordes: true,
     },
 });

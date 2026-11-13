@@ -329,3 +329,19 @@ html, .mh-body {
     font-size: 12px;
     margin-top: 6px;
 }
+
+/* ── Programa beta (assets/php/beta.php) ──
+   Lo marcado "solo-beta" solo se ve con <html class="mh-beta"> (suscritos).
+   La etiqueta BETA, con el acento del tema. */
+html:not(.mh-beta) .solo-beta { display: none !important; }
+.beta-tag {
+    display: inline-block;
+    padding: 0 3px;
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 12px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    background: var(--accent);
+    color: var(--accent-text);
+}

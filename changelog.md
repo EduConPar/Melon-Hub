@@ -134,3 +134,75 @@
 ## Bugs y mejoras
 - Arreglado un bug que hacia que al poner una reseña y hacer la ventana mas pequeña, los elementos de la ventana se salieran de esta
 - Arreglado un bug en el que el reproductor tenia 2 menus distintos
+
+---
+
+# Alfa 0.1.7
+
+## Nuevas funciones y cambios
+- Ahora añadir una imagen a una pelicula, serie, etc es opcional, si no se pone ninguna imagen se pondra una automaticamente teniendo prioridad la que haya puesto otro usuario y, en caso de que no se haya registrado otro usuario, usando el mismo sistema que arregla cuando un link de imagen se cae explicado mas abajo
+
+## Bugs y mejoras
+- Arreglado el problema de que cuando se caia un link de una imagen que se habia puesto a una serie, pelicula, etc el item se quedaba sin imagen. Ahora si un link cae busca otra imagen en internet para sustituirla
+
+---
+
+# Alfa 0.2.0
+
+## Aplicaciones de movil y escritorio de la Melon Hub
+Presentamos las aplicaciones de movil y escritorio de la melon hub las cuales se pueden descargar desde la propia pagina web, estas aplicaciones vienen con las siguientes funciones:
+
+### Escritorio
+- Ahora puedes tener la melon hub en segundo plano sin necesidad de tener la ventana abierta
+- Se ha añadido la opción de que, al cerrar la ventana de la melon hub y dejarla en segundo plano, si tienes musica sonando, se abra un pequeño reproductor en el escritorio con el que puedas controlarla. Esta opción se puede desactivar desde el panel que se abre al darle click derecho al icono de segundo plano de la app
+- Se ha añadido una integración con la presencia de discord, ahora todos los que esten escuchando musica en la aplicación de la Melon Hub les aparecerá lo que estan escuchando en discord
+- Añadido una función para descargar audios de las canciones, puedes haciendolo dandole click derecho a la cancion o a la playlist y seleccionando la opción de descargar
+- Desde la presencia de discord otra gente puede unirse a tu sesion y escuchar contigo, la persona solo puede unirse si os seguis mutuamente, si no simplemente se le abrira la melon hub
+
+### Movil
+- Ahora al apagar la pantalla o cambiar de aplicación la musica se seguirá reproduciendo
+- Se ha eliminado la funcion de bloquear pantalla dentro de la Melon Hub
+- Se ha añadido un widget de un minireproductor de musica en el que puedes controlar la reproduccion y cambiar la playlist
+- Se han añadido dos widgets de calendario, uno que te muestra los recordatorios proximos y otro que te muestra los dias del mes, el actual y cuales tienen un recordatorio en el
+- Ahora las notificaciones tambien aparecen cuando no se esta dentro de la aplicacion
+- Se ha cambiado el apartado visual de las notificaciones moviles
+
+## Nuevas funciones y cambios
+- Ahora en tu perfil puedes poner tu cumpleaños, cuando dos usuarios sean amigos les saldra sus respectivos cumpleaños como recordatorio anual en el calendario
+- Se han bajado los puntos de autismo que recibes por estar en vc a 1 por cada 5 min
+- Se ha aumentado el cooldown para recibir puntos de autismo por los mensajes a 10s
+- Ahora puedes copiar el link de canciones, albumes, playlist, escuchar juntos, etc. Al pulsar en ellos te abrira primero la aplicación y en su defecto la web
+- Se ha aumentado el precio de varios objetos de la tienda
+- Se ha hecho un revamp completo al perfil de la Melon Hub, ahora puedes tener distintos expositores, unos vienen de base, pero se pueden mejorar y comprar mas tipos de expositores en la tienda, cada usuario tiene 2 espacios de expositores de default y pueden ser aumentados a 5 comprandolos desde la tienda.
+- Ahora puedes conectar tu cuenta de steam a tu perfil, lo que te permitirá acceder a los expositores de logros y logros mas raros añadiendo logros de steam. Ademas, si añades el expositor de juegos favoritos, al poner el raton encima te saldran tus horas a ese juego en steam y la cantidad de logros
+- Ahora puedes regalar objetos de la tienda a usuarios que sean tus amigos
+- Se ha cambiado el sistema de amigos y social, ahora para agregar a gente tienes que mandarle solicitud de amistad. Ya no podras ver todos los perfiles de la Melon Hub en una lista, tendras que buscarlos por nombre en la seccion de añadir amigos
+- Ahora aparece el ultimo tiempo de conexion de tus amigos
+- Ahora la seccion de amigos/social se accede desde el perfil del usuario
+- Se ha rediseñado el icono de la Melon Hub
+- Se ha añadido una aplicación de juegos con 4 juegos nuevos: Wordelon, Buscaminas, Ajedrez y El Solitario. En todos estos juegos se pueden obtener puntos de autismo de una manera u otra.
+- Se ha añadido una racha de conexión en el perfil, la cual da puntos de autismo cada dia que es activada, para activarla debes ir a tu perfil y pulsar el icono de fuego cada vez que este gris
+- Ahora puedes invitar amigos a la Melon Hub, si estos amigos crean un perfil y activan su racha durante 7 dias seguidos en un lapso de 2 semanas, recibireis 500 puntos cada uno
+- Ahora puedes descargar el audio de las canciones en la calidad y formato que prefieras dandole click derecho a estas
+
+## Bugs y mejoras
+- Ahora al darle hacia atras en el reproductor estando en aleatorio te volver a la ultima cancion escuchada, no a una random
+- Arreglado un bug que no dejaba invitar a la gente como colaboradora debido a "datos invalidos"
+- Se ha mejorado el apartado visual de la tienda, añadiendo secciones dentro de cada pestaña para cada tipo de objeto
+- Se ha optimizado en gran medida la API de llamadas y los procesos que se usaban para poder aguantar mas usuarios simultaneos
+- Se ha optimizado el reproductor de la TV
+
+---
+
+# Alfa 0.2.1
+
+## Nuevas funciones y cambios
+- Ahora las medallas tienen la fecha en la que fueron obtenidas
+- Se ha añadido una opcion que te permite acceder en funciones en beta, el usuario puede suscribirse a las funciones en beta desde el boton de inicio en el navegador o ajustes en el movil. En algunas actualizaciones se habilitaran funciones en beta para que los usuarios las prueben antes de salir a la build estable y puedan reportar bugs y proponer mejoras
+
+## Bugs y mejoras
+- Se ha arreglado el bug que hacia que la lista de amigos en movil no se pudiera scrollear
+- Se ha arreglado el bug que hacia que en el expositor de musica favorita en el movil saliera una imagen mas grande que el resto
+- Se ha arreglado el bug que hacia que las fotos de perfil salieran completas cuando el usuario las habia recortado
+- Ahora la conexion de steam desde el movil es mas rapida
+- La ventana de mini reproductor que sale en el escritorio al estar la app en segundo plano ahora se puede resizear desde todos los bordes

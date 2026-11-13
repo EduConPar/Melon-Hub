@@ -582,9 +582,12 @@
         html += '<div class="pf2-panel"><div class="profile-sidebar-heading pf2-panel-head">Medallas</div><div class="pf2-panel-body' + (ganadas.length ? ' pf2-medals' : '') + '">' +
             (ganadas.length ? '' : '<div class="pf2-empty">Sin medallas todavía.</div>') +
             ganadas.map(function (m) {
+                /* Fecha de obtención (la del primer nivel; subir de nivel no
+                   la cambia): m.date = 'AAAA-MM-DD' (pf2_stats). */
+                var fecha = m.date ? '<div class="pf2-mfecha">Obtenida el ' + m.date.split('-').reverse().join('/') + '</div>' : '';
                 if (m.unique) {
                     return '<div class="pf2-medal">' + medalSvg(m) +
-                        '<div class="pf2-mtip"><b>' + esc(m.name) + '</b><br>' + esc(m.desc || '') + '</div></div>';
+                        '<div class="pf2-mtip"><b>' + esc(m.name) + '</b><br>' + esc(m.desc || '') + fecha + '</div></div>';
                 }
                 var tierName = TIERS[m.tier][2];
                 var nextTxt = m.next == null ? 'Nivel máximo'
@@ -592,7 +595,7 @@
                 return '<div class="pf2-medal">' + medalSvg(m) +
                     '<div class="pf2-mtip"><b>' + esc(m.name) + ' · ' + tierName + '</b><br>' +
                     m.value.toLocaleString('es') + ' ' + esc(m.unit) + '<br>' + esc(nextTxt) +
-                    '<div class="pf2-bar"><i style="width:' + m.progress + '%"></i></div></div></div>';
+                    '<div class="pf2-bar"><i style="width:' + m.progress + '%"></i></div>' + fecha + '</div></div>';
             }).join('') + '</div></div>';
         /* Amigos como en Steam: los 6 de más nivel (el servidor ya los manda
            ordenados), con su estado y su nivel. El título lleva a MI

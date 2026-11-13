@@ -361,7 +361,8 @@
        recarga con la ventana escondida, que no pinta ningún frame. ── */
     function fit() {
         var r = $('mp').getBoundingClientRect();
-        md.mini.fit(Math.ceil(r.width), Math.ceil(r.height));
+        ultimoFit = [Math.ceil(r.width), Math.ceil(r.height)];
+        md.mini.fit(ultimoFit[0], ultimoFit[1]);
     }
 
     /* ── Tamaño: el tirador de la esquina cambia `scale` y fit() ajusta la
@@ -415,7 +416,48 @@
         cov.style.margin = '0 auto';
     }
     try { setScale(parseFloat(localStorage.getItem(SCALE_KEY))); } catch (_) {}
-    (function() {
+    /* La escala que deja la ventana a la altura pedida (búsqueda binaria:
+       el tamaño no es proporcional a scale; la altura crece siempre con
+       ella, el ancho no). La usan los bordes y el tirador. */
+    function escalaParaAlto(objetivo) {
+        var lo = MIN_SCALE, hi = MAX_SCALE;
+        for (var k = 0; k < 14; k++) {
+            var mid = (lo + hi) / 2;
+            setScale(mid);
+            if ($('mp').getBoundingClientRect().height < objetivo) lo = mid; else hi = mid;
+        }
+        return Math.round(lo * 100) / 100;
+    }
+    /* Apps desde la 0.3.12 (md.mini.bordes): la ventana se estira por
+       cualquier borde o esquina y no hay tirador (decidido así). Mientras
+       se estira, el tamaño pedido decide la escala con las mismas reglas
+       que el tirador (si se mueve más en horizontal, cuenta el ancho con la
+       forma de antes); al dejar de moverse, fit() deja la ventana justo a la
+       forma del reproductor y se guarda. Sin pedir fit mientras se arrastra:
+       pelearía con el gestor de ventanas. Los resize que provoca el propio
+       fit (mismo tamaño que el pedido) no cuentan. */
+    var ultimoFit = null, estirando = false;
+    if (md && md.mini && md.mini.bordes) (function() {
+        $('mp-grip').remove();
+        var base = null, finT = null;
+        window.addEventListener('resize', function() {
+            var w = window.innerWidth, h = window.innerHeight;
+            if (!ultimoFit) return;
+            if (Math.abs(w - ultimoFit[0]) <= 1 && Math.abs(h - ultimoFit[1]) <= 1) return;
+            if (!base) base = ultimoFit.slice();
+            estirando = true;
+            var dx = w - base[0], dy = h - base[1];
+            var objetivo = base[1] + (Math.abs(dx) > Math.abs(dy) ? dx * base[1] / base[0] : dy);
+            setScale(escalaParaAlto(objetivo));
+            clearTimeout(finT);
+            finT = setTimeout(function() {
+                base = null; estirando = false;
+                try { localStorage.setItem(SCALE_KEY, String(scale)); } catch (_) {}
+                fit();
+            }, 350);
+        });
+    })();
+    else (function() {
         var grip = $('mp-grip');
         grip.addEventListener('pointerdown', function(e) {
             if (e.button !== 0) return;
@@ -430,16 +472,11 @@
                altura pedida. La altura crece siempre con scale (en las tres
                fases), el ancho no (en la 2.ª se queda fijo). Si el ratón se
                mueve más en horizontal, se pasa a altura con la forma. */
-            function altoCon(s) { setScale(s); return $('mp').getBoundingClientRect().height; }
             function move(ev) {
                 var dx = ev.screenX - x0, dy = ev.screenY - y0;
                 var objetivo = r.height + (Math.abs(dx) > Math.abs(dy) ? dx * r.height / r.width : dy);
-                var lo = MIN_SCALE, hi = MAX_SCALE, antes = scale;
-                for (var k = 0; k < 14; k++) {
-                    var mid = (lo + hi) / 2;
-                    if (altoCon(mid) < objetivo) lo = mid; else hi = mid;
-                }
-                var next = Math.round(lo * 100) / 100;
+                var antes = scale;
+                var next = escalaParaAlto(objetivo);
                 setScale(next);
                 if (next !== antes) fit();
             }
@@ -1434,7 +1471,8 @@
     setTimeout(function() { if (!lookApplied) { shown = true; setScale(scale); fit(); } }, 2500);
     /* Lo que cambie el tamaño después de enseñarse (una fuente que llega
        tarde, las pasadas del escalado de letra…) reajusta la ventana. */
-    new ResizeObserver(function() { if (shown) fit(); }).observe($('mp'));
+    /* Mientras se estira por los bordes no: pelearía con el gestor de ventanas. */
+    new ResizeObserver(function() { if (shown && !estirando) fit(); }).observe($('mp'));
 
     md.mini.onLook(applyLook);
     md.mini.onState(render);

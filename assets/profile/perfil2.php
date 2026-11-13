@@ -325,6 +325,84 @@ function pf2_nivel(int $xp): array {
     return [$nivel, $xp];
 }
 
+/* ── Fechas de obtención de las medallas (medallas_fechas, ver
+   assets/php/beta.php) ─────────────────────────────────────────────── */
+function pf2_fechasMedallas(PDO $pdo, int $uid): array {
+    try {
+        require_once dirname(__DIR__) . '/php/beta.php';
+        melon_betaEsquema($pdo);
+        $st = $pdo->prepare("SELECT medalla, obtenida FROM medallas_fechas WHERE user_id = ?");
+        $st->execute([$uid]);
+        return $st->fetchAll(PDO::FETCH_KEY_PAIR);
+    } catch (Throwable $e) {
+        error_log('[medallas] ' . $e->getMessage());
+        return [];
+    }
+}
+/* Guarda la fecha (null = ahora) y devuelve la que queda guardada. */
+function pf2_guardarFecha(PDO $pdo, int $uid, string $key, ?string $fecha): ?string {
+    $fecha = $fecha ?: date('Y-m-d H:i:s');
+    try {
+        $pdo->prepare("INSERT IGNORE INTO medallas_fechas (user_id, medalla, obtenida) VALUES (?, ?, ?)")->execute([$uid, $key, $fecha]);
+    } catch (Throwable $e) {
+        error_log('[medallas] ' . $e->getMessage());
+    }
+    return $fecha;
+}
+/* Cuándo se cruzó el primer umbral, con los datos que hay (la canción con
+   la que se llegó a las horas, la N-ésima reseña o victoria, el día que
+   se cumplió el año…). Así las medallas que ya se tenían antes de guardar
+   fechas salen con la suya y no con la de hoy. null si no se puede saber
+   (entonces se guarda la de ahora). Las mismas cuentas que pf2_stats. */
+function pf2_fechaUmbral(PDO $pdo, int $uid, string $key, int $th): ?string {
+    if ($th < 1) return null;
+    /* Filas [fecha, cantidad] de cada parte, cada una por su lado (si un
+       juego o tabla no está, las demás valen); se ordenan y se suman. */
+    $partes = function (array $sqls) use ($pdo, $uid): array {
+        $out = [];
+        foreach ($sqls as [$sql, $args]) {
+            try {
+                $st = $pdo->prepare($sql);
+                $st->execute($args);
+                foreach ($st->fetchAll(PDO::FETCH_NUM) as $r) if ($r[0]) $out[] = [(string)$r[0], (int)$r[1]];
+            } catch (Throwable $_) { /* tabla que no existe aquí */ }
+        }
+        usort($out, fn($a, $b) => strcmp($a[0], $b[0]));
+        return $out;
+    };
+    $cruce = function (array $filas, int $meta): ?string {
+        $acc = 0;
+        foreach ($filas as [$f, $n]) { $acc += $n; if ($acc >= $meta) return $f; }
+        return null;
+    };
+    switch ($key) {
+        case 'listen':
+            return $cruce($partes([["SELECT played_at, IF(duration_s > 0, duration_s, 180) FROM music_plays WHERE user_id = ?", [$uid]]]), $th * 3600);
+        case 'reviews':
+            return $cruce($partes([["SELECT r.reviewed_at, 1 FROM list_item_reviews r JOIN list_items i ON i.id = r.item_id WHERE r.user_id = ?", [$uid]]]), $th);
+        case 'art':
+            return $cruce($partes([["SELECT created_at, 1 FROM webhook_posts WHERE user_id = ? AND kind = 'discord'", [$uid]]]), $th);
+        case 'days':
+            $f = pf2_one($pdo, "SELECT DATE_ADD(created_at, INTERVAL " . (int)$th . " DAY) FROM usuarios WHERE id = ?", [$uid]);
+            return $f ? (string)$f : null;
+        case 'games':
+            return $cruce($partes([
+                ["SELECT TIMESTAMP(dia), 1 FROM wordelon_partidas WHERE user_id = ? AND acertado = 1", [$uid]],
+                ["SELECT FROM_UNIXTIME(COALESCE(fin_ms, inicio_ms) / 1000), 1 FROM bm_partidas WHERE user_id = ? AND estado = 'ganada'", [$uid]],
+                ["SELECT FROM_UNIXTIME(fin / 1000), 1 FROM ajz_partidas WHERE estado = 'terminada' AND fin IS NOT NULL
+                    AND ((blanco_id = ? AND resultado = '1-0') OR (negro_id = ? AND resultado = '0-1'))", [$uid, $uid]],
+            ]), $th);
+        case 'spent':
+            return $cruce($partes([
+                ["SELECT creado_en, precio FROM tienda_gastos WHERE user_id = ?", [$uid]],
+                ["SELECT creado_en, precio FROM tienda_regalos WHERE from_user_id = ? AND estado NOT IN ('rechazado', 'devuelto')", [$uid]],
+                ["SELECT FROM_UNIXTIME(fin / 1000), apuesta FROM ajz_partidas WHERE estado = 'terminada' AND apuesta > 0 AND fin IS NOT NULL
+                    AND ((blanco_id = ? AND resultado = '0-1') OR (negro_id = ? AND resultado = '1-0'))", [$uid, $uid]],
+            ]), $th);
+    }
+    return null;
+}
+
 function pf2_stats(PDO $pdo, int $uid): array {
     $secs = (int)pf2_one($pdo, "SELECT COALESCE(SUM(IF(duration_s > 0, duration_s, 180)), 0) FROM music_plays WHERE user_id = ?", [$uid]);
     /* Cada parte va por separado (pf2_one da 0 si falla): si un juego o
@@ -373,11 +451,29 @@ function pf2_stats(PDO $pdo, int $uid): array {
                 ? 'assets/img/Medallas/' . PF2_MEDAL_SPRITES[$key] . $tier . '.png' : null,
         ];
     }
+    /* Fechas de obtención (medallas_fechas): la del primer nivel; subir de
+       nivel no la cambia. La que falta se calcula una vez (cuándo se cruzó
+       el umbral, pf2_fechaUmbral) y se guarda. */
+    $fechas = pf2_fechasMedallas($pdo, $uid);
+    foreach ($medals as $i => $m) {
+        if ($m['tier'] < 1) continue;
+        if (!isset($fechas[$m['key']])) {
+            $th = 0;
+            foreach (PF2_MEDALS as $def) if ($def[0] === $m['key']) $th = $def[4][0];
+            $fechas[$m['key']] = pf2_guardarFecha($pdo, $uid, $m['key'], pf2_fechaUmbral($pdo, $uid, $m['key'], $th));
+        }
+        $medals[$i]['date'] = $fechas[$m['key']] ? substr($fechas[$m['key']], 0, 10) : null;
+    }
+    /* Tester: suscribirse al programa beta la da (assets/beta/api.php) y
+       darse de baja no la quita; la lista a mano sigue valiendo. */
     $user = strtolower((string)pf2_one($pdo, "SELECT username FROM usuarios WHERE id = ?", [$uid]));
-    if ($user !== '' && in_array($user, array_map('strtolower', PF2_TESTERS), true)) {
+    $enLista = $user !== '' && in_array($user, array_map('strtolower', PF2_TESTERS), true);
+    if ($enLista && !isset($fechas['tester'])) $fechas['tester'] = pf2_guardarFecha($pdo, $uid, 'tester', null);
+    if ($enLista || isset($fechas['tester'])) {
         $medals[] = ['key' => 'tester', 'name' => 'Tester', 'emoji' => '🖥️', 'unit' => '', 'value' => 0,
                      'tier' => 1, 'next' => null, 'progress' => 100, 'unique' => true,
-                     'desc' => 'Ayudó a probar Melon Hub', 'sprite' => PF2_TESTER_SPRITE];
+                     'desc' => 'Ayudó a probar Melon Hub', 'sprite' => PF2_TESTER_SPRITE,
+                     'date' => $fechas['tester'] ? substr($fechas['tester'], 0, 10) : null];
     }
     [$level, $into] = pf2_nivel($xp);
     return [

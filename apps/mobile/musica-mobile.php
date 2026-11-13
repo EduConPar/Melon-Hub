@@ -32,7 +32,8 @@ $resolveAvatar = function($label) {
     $root = dirname(__DIR__, 2);
     foreach (['webp','png','jpg','jpeg','gif'] as $ext) {
         if (file_exists($root . "/uploads/profile-photos/{$safe}.{$ext}")) {
-            return "../../uploads/profile-photos/{$safe}.{$ext}";
+            /* ?v=: la foto nueva se guarda con el mismo nombre (ver getUserImage). */
+            return "../../uploads/profile-photos/{$safe}.{$ext}?v=" . @filemtime($root . "/uploads/profile-photos/{$safe}.{$ext}");
         }
     }
     foreach (['png','jpg','jpeg','gif'] as $ext) {

@@ -172,22 +172,34 @@ ensureLoginUsers();
 require_once __DIR__ . '/php/dev-acceso.php';
 melon_puertaDev();
 
+/* Changelog → Discord (solo main): si changelog.md ha cambiado (un stat),
+   publica la versión nueva con @everyone al acabar la petición. */
+require_once __DIR__ . '/php/changelog-discord.php';
+melon_changelogComprobar();
+
 function getUserImage($label)
 {
     $safe = preg_replace('/[^A-Za-z0-9_-]/', '', $label);
     $root = dirname(__DIR__);
     /* 1) Carpeta de subidas de usuario — caché en filesystem. Si existe,
        sirve directamente. */
+    /* ?v=<fecha del archivo>: la foto nueva se guarda con el MISMO nombre
+       (<Nombre>.<ext>), así que sin esto el navegador y sobre todo la app
+       de escritorio seguían con la de antes en caché (muchas veces la del
+       registro, que se sube sin recortar: "sale entera, no como la
+       recorté"). Al cambiar la foto cambia la URL. Quien necesite la ruta
+       del archivo, que quite lo de detrás del "?" (strtok($r, '?')). */
     foreach (['webp', 'jpg', 'jpeg', 'png', 'gif'] as $ext) {
-        if (file_exists($root . "/uploads/profile-photos/{$safe}.{$ext}")) {
-            return "uploads/profile-photos/{$safe}.{$ext}";
+        $f = $root . "/uploads/profile-photos/{$safe}.{$ext}";
+        if (file_exists($f)) {
+            return "uploads/profile-photos/{$safe}.{$ext}?v=" . @filemtime($f);
         }
     }
     /* 2) Si el filesystem se borró (deploy de Hostinger limpiando uploads/),
        restauramos desde la BD que SÍ persiste. usuarios.photo_data tiene
        el binario y photo_ext la extensión original. */
     $restored = _restorePhotoFromDb($label, $safe);
-    if ($restored !== '') return $restored;
+    if ($restored !== '') return $restored . '?v=' . @filemtime($root . '/' . $restored);
     /* 3) Fallback al seed del repo (Capi.jpg / Angie.jpg shipped). */
     foreach (['jpg', 'jpeg', 'png', 'gif'] as $ext) {
         if (file_exists(__DIR__ . "/img/{$safe}.{$ext}")) {

@@ -96,6 +96,10 @@ require_once __DIR__ . '/assets/php/active-interface.php';
 /* Flag de build solo-dev (define MELON_DEV_BUILD). En main vale false →
    las funciones exclusivas de dev no se renderizan. */
 require_once __DIR__ . '/assets/dev-build.php';
+/* Programa beta (assets/php/beta.php): con la suscripción, <html class="mh-beta">
+   y window.MELON_BETA; lo marcado solo-beta solo se ve así. */
+require_once __DIR__ . '/assets/php/beta.php';
+$esBeta = melon_esBeta($pdo, $desktopUserKey);
 /* Sistemas con app de escritorio descargable (aviso del haro). */
 require_once __DIR__ . '/assets/desktop/downloads.php';
 
@@ -308,7 +312,7 @@ function _appIconExists(string $rel): bool {
 $_isTablet = isTabletDevice();
 ?>
 <!DOCTYPE html>
-<html lang="es"<?php echo $_isTablet ? ' data-tablet="1"' : ''; ?>>
+<html lang="es"<?php echo $_isTablet ? ' data-tablet="1"' : ''; ?><?php echo $esBeta ? ' class="mh-beta"' : ''; ?>>
 <head>
     <meta charset="UTF-8">
     <?php if ($_isTablet): ?>
@@ -331,7 +335,7 @@ $_isTablet = isTabletDevice();
     <link rel="icon" href="assets/img/mobile/icon.png" type="image/png">
     <link rel="stylesheet" href="assets/css/98.css">
     <link rel="stylesheet" href="assets/css/tokens.css">
-    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="stylesheet" href="assets/css/base.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/base.css'); ?>">
     <script>try{if(localStorage.getItem('lcd-filter')!=='0'){var c=document.documentElement.classList;c.add('lcd-filter-on');if(window.top===window)c.add('lcd-filter-top');}}catch(e){}</script>
     <!-- Sincroniza el icon pack del user desde BD → localStorage ANTES
          de que icon-pack.js lo lea. Sin esto, si el usuario cambió su
@@ -571,6 +575,26 @@ window.DesktopState.whenReady = function(cb){
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">
             <button id="cp-ok" class="default">Aceptar</button>
             <button id="cp-cancel">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL Programa beta (menú Inicio → "Beta tester..."; assets/beta/api.php) -->
+<div class="window win-modal-narrow" id="beta-modal" data-no-auto-z style="display:none; flex-direction:column; position:fixed;">
+    <div class="title-bar">
+        <div class="title-bar-text">Programa beta</div>
+        <div class="title-bar-controls">
+            <button aria-label="Close" id="beta-x"></button>
+        </div>
+    </div>
+    <div class="window-body" style="padding:14px;">
+        <p>Como <b>beta tester</b> pruebas las funciones nuevas de Melon Hub antes de que salgan para todos. Las verás marcadas con la etiqueta <span class="beta-tag">BETA</span>.</p>
+        <p>Están en pruebas: pueden fallar o cambiar. Si encuentras algo raro, cuéntalo en <i>Reportes...</i> del menú Inicio.</p>
+        <p>Al suscribirte ganas la medalla <b>Tester</b>, que se queda en tu perfil aunque luego te des de baja. Puedes darte de baja cuando quieras.</p>
+        <p id="beta-estado" style="margin-top:10px;"></p>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">
+            <button id="beta-ok" class="default">Suscribirme</button>
+            <button id="beta-cerrar">Cerrar</button>
         </div>
     </div>
 </div>
@@ -984,6 +1008,8 @@ window.DesktopState.whenReady = function(cb){
             <div class="menu-sep"></div>
             <a class="menu-item" href="#" id="menu-changelog">Changelog...</a>
             <a class="menu-item" href="#" id="menu-reports">Reportes...</a>
+            <!-- Programa beta: casilla (marcada si estás suscrito) que abre la ventana que lo explica. -->
+            <a class="menu-item" href="#" id="menu-beta"><span class="menu-casilla<?php echo $esBeta ? ' on' : ''; ?>" aria-hidden="true"></span>Beta tester...</a>
             <a class="menu-item" href="#" id="menu-change-password">Cambiar contraseña...</a>
             <a class="menu-item" href="#" id="menu-desktop-app" style="display:none">Descargar app de escritorio...</a>
             <a class="menu-item" href="logout.php">Cerrar sesión...</a>
@@ -1362,6 +1388,68 @@ document.addEventListener('click', function() {
 });
 
 /* =========================
+   PROGRAMA BETA
+   ========================
+   "Beta tester..." del menú Inicio: casilla marcada si estás suscrito;
+   al pulsarla, ventana que lo explica con Suscribirme / Darme de baja
+   (assets/beta/api.php). Suscribirse da la medalla Tester; darse de baja
+   no la quita. Al cambiar se pone o quita la clase mh-beta del <html>
+   (lo marcado solo-beta aparece o se va ya); lo que se decide en el
+   servidor sale al recargar. */
+window.MELON_BETA = <?php echo $esBeta ? 'true' : 'false'; ?>;
+(function(){
+    var link = document.getElementById('menu-beta');
+    if (!link) return;
+    var modal  = document.getElementById('beta-modal');
+    var estado = document.getElementById('beta-estado');
+    var okBtn  = document.getElementById('beta-ok');
+    var casilla = link.querySelector('.menu-casilla');
+    function pintar(beta, msg) {
+        window.MELON_BETA = !!beta;
+        document.documentElement.classList.toggle('mh-beta', !!beta);
+        casilla.classList.toggle('on', !!beta);
+        estado.innerHTML = msg || ('Estado: <b>' + (beta ? 'suscrito' : 'no suscrito') + '</b>');
+        okBtn.textContent = beta ? 'Darme de baja' : 'Suscribirme';
+        okBtn.disabled = false;
+    }
+    function open(e){
+        if (e) e.preventDefault();
+        var sm = document.getElementById('start-menu');
+        if (sm) sm.style.display = 'none';
+        pintar(window.MELON_BETA);
+        modal.style.display = 'flex';
+        if (window.centerModal) window.centerModal(modal);
+        if (window.windowZ) windowZ.bringToFront('beta-modal');
+        /* Por si cambió en otro sitio (el móvil). */
+        fetch('assets/beta/api.php', { credentials: 'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(d){ if (d && d.ok) pintar(d.beta); })
+            .catch(function(){});
+    }
+    function close(){ modal.style.display = 'none'; }
+    link.addEventListener('click', open);
+    document.getElementById('beta-x').addEventListener('click', close);
+    document.getElementById('beta-cerrar').addEventListener('click', close);
+    okBtn.addEventListener('click', function(){
+        var quiere = !window.MELON_BETA;
+        okBtn.disabled = true;
+        fetch('assets/beta/api.php', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ beta: quiere })
+        }).then(function(r){ return r.json(); }).then(function(d){
+            if (!d || !d.ok) throw new Error(d && d.error || 'error');
+            pintar(d.beta, d.beta
+                ? '¡Ya eres beta tester! Tienes la medalla <b>Tester</b> en tu perfil.'
+                : 'Te has dado de baja. La medalla <b>Tester</b> se queda en tu perfil.');
+        }).catch(function(){
+            okBtn.disabled = false;
+            estado.textContent = 'No se ha podido guardar. Inténtalo otra vez.';
+        });
+    });
+})();
+
+/* =========================
    CAMBIAR CONTRASEÑA
    ========================
    Abre un modal Win98 con 3 inputs (actual / nueva / repetir).
@@ -1461,6 +1549,21 @@ document.addEventListener('click', function() {
         **bold**    |   *italic*    |   `code`     |   [text](url)
         ```block code```
         Líneas en blanco → separador de párrafo. */
+    /* La última versión arriba (pedido así): changelog.md se sigue
+       escribiendo con lo nuevo al FINAL (así lo lee también el bot de
+       Discord, assets/php/changelog-discord.php); aquí se parte por los
+       "# Versión" y se da la vuelta. Los "---" se vuelven a poner entre
+       versiones. */
+    function ultimaPrimero(md){
+        var bloques = [], actual = null;
+        String(md).replace(/\r/g, '').split('\n').forEach(function(l){
+            if (/^#\s/.test(l)) { actual = [l]; bloques.push(actual); return; }
+            if (/^-{3,}\s*$/.test(l)) return;
+            if (actual) actual.push(l); else { actual = [l]; bloques.push(actual); }
+        });
+        return bloques.reverse().map(function(b){ return b.join('\n').trim(); })
+            .filter(Boolean).join('\n\n---\n\n');
+    }
     function mdToHtml(md){
         var lines = String(md).split(/\r?\n/);
         var out = [], i = 0, inUl = false, inOl = false, inCode = false;
@@ -1554,7 +1657,7 @@ document.addEventListener('click', function() {
         bodyEl.textContent = 'Cargando…';
         fetch('changelog.md?ts=' + Date.now())
             .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-            .then(function(md){ bodyEl.innerHTML = mdToHtml(md); })
+            .then(function(md){ bodyEl.innerHTML = mdToHtml(ultimaPrimero(md)); })
             .catch(function(err){
                 bodyEl.innerHTML = '<p style="color:var(--error-text,#c00);">Error al cargar el changelog: ' + escHtml(err.message) + '</p>';
             });
@@ -3268,6 +3371,7 @@ window.notifSystem = (function() {
     setup('music-player', true);
     /* Modales pequeños — arrastrables por su title-bar pero sin resize. */
     setup('change-password-modal', true);
+    setup('beta-modal', true);
     /* Reports y Changelog → resizable (segundo arg false). El usuario
        puede agrandar para leer cómodamente entradas largas o pegar más
        contexto en un reporte. */

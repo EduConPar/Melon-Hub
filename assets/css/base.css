@@ -711,3 +711,44 @@ html.lcd-filter-top body::after {
 }
 #mascota-ctx-inline li.sep:hover { background: var(--bezel-dark-2, grey); }
 
+
+/* ── Programa beta (assets/php/beta.php) ──
+   Lo marcado "solo-beta" solo se ve con <html class="mh-beta"> (suscritos).
+   La etiqueta BETA, con el acento del tema. */
+html:not(.mh-beta) .solo-beta { display: none !important; }
+.beta-tag {
+    display: inline-block;
+    padding: 0 3px;
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 12px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    background: var(--accent);
+    color: var(--accent-text);
+}
+/* Casilla del menú Inicio ("Beta tester..."): la de las casillas de Win98
+   (hundida, fondo de campo) con la marca de 98.css dibujada con máscara
+   para que coja el color del tema. */
+.menu-casilla {
+    position: relative;
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
+    box-sizing: border-box;
+    background: var(--input-bg);
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-2),
+                inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-1);
+}
+.menu-casilla.on::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 7px;
+    height: 7px;
+    background: var(--input-text);
+    -webkit-mask: url("data:image/svg+xml;charset=utf-8,%3Csvg width='7' height='7' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M7 0H6v1H5v1H4v1H3v1H2V3H1V2H0v3h1v1h1v1h1V6h1V5h1V4h1V3h1V0z'/%3E%3C/svg%3E") no-repeat;
+            mask: url("data:image/svg+xml;charset=utf-8,%3Csvg width='7' height='7' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M7 0H6v1H5v1H4v1H3v1H2V3H1V2H0v3h1v1h1v1h1V6h1V5h1V4h1V3h1V0z'/%3E%3C/svg%3E") no-repeat;
+}
+#beta-modal p { margin: 0 0 8px; font-size: 11px; line-height: 1.45; }

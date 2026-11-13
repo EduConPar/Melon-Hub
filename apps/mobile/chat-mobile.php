@@ -61,7 +61,8 @@ function getUserImage_chat($label) {
     $root = dirname(__DIR__, 2);
     foreach (['webp','png','jpg','jpeg','gif'] as $ext) {
         $p = $root . "/uploads/profile-photos/{$safe}.{$ext}";
-        if (file_exists($p)) return "uploads/profile-photos/{$safe}.{$ext}";
+        /* ?v=: la foto nueva se guarda con el mismo nombre (ver getUserImage). */
+        if (file_exists($p)) return "uploads/profile-photos/{$safe}.{$ext}?v=" . @filemtime($p);
     }
     foreach (['png','jpg','jpeg','gif'] as $ext) {
         $p = $root . "/assets/img/{$safe}.{$ext}";
