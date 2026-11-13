@@ -17,5 +17,5 @@
    NO borres este archivo.
    ════════════════════════════════════════════════════════════════════ */
 if (!defined('MELON_DEV_BUILD')) {
-    define('MELON_DEV_BUILD', true);
+    define('MELON_DEV_BUILD', false);
 }

@@ -22,8 +22,8 @@
    - Solo en main (MELON_DEV_BUILD false): dev comparte el changelog y
      publicaría dos veces. CHANGELOG_DISCORD=1 en el .env lo fuerza (pods de
      prueba) y =0 lo apaga.
-   - Canal: CHANGELOG_DISCORD_CHANNEL del .env o, si no está, el de los
-     eventos (assets/events/api.php EV_DISCORD_CHANNEL). Token:
+   - Canal: el del changelog (MELON_CL_CANAL, 1508966953723625592);
+     CHANGELOG_DISCORD_CHANNEL en el .env lo cambia. Token:
      DISCORD_BOT_TOKEN. Base de la API: DISCORD_API_BASE (pruebas).
      El bot necesita en ese canal "Enviar mensajes", "Insertar enlaces" y
      "Mencionar @everyone".
@@ -32,7 +32,8 @@
 
 if (!function_exists('melon_changelogComprobar')) {
 
-    define('MELON_CL_CANAL_EVENTOS', '1516472123651133450');   /* = EV_DISCORD_CHANNEL */
+    /* Canal del changelog en Discord (el de los anuncios de versiones). */
+    define('MELON_CL_CANAL', '1508966953723625592');
     /* Lo que ya se había anunciado a mano antes de esto: la primera vez
        solo esas cuentan como publicadas (la 0.2.1 la publica el bot). */
     define('MELON_CL_YA_ANUNCIADAS', ['Alfa 0.1.1', 'Alfa 0.1.2', 'Alfa 0.1.3', 'Alfa 0.1.4', 'Alfa 0.1.5', 'Alfa 0.1.6', 'Alfa 0.1.7', 'Alfa 0.2.0']);
@@ -197,7 +198,7 @@ if (!function_exists('melon_changelogComprobar')) {
                 }
             }
             {
-                $canal = trim((string)env('CHANGELOG_DISCORD_CHANNEL', '')) ?: MELON_CL_CANAL_EVENTOS;
+                $canal = trim((string)env('CHANGELOG_DISCORD_CHANNEL', '')) ?: MELON_CL_CANAL;
                 foreach ($versiones as $v) {
                     $h = md5($v['cuerpo']);
                     $prev = $estado['versiones'][$v['titulo']] ?? null;
