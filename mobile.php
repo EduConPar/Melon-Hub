@@ -342,6 +342,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <!-- Icon pack swap — debe cargar antes del primer render. -->
     <script src="assets/js/icon-pack.js"></script>
     <script src="assets/js/notif-sound.js"></script>
+    <script src="assets/js/uso-apps.js?v=<?= @filemtime(__DIR__ . '/assets/js/uso-apps.js') ?>"></script>
     <link rel="stylesheet" href="assets/css/themes.css">
     <?php if ($activeThemeCss): ?>
     <link rel="stylesheet" id="active-theme-link" href="<?= htmlspecialchars($activeThemeCss); ?>">
@@ -1879,6 +1880,24 @@ if ('serviceWorker' in navigator) {
        Usamos contentWindow.location.replace() para cargar sin empujar.
        Tampoco reseteamos a 'about:blank' al volver al menú — el
        iframe se queda oculto con la última URL hasta el próximo open. */
+    /* Estadísticas de uso (assets/js/uso-apps.js): la app es el nombre
+       del archivo sin "-mobile.php" (musica-mobile.php → musica), las
+       mismas claves que en el escritorio. Con el menú delante, "_inicio". */
+    function usoClave(url) {
+        var f = String(url || '').split('#')[0].split('?')[0].split('/').pop();
+        return f.replace(/\.php$/, '').replace(/-mobile$/, '').slice(0, 32) || null;
+    }
+    if (window.MelonUso) {
+        MelonUso.iniciar({
+            plataforma: /MelonHubApp/.test(navigator.userAgent) ? 'app-movil' : 'movil',
+            appActual: function () {
+                if (appShell.hidden) return null;
+                try { return usoClave(appFrame.contentWindow.location.pathname); }
+                catch (_) { return usoClave(appFrame.src); }
+            }
+        });
+    }
+
     function showApp(url) {
         appShell.hidden = false;
         if (launcherEl) launcherEl.style.visibility = 'hidden';
@@ -1902,6 +1921,7 @@ if ('serviceWorker' in navigator) {
        pack acumula una entrada y "‹ Menú" requiere N taps para volver. */
     function openApp(url, name, replaceHistory) {
         if (!url) return;
+        if (window.MelonUso && !replaceHistory) MelonUso.apertura(usoClave(url));
         showApp(url);
         try {
             var state = { app: url, name: name };

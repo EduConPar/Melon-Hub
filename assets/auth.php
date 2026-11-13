@@ -38,6 +38,9 @@ if (!function_exists('requireAuth')) {
         if (!$userKey || !isset($loginUsers[$userKey])) {
             jsonError('No autenticado', 401);
         }
+        /* Las APIs que abren la sesión después de incluir config.php no
+           pasan por su puerta de dev: se mira aquí. */
+        melon_puertaDev();
         return [
             'key'   => $userKey,
             'label' => $loginUsers[$userKey]['label'],
