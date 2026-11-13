@@ -71,7 +71,10 @@ function create() {
         useContentSize: true,
         show: false,
         frame: false,
-        resizable: false,
+        /* Se estira por cualquier borde o esquina (decidido así); el tamaño
+           que se deja decide la escala del contenido y, al soltar, la
+           página ajusta la ventana a su forma con fit (mini-player.html). */
+        resizable: true,
         maximizable: false,
         fullscreenable: false,
         /* Una ventana normal (no siempre encima), en la barra de tareas:

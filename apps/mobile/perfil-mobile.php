@@ -1112,7 +1112,11 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-noimg { display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; font-size: 10px;
             background: var(--input-bg, #fff); color: var(--input-text, #000); box-sizing: border-box; }
         /* Pósteres (juegos, películas, series, libros) y discos: 3 por fila. */
-        .pf2m-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        /* minmax(0, 1fr) y min-width: 0: con 1fr a secas una columna crecía
+           hasta el ancho del título más largo (va en una línea), y con 5
+           canciones la 3.ª salía más grande que las demás. */
+        .pf2m-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+        .pf2m-row3 > * { min-width: 0; }
         .pf2m-row3 img, .pf2m-row3 .pf2m-noimg { width: 100%; display: block; object-fit: cover; }
         .pf2m-poster img, .pf2m-poster .pf2m-noimg { aspect-ratio: 2/3; cursor: pointer; }
         .pf2m-album img, .pf2m-album .pf2m-noimg { aspect-ratio: 1; }
@@ -1235,8 +1239,16 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         /* ── Amigos (vista "social"; amPintar) ──
            Filas como en el PC: foto con marco y punto de presencia,
            nombre y estado. Todo con los colores del tema. */
-        .pfa-tabs { margin: 0 0 8px; }
-        .pfa-panel { padding: 0 0 8px; }
+        .pfa-tabs { margin: 0 0 8px; flex-shrink: 0; }
+        /* La ventana del móvil no hace scroll (overflow hidden): sin esto
+           la lista crecía hasta cortarse en el borde de la pantalla sin
+           poder bajar. Como .pf2m: las pestañas se quedan arriba y el
+           panel hace scroll por dentro. */
+        .pfa-panel {
+            padding: 0 2px 8px 0; flex: 1; min-height: 0;
+            overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
+        .pfa-panel > * { flex-shrink: 0; }
         .pfa-input {
             width: 100%; box-sizing: border-box; height: auto; min-height: 30px; margin: 0 0 6px;
             background-color: var(--input-bg, #fff) !important; color: var(--input-text, #000) !important;
