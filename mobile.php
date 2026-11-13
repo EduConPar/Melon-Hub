@@ -164,6 +164,10 @@ require_once __DIR__ . '/assets/php/active-interface.php';
    sync de interfaz lo encuentre. Antes solo se requería en el branch
    de ?t= (token PWA) → en cargas normales $pdo era null → fatal. */
 require_once __DIR__ . '/db.php';
+/* Programa beta (assets/php/beta.php): con la suscripción, <html class="mh-beta">
+   y window.MELON_BETA; lo marcado solo-beta solo se ve así. */
+require_once __DIR__ . '/assets/php/beta.php';
+$esBeta = melon_esBeta($pdo, $userKey);
 
 /* Timbre (assets/php/timbre.php): archivo estático del usuario que mira
    window.melonTimbre (assets/js/timbre.js) en vez de preguntar a cada API
@@ -278,7 +282,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 }
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es"<?= $esBeta ? ' class="mh-beta"' : '' ?>>
 <head>
     <meta charset="UTF-8">
     <!-- Antes redirigíamos a la landing si NO estábamos en standalone
@@ -453,7 +457,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         }
 
         /* ── MODAL CAMBIAR CONTRASEÑA / REPORTES ── (igual estilo Win98) */
-        #mh-cp-backdrop, #mh-rep-backdrop, #mh-cl-backdrop {
+        #mh-cp-backdrop, #mh-rep-backdrop, #mh-cl-backdrop, #mh-beta-backdrop {
             position: fixed; inset: 0;
             background: rgba(0, 0, 0, 0.45);
             z-index: 90;
@@ -463,7 +467,12 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             padding: 16px;
             box-sizing: border-box;
         }
-        #mh-cp-backdrop.is-open, #mh-rep-backdrop.is-open, #mh-cl-backdrop.is-open { display: flex; }
+        #mh-cp-backdrop.is-open, #mh-rep-backdrop.is-open, #mh-cl-backdrop.is-open, #mh-beta-backdrop.is-open { display: flex; }
+        #mh-beta-window { width: 100%; max-width: 340px; display: flex; flex-direction: column; }
+        #mh-beta-window .window-body { padding: 14px; }
+        #mh-beta-window p { margin: 0 0 8px; font-size: 12px; line-height: 1.45; }
+        #mh-beta-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+        #mh-beta-actions button { min-height: 30px; }
         #mh-cl-window {
             width: 100%; max-width: 380px;
             max-height: 88vh;
@@ -1383,6 +1392,13 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
                     <small>Manda un bug o una sugerencia</small>
                 </span>
             </button>
+            <!-- Programa beta (assets/beta/api.php): abre la ventana que lo explica. -->
+            <button class="mh-set-btn" type="button" id="mh-set-beta">
+                <span class="mh-set-emoji"><span class="beta-tag">BETA</span></span>
+                <span class="mh-set-text">Beta tester
+                    <small id="mh-set-beta-sub"><?= $esBeta ? 'Suscrito: pruebas las novedades antes que nadie' : 'Prueba las novedades antes que nadie' ?></small>
+                </span>
+            </button>
             <button class="mh-set-btn" type="button" id="mh-set-change-password">
                 <!-- Icono de llaves con fallback al emoji 🔑 si el PNG
                      no existe en el pack activo. onerror reemplaza el
@@ -1457,6 +1473,29 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             <div id="mh-rep-actions" style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px;">
                 <button id="mh-rep-cancel">Cancelar</button>
                 <button id="mh-rep-ok" class="default">Enviar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PROGRAMA BETA — el mismo texto y endpoint que el escritorio
+     (menú Inicio → "Beta tester..."). -->
+<div id="mh-beta-backdrop">
+    <div class="window" id="mh-beta-window">
+        <div class="title-bar">
+            <div class="title-bar-text">Programa beta</div>
+            <div class="title-bar-controls">
+                <button aria-label="Close" id="mh-beta-close"></button>
+            </div>
+        </div>
+        <div class="window-body">
+            <p>Como <b>beta tester</b> pruebas las funciones nuevas de Melon Hub antes de que salgan para todos. Las verás marcadas con la etiqueta <span class="beta-tag">BETA</span>.</p>
+            <p>Están en pruebas: pueden fallar o cambiar. Si encuentras algo raro, cuéntalo en <i>Reportes</i> de los ajustes.</p>
+            <p>Al suscribirte ganas la medalla <b>Tester</b>, que se queda en tu perfil aunque luego te des de baja. Puedes darte de baja cuando quieras.</p>
+            <p id="mh-beta-estado" style="margin-top:10px;"></p>
+            <div id="mh-beta-actions">
+                <button id="mh-beta-cerrar">Cerrar</button>
+                <button id="mh-beta-ok" class="default">Suscribirme</button>
             </div>
         </div>
     </div>
@@ -5231,6 +5270,57 @@ window.MuShell = (function(){
             else if (ev.key === 'Escape'){ ev.preventDefault(); cpCloseModal(); }
         });
     });
+
+    /* ── modal Programa beta ── (assets/beta/api.php; como el escritorio).
+       Al cambiar se pone o quita la clase mh-beta del <html>; las apps
+       (iframes) y lo que decide el servidor lo cogen al volver a abrirlas. */
+    window.MELON_BETA = <?= $esBeta ? 'true' : 'false' ?>;
+    (function(){
+        var abrir = document.getElementById('mh-set-beta');
+        var bp    = document.getElementById('mh-beta-backdrop');
+        var est   = document.getElementById('mh-beta-estado');
+        var ok    = document.getElementById('mh-beta-ok');
+        var sub   = document.getElementById('mh-set-beta-sub');
+        if (!abrir || !bp) return;
+        function pintar(beta, msg){
+            window.MELON_BETA = !!beta;
+            document.documentElement.classList.toggle('mh-beta', !!beta);
+            est.innerHTML = msg || ('Estado: <b>' + (beta ? 'suscrito' : 'no suscrito') + '</b>');
+            ok.textContent = beta ? 'Darme de baja' : 'Suscribirme';
+            ok.disabled = false;
+            sub.textContent = beta ? 'Suscrito: pruebas las novedades antes que nadie' : 'Prueba las novedades antes que nadie';
+        }
+        function cerrar(){ bp.classList.remove('is-open'); }
+        abrir.addEventListener('click', function(){
+            closeSettings();
+            pintar(window.MELON_BETA);
+            bp.classList.add('is-open');
+            fetch('assets/beta/api.php', { credentials: 'same-origin' })
+                .then(function(r){ return r.json(); })
+                .then(function(d){ if (d && d.ok) pintar(d.beta); })
+                .catch(function(){});
+        });
+        document.getElementById('mh-beta-close').addEventListener('click', cerrar);
+        document.getElementById('mh-beta-cerrar').addEventListener('click', cerrar);
+        bp.addEventListener('click', function(e){ if (e.target === bp) cerrar(); });
+        ok.addEventListener('click', function(){
+            var quiere = !window.MELON_BETA;
+            ok.disabled = true;
+            fetch('assets/beta/api.php', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ beta: quiere })
+            }).then(function(r){ return r.json(); }).then(function(d){
+                if (!d || !d.ok) throw new Error(d && d.error || 'error');
+                pintar(d.beta, d.beta
+                    ? '¡Ya eres beta tester! Tienes la medalla <b>Tester</b> en tu perfil.'
+                    : 'Te has dado de baja. La medalla <b>Tester</b> se queda en tu perfil.');
+            }).catch(function(){
+                ok.disabled = false;
+                est.textContent = 'No se ha podido guardar. Inténtalo otra vez.';
+            });
+        });
+    })();
 
     /* ── modal Changelog ──
        Renderiza changelog.md con un mini parser Markdown inline. */

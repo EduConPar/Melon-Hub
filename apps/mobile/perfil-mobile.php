@@ -1073,6 +1073,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         .pf2m-best .pf2m-medal-img { width: 52px; height: 52px; }
         .pf2m-icons .pf2m-medal-img { width: 36px; height: 36px; }
         .pf2m-mrow .pf2m-medal-img { width: 40px; height: 40px; }
+        .pf2m-mfecha { margin-top: 3px; font-size: 10px; font-style: italic; color: var(--text-muted, #444); }
         .pf2m-mtxt { flex: 1; min-width: 0; }
         .pf2m-bar { height: 6px; margin-top: 3px; background: var(--input-bg, #fff); box-shadow: inset 1px 1px var(--bezel-dark-1, #808080), inset -1px -1px var(--bezel-light-1, #fff); }
         .pf2m-bar i { display: block; height: 100%; background: var(--accent, navy); }
@@ -4839,6 +4840,9 @@ function pf2AbrirMedallas() {
             ficha = m.value.toLocaleString('es') + ' ' + esc(m.unit) + ' · ' + esc(sig) +
                 '<div class="pf2m-bar"><i style="width:' + (m.progress || 0) + '%"></i></div>';
         }
+        /* Fecha de obtención (la del primer nivel; subir de nivel no la
+           cambia), como en el aviso del PC. */
+        if (m.date) ficha += '<div class="pf2m-mfecha">Obtenida el ' + m.date.split('-').reverse().join('/') + '</div>';
         return '<div class="pf2m-mrow">' + pf2Medalla(m) + '<div class="pf2m-mtxt"><b>' + esc(m.name) + ' · ' +
             (m.unique ? 'Única' : PF2_TIERS[m.tier][2]) + '</b><br>' + ficha + '</div></div>';
     }).join('') || '<div class="mh-empty">Sin medallas todavía.</div>';
