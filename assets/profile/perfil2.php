@@ -470,10 +470,12 @@ function pf2_stats(PDO $pdo, int $uid): array {
     $enLista = $user !== '' && in_array($user, array_map('strtolower', PF2_TESTERS), true);
     if ($enLista && !isset($fechas['tester'])) $fechas['tester'] = pf2_guardarFecha($pdo, $uid, 'tester', null);
     if ($enLista || isset($fechas['tester'])) {
-        $medals[] = ['key' => 'tester', 'name' => 'Tester', 'emoji' => '🖥️', 'unit' => '', 'value' => 0,
+        /* Siempre la primera de todas (pedido así), en el PC y en el móvil.
+           La "mejor medalla" (pf2Mejor del móvil) la trata aparte. */
+        array_unshift($medals, ['key' => 'tester', 'name' => 'Tester', 'emoji' => '🖥️', 'unit' => '', 'value' => 0,
                      'tier' => 1, 'next' => null, 'progress' => 100, 'unique' => true,
                      'desc' => 'Ayudó a probar Melon Hub', 'sprite' => PF2_TESTER_SPRITE,
-                     'date' => $fechas['tester'] ? substr($fechas['tester'], 0, 10) : null];
+                     'date' => $fechas['tester'] ? substr($fechas['tester'], 0, 10) : null]);
     }
     [$level, $into] = pf2_nivel($xp);
     return [
