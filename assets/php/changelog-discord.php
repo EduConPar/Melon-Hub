@@ -12,8 +12,9 @@
      publiquen dos veces.
    - Lo anunciado se guarda en app_cache 'changelog_discord':
      { versiones: { "Alfa 0.1.7": { ids: [id de cada mensaje], hash } } }.
-     La primera vez (sin nada guardado) TODAS las versiones que ya hay se
-     dan por anunciadas sin publicar (no se repite la 0.1.6).
+     La primera vez (sin nada guardado) las de MELON_CL_YA_ANUNCIADAS (hasta
+     la 0.2.0, publicadas a mano) cuentan como anunciadas; lo que haya
+     después (la 0.2.1) se publica.
    - Versión nueva → mensaje con @everyone y la sección (embed; si pasa de
      ~4000 caracteres, en varios mensajes, solo el primero con @everyone).
    - Versión ya anunciada cuyo texto cambia (una errata) → se EDITAN sus
@@ -32,6 +33,9 @@
 if (!function_exists('melon_changelogComprobar')) {
 
     define('MELON_CL_CANAL_EVENTOS', '1516472123651133450');   /* = EV_DISCORD_CHANNEL */
+    /* Lo que ya se había anunciado a mano antes de esto: la primera vez
+       solo esas cuentan como publicadas (la 0.2.1 la publica el bot). */
+    define('MELON_CL_YA_ANUNCIADAS', ['Alfa 0.1.1', 'Alfa 0.1.2', 'Alfa 0.1.3', 'Alfa 0.1.4', 'Alfa 0.1.5', 'Alfa 0.1.6', 'Alfa 0.1.7', 'Alfa 0.2.0']);
 
     function melon_changelogActivo(): bool {
         $f = function_exists('env') ? (string)env('CHANGELOG_DISCORD', '') : '';
@@ -185,10 +189,14 @@ if (!function_exists('melon_changelogComprobar')) {
             $versiones = melon_changelogVersiones((string)@file_get_contents($md));
             $falla = false;
             if ($estado === null) {
-                /* Primera vez: lo que ya hay cuenta como anunciado. */
+                /* Primera vez: lo anunciado a mano (MELON_CL_YA_ANUNCIADAS)
+                   cuenta como publicado; lo demás se publica abajo. */
                 $estado = ['versiones' => []];
-                foreach ($versiones as $v) $estado['versiones'][$v['titulo']] = ['ids' => [], 'hash' => md5($v['cuerpo'])];
-            } else {
+                foreach ($versiones as $v) {
+                    if (in_array($v['titulo'], MELON_CL_YA_ANUNCIADAS, true)) $estado['versiones'][$v['titulo']] = ['ids' => [], 'hash' => md5($v['cuerpo'])];
+                }
+            }
+            {
                 $canal = trim((string)env('CHANGELOG_DISCORD_CHANNEL', '')) ?: MELON_CL_CANAL_EVENTOS;
                 foreach ($versiones as $v) {
                     $h = md5($v['cuerpo']);

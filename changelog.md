@@ -191,3 +191,18 @@ Presentamos las aplicaciones de movil y escritorio de la melon hub las cuales se
 - Se ha mejorado el apartado visual de la tienda, añadiendo secciones dentro de cada pestaña para cada tipo de objeto
 - Se ha optimizado en gran medida la API de llamadas y los procesos que se usaban para poder aguantar mas usuarios simultaneos
 - Se ha optimizado el reproductor de la TV
+
+---
+
+# Alfa 0.2.1
+
+## Nuevas funciones y cambios
+- Ahora las medallas tienen la fecha en la que fueron obtenidas
+- Se ha añadido una opcion que te permite acceder en funciones en beta, el usuario puede suscribirse a las funciones en beta desde el boton de inicio en el navegador o ajustes en el movil. En algunas actualizaciones se habilitaran funciones en beta para que los usuarios las prueben antes de salir a la build estable y puedan reportar bugs y proponer mejoras
+
+## Bugs y mejoras
+- Se ha arreglado el bug que hacia que la lista de amigos en movil no se pudiera scrollear
+- Se ha arreglado el bug que hacia que en el expositor de musica favorita en el movil saliera una imagen mas grande que el resto
+- Se ha arreglado el bug que hacia que las fotos de perfil salieran completas cuando el usuario las habia recortado
+- Ahora la conexion de steam desde el movil es mas rapida
+- La ventana de mini reproductor que sale en el escritorio al estar la app en segundo plano ahora se puede resizear desde todos los bordes
