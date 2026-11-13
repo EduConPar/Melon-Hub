@@ -167,6 +167,11 @@ function ensureLoginUsers(): void {
 }
 ensureLoginUsers();
 
+/* Melon Hub de dev: solo para quien tiene la tag dev (usuarios.es_dev).
+   Sin sesión no hace nada; fuera de la rama dev, tampoco. */
+require_once __DIR__ . '/php/dev-acceso.php';
+melon_puertaDev();
+
 function getUserImage($label)
 {
     $safe = preg_replace('/[^A-Za-z0-9_-]/', '', $label);

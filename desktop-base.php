@@ -1786,6 +1786,8 @@ window.taskbarManager = (function() {
         if (registry[id]) { restore(id); return; }
         var win = document.getElementById(id);
         if (!win) return;
+        /* Estadísticas de uso (assets/js/uso-apps.js): una apertura. */
+        if (window.MelonUso && window.melonUsoClave) MelonUso.apertura(melonUsoClave(id));
         var btn = document.createElement('button');
         btn.className = 'button taskbar-task-btn';
         btn.title = label;
@@ -4894,6 +4896,50 @@ window.notifSystem = (function() {
         if (document.readyState === 'complete') run();
         else window.addEventListener('load', run);
     }
+})();
+</script>
+
+<!-- Tiempo en cada app para las estadísticas de devs (apps/devstats.php).
+     La app "de delante" es la ventana visible con más z-index de entre
+     las que tienen botón en la barra de tareas (más el chat, que no lo
+     tiene); sin ninguna, cuenta como "_inicio". -->
+<script src="assets/js/uso-apps.js?v=<?= @filemtime(__DIR__ . '/assets/js/uso-apps.js') ?>"></script>
+<script>
+(function () {
+    var CLAVES = {
+        'music-player': 'musica', 'album-viewer': 'album', 'artist-window': 'artista',
+        'lyrics-window': 'letra', 'playlist-editor': 'playlists', 'profile-window': 'perfil',
+        'juegos-window': 'juegos', 'tienda-window': 'tienda', 'temas-window': 'temas',
+        'galeria-window': 'galeria', 'dibujo-window': 'dibujo', 'calendar-window': 'calendario',
+        'archive-window': 'melonarchive', 'dnd-window': 'dnd', 'mascota-window': 'mascota',
+        'alimentar-window': 'alimentar', 'companion-window': 'companion', 'wrapped-window': 'wrapped',
+        'profile-chat-window': 'chat'
+    };
+    window.melonUsoClave = function (id) {
+        if (CLAVES[id]) return CLAVES[id];
+        if (/^folder-window-/.test(id)) return 'carpeta';
+        if (/^profile-iframe-/.test(id)) return 'perfil';
+        return String(id).replace(/-window$/, '').replace(/-\d+$/, '').slice(0, 32);
+    };
+    function visible(w) {
+        if (w.style.display === 'none' || w.classList.contains('hidden')) return false;
+        return getComputedStyle(w).display !== 'none';
+    }
+    if (!window.MelonUso) return;
+    MelonUso.iniciar({
+        plataforma: /Electron/i.test(navigator.userAgent) ? 'electron' : 'web',
+        appActual: function () {
+            var mejor = null, mejorZ = -1;
+            document.querySelectorAll('.window[id]').forEach(function (w) {
+                var esChat = w.id === 'profile-chat-window';
+                if (!esChat && !(window.taskbarManager && taskbarManager.isRegistered(w.id))) return;
+                if (!visible(w)) return;
+                var z = parseInt(w.style.zIndex || getComputedStyle(w).zIndex || '0', 10) || 0;
+                if (z > mejorZ) { mejorZ = z; mejor = w.id; }
+            });
+            return mejor ? melonUsoClave(mejor) : null;
+        }
+    });
 })();
 </script>
 
