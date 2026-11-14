@@ -44,6 +44,7 @@
     {"categoria": "interfaces", "slug": "fuente-atkinson", "nombre": "Atkinson Hyperlegible", "descripcion": "Pensada para leerse lo mejor posible, con cada letra bien distinta.", "precio": 300, "icono": "🔤", "fuente": "Atkinson Hyperlegible", "pesos": "400;700"},
     {"categoria": "interfaces", "slug": "fuente-courier", "nombre": "Courier Prime", "descripcion": "Máquina de escribir de guion de cine.", "precio": 300, "icono": "🔤", "fuente": "Courier Prime", "pesos": "400;700"},
     {"categoria": "interfaces", "slug": "fuente-space-mono", "nombre": "Space Mono", "descripcion": "Monoespaciada con aire retrofuturista.", "precio": 300, "icono": "🔤", "fuente": "Space Mono", "pesos": "400;700"},
+    {"categoria": "interfaces", "slug": "fuente-jetbrains-mono", "nombre": "JetBrains Mono", "descripcion": "Monoespaciada de programador, clara y sin confusiones entre la 0 y la O.", "precio": 300, "icono": "🔤", "fuente": "JetBrains Mono", "pesos": "400;700"},
     {"categoria": "interfaces", "slug": "fuente-special-elite", "nombre": "Special Elite", "descripcion": "Máquina de escribir vieja, con la tinta gastada.", "precio": 300, "icono": "🔤", "fuente": "Special Elite"},
     {"categoria": "interfaces", "slug": "fuente-lora", "nombre": "Lora", "descripcion": "Con remates, de libro bonito.", "precio": 300, "icono": "🔤", "fuente": "Lora", "pesos": "400;700"},
     {"categoria": "interfaces", "slug": "fuente-patrick", "nombre": "Patrick Hand", "descripcion": "Escrita a mano con letra clara.", "precio": 300, "icono": "🔤", "fuente": "Patrick Hand"},
