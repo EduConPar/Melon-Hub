@@ -3314,7 +3314,8 @@ case 'submit-report': {
     if (function_exists('getUserImage')) {
         $rel = getUserImage($userLabel);
         if ($rel) {
-            $cand = dirname(__DIR__, 2) . '/' . $rel;
+            /* getUserImage lleva "?v=…" (caché): aquí hace falta el archivo. */
+            $cand = dirname(__DIR__, 2) . '/' . strtok($rel, '?');
             if (is_file($cand)) {
                 $avatarFsPath = $cand;
                 $avatarExt    = strtolower(pathinfo($cand, PATHINFO_EXTENSION));

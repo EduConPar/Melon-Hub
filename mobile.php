@@ -285,6 +285,23 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <html lang="es"<?= $esBeta ? ' class="mh-beta"' : '' ?>>
 <head>
     <meta charset="UTF-8">
+    <script>
+    /* Una carcasa nunca dentro de otra (14/11, bug "doble reproductor"):
+       si una app del iframe acaba cargando mobile.php (la X de su barra de
+       título, una sesión caducada que redirige aquí…), salía otra carcasa
+       entera dentro, con su reproductor y su disco: dos discos, y lo que se
+       ponía desde el widget y desde el buscador iba por reproductores
+       distintos. Aquí se para antes de cargar nada (ni YouTube) y se pide a
+       la de fuera que enseñe el menú. */
+    (function(){
+        try {
+            if (window.parent === window || !window.parent.document.getElementById('shell-app')) return;
+        } catch (_) { return; }   /* otro origen: no es una carcasa nuestra */
+        try { window.parent.postMessage({ type: 'shell:menu' }, '*'); } catch (_) {}
+        try { window.stop(); } catch (_) {}
+        location.replace('about:blank');
+    })();
+    </script>
     <!-- Antes redirigíamos a la landing si NO estábamos en standalone
          (PWA instalada). Eso causaba dos problemas:
            - Bucle infinito al abrir la PWA sin sesión (las cookies se
@@ -2123,6 +2140,12 @@ if ('serviceWorker' in navigator) {
     window.addEventListener('message', function(ev){
         var d = ev.data || {};
         if (d.type === 'shell:back')      goBack();
+        /* Una mobile.php que se iba a cargar dentro del iframe (ver el
+           principio de la cabecera): fuera la app y al menú. */
+        else if (d.type === 'shell:menu') {
+            showMenu();
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+        }
         else if (d.type === 'shell:open' && d.url) openApp(d.url, d.name);
         else if (d.type === 'theme-activated') {
             /* La app de Temas (iframe) activó un tema nuevo. Refrescamos:
