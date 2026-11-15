@@ -1,0 +1,41 @@
+/* ──────────────────────────────────────────────────────────────────────
+   Encuestas de satisfacción (assets/js/encuesta.js): escritorio y móvil.
+   Botones, textarea y ventana ya los pinta themes.css con el tema del
+   usuario; aquí solo la colocación y la nota elegida (botón hundido).
+   ────────────────────────────────────────────────────────────────────── */
+.enc-tit-ic { width: 14px; height: 14px; object-fit: contain; image-rendering: pixelated; vertical-align: -2px; margin-right: 4px; }
+.enc { font-size: 11px; color: var(--text); }
+.enc p { margin: 0 0 8px; line-height: 1.4; }
+.enc-preg { margin: 0 0 10px; }
+.enc-q { display: block; margin-bottom: 4px; }
+.enc-opc { color: var(--text-muted); }
+.enc-escala { display: flex; align-items: center; gap: 4px; }
+.enc-ext { color: var(--text-muted); flex: 0 0 auto; }
+.enc-ext:first-child { margin-right: 2px; }
+.enc-ext:last-child { margin-left: 2px; }
+.enc-escala button.enc-nota { min-width: 0; width: 30px; padding: 0; }
+/* Nota elegida: hundida y en negrita (como un botón pulsado), con los
+   biseles del tema y la misma especificidad que themes.css + 98.css. */
+.enc-escala button.enc-nota.enc-on,
+.enc-escala button.enc-nota.enc-on:not(:disabled):active {
+    font-weight: bold;
+    box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-1),
+                inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-2) !important;
+}
+.enc-coment { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; font: inherit; }
+.enc-cont { min-height: 14px; margin-top: 3px; color: var(--text-muted); }
+.enc-cont.enc-cont-ok { color: var(--text); font-weight: bold; }
+.enc-estado { min-height: 14px; }
+.enc-botones { display: flex; justify-content: flex-end; gap: 6px; }
+.enc-fin p { font-size: 12px; }
+
+/* Con siete preguntas puede no caber en pantallas bajas: la ventana no
+   pasa del alto de la pantalla y el contenido baja con su barra. */
+#encuesta-modal { max-height: 92vh; }
+#encuesta-modal #encuesta-cuerpo { overflow-y: auto; min-height: 0; }
+
+/* Móvil: dedos en vez de ratón. */
+#mh-enc-window .enc { font-size: 12px; }
+#mh-enc-window .enc-escala { gap: 6px; }
+#mh-enc-window .enc-escala button.enc-nota { flex: 1 1 0; width: auto; min-height: 34px; }
+#mh-enc-window .enc-botones button { min-height: 30px; }

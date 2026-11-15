@@ -366,6 +366,7 @@ $_isTablet = isTabletDevice();
     <link rel="stylesheet" href="assets/css/reproductor.css?v=<?php echo filemtime(__DIR__ . '/assets/css/reproductor.css'); ?>">
     <link rel="stylesheet" href="assets/css/perfil.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/perfil.css'); ?>">
     <link rel="stylesheet" href="assets/css/themes.css">
+    <link rel="stylesheet" href="assets/css/encuesta.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/encuesta.css'); ?>">
     <!-- Marcos de perfil: apps/perfil.php va incluido aquí y su <link> a
          marcos.css solo está en su cabecera standalone. Sin esto el marco
          (data-marco, de melon-marcos.js) no se dibuja en el escritorio. -->
@@ -597,6 +598,18 @@ window.DesktopState.whenReady = function(cb){
             <button id="beta-cerrar">Cerrar</button>
         </div>
     </div>
+</div>
+
+<!-- MODAL Encuesta de satisfacción (la abre el aviso del haro; el
+     formulario lo pinta assets/js/encuesta.js). -->
+<div class="window" id="encuesta-modal" data-no-auto-z style="display:none; flex-direction:column; position:fixed; width:380px;">
+    <div class="title-bar">
+        <div class="title-bar-text" id="encuesta-titulo">Encuesta</div>
+        <div class="title-bar-controls">
+            <button aria-label="Close" id="encuesta-x"></button>
+        </div>
+    </div>
+    <div class="window-body" id="encuesta-cuerpo" style="padding:12px;"></div>
 </div>
 
 <!-- MODAL Changelog -->
@@ -1083,6 +1096,7 @@ window.DesktopState.whenReady = function(cb){
     </div>
 </div>
 
+<script src="assets/js/encuesta.js?v=<?= @filemtime(__DIR__ . '/assets/js/encuesta.js') ?>"></script>
 <script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
 <script>
 /* Timbre del escritorio (assets/js/timbre.js): el archivo del usuario y lo
@@ -2960,6 +2974,41 @@ window.notifSystem = (function() {
     setTimeout(pollGifts, 6000);
     window.melonTimbre.on('regalo', pollGifts, 60000);
 
+    /* Encuesta de satisfacción (assets/encuestas/encuestas.php): se
+       pregunta una vez al abrir el escritorio si toca; si sí, avisa el
+       haro. Rechazar = no la quiere (cuenta como rechazada); Responder
+       abre la ventana. Cerrar la ventana sin enviar la deja pendiente y
+       vuelve a salir la próxima vez que se abra Melon Hub. */
+    function abrirEncuesta(enc) {
+        var modal = document.getElementById('encuesta-modal');
+        function cerrar() { modal.style.display = 'none'; }
+        document.getElementById('encuesta-x').onclick = cerrar;
+        MelonEncuesta.pintar(document.getElementById('encuesta-cuerpo'), enc, {
+            plataforma: window.melonDesktop ? 'electron' : 'web',
+            titulo: document.getElementById('encuesta-titulo'),
+            cerrar: cerrar
+        });
+        modal.style.display = 'flex';
+        if (window.centerModal) window.centerModal(modal);
+        if (window.windowZ) windowZ.bringToFront('encuesta-modal');
+    }
+    setTimeout(function () {
+        if (!window.MelonEncuesta || !window.notifSystem) return;
+        MelonEncuesta.pedir().then(function (enc) {
+            if (!enc) return;
+            window.notifSystem.show({
+                id:          'encuesta-' + enc.id,
+                type:        'action',
+                title:       '<img src="' + enc.icono + '" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Encuesta',
+                message:     '¿Nos ayudas a mejorar ' + enc.nombre + '? Gana hasta ' + (enc.puntos + enc.extra) + ' puntos.',
+                rejectLabel: 'Rechazar',
+                acceptLabel: 'Responder',
+                onReject:    function () { MelonEncuesta.rechazar(enc, window.melonDesktop ? 'electron' : 'web'); },
+                onAccept:    function () { abrirEncuesta(enc); },
+            });
+        });
+    }, 15000);
+
     /* Amigos (assets/profile/amigos.php, decidido así): además de la
        campana, el haro avisa de cada solicitud de amistad pendiente
        (Rechazar / Aceptar) y de cuando te aceptan una (una vez; se cierra
@@ -3372,6 +3421,7 @@ window.notifSystem = (function() {
     /* Modales pequeños — arrastrables por su title-bar pero sin resize. */
     setup('change-password-modal', true);
     setup('beta-modal', true);
+    setup('encuesta-modal', true);
     /* Reports y Changelog → resizable (segundo arg false). El usuario
        puede agrandar para leer cómodamente entradas largas o pegar más
        contexto en un reporte. */
