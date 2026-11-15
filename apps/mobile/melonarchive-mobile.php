@@ -15,10 +15,10 @@ require_once dirname(__DIR__, 2) . '/assets/mobile-detect.php';
 setLongSessionCookie();
 session_start();
 require_once dirname(__DIR__, 2) . '/assets/config.php';
-/* Flag solo-dev: la wiki (MelonWiki) solo se activa en dev. En main
-   MELON_DEV_BUILD es false → MelonArchive abre directo al archivo. */
-require_once dirname(__DIR__, 2) . '/assets/dev-build.php';
-$WIKI = defined('MELON_DEV_BUILD') && MELON_DEV_BUILD;
+/* Solo-dev: la wiki (MelonWiki) solo se activa en dev o con el modo dev
+   (assets/php/modo-dev.php). Si no → MelonArchive abre directo al archivo. */
+require_once dirname(__DIR__, 2) . '/assets/php/modo-dev.php';
+$WIKI = melon_funcionesDev();
 
 if (!isset($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
     header('Location: ../../index.php');

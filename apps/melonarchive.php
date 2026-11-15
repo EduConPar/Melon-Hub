@@ -1,11 +1,11 @@
 <?php
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
-/* Flag de build solo-dev. La wiki (MelonWiki) vive sobre MelonArchive y
-   SOLO se activa en dev. En main MELON_DEV_BUILD es false → la wiki queda
+/* Solo-dev. La wiki (MelonWiki) vive sobre MelonArchive y SOLO se activa
+   en dev o con el modo dev (assets/php/modo-dev.php). Si no, la wiki queda
    inerte: MelonArchive abre directo al archivo de vídeos de siempre. */
-require_once dirname(__DIR__) . '/assets/dev-build.php';
-$WIKI = defined('MELON_DEV_BUILD') && MELON_DEV_BUILD;
+require_once dirname(__DIR__) . '/assets/php/modo-dev.php';
+$WIKI = melon_funcionesDev();
 
 $userKey = $_SESSION['user'] ?? null;
 if (!$userKey || !isset($loginUsers[$userKey])) {
@@ -245,7 +245,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
 </div>
 
 <script>
-/* Flag solo-dev (lo emite PHP desde MELON_DEV_BUILD). En main es false →
+/* Flag solo-dev (lo emite PHP con melon_funcionesDev). Fuera de dev, false →
    MelonArchive abre directo al archivo de vídeos y la wiki queda inerte. */
 const WIKI_ENABLED = <?php echo $WIKI ? 'true' : 'false'; ?>;
 const WIKI_API = '../assets/wiki/api.php';

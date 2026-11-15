@@ -119,12 +119,12 @@ case 'state': {
     exit;
 }
 
-/* SOLO DEV (MELON_DEV_BUILD, assets/dev-build.php): darse puntos para
-   probar la tienda. En main la constante vale false y esto responde 403
-   aunque alguien llame a la acción a mano. */
+/* SOLO DEV (melon_funcionesDev, assets/php/modo-dev.php): darse puntos
+   para probar la tienda. En main, solo un dev con el modo dev; a
+   cualquier otro, 403 aunque llame a la acción a mano. */
 case 'dev-grant': {
-    require_once dirname(__DIR__) . '/dev-build.php';
-    if (!defined('MELON_DEV_BUILD') || !MELON_DEV_BUILD) jsonError('Solo en la build de desarrollo', 403);
+    require_once dirname(__DIR__) . '/php/modo-dev.php';
+    if (!melon_funcionesDev($pdo, $userKey)) jsonError('Solo en la build de desarrollo o con el modo dev', 403);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonError('Método no permitido', 405);
     $amount = (int)(getBody()['amount'] ?? 0);
     if ($amount < 1 || $amount > 100000) jsonError('Cantidad entre 1 y 100000');

@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
-require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: botón "Probar" de los haros */
+require_once dirname(__DIR__) . '/assets/php/modo-dev.php';   /* melon_funcionesDev: botón "Probar" de los haros */
 
 $userKey = $_SESSION['user'] ?? null;
 if (!$userKey || !isset($loginUsers[$userKey])) {
@@ -581,7 +581,7 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                 <div class="pers-grid" id="pers-icons-grid"></div>
             </section>
             <section class="pers-section">
-                <?php $_devHaroTest = defined('MELON_DEV_BUILD') && MELON_DEV_BUILD; ?>
+                <?php $_devHaroTest = melon_funcionesDev(); ?>
                 <h3 class="pers-section-title<?= $_devHaroTest ? ' has-action' : '' ?>"><img src="../assets/img/appIcons/haroIcon.png" alt="" style="width:16px;height:16px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;margin-right:4px;">Haros<?php if ($_devHaroTest): ?><button type="button" class="pers-title-btn" id="pers-haro-test" title="Saca una notificación de prueba con el haro activo (solo dev)">Probar</button><?php endif; ?></h3>
                 <div class="pers-grid" id="pers-haros-grid"></div>
             </section>
@@ -1872,7 +1872,7 @@ function buildPersItem(opts) {
     return el;
 }
 
-/* Botón "Probar" de los haros (solo dev, ver MELON_DEV_BUILD): Temas va
+/* Botón "Probar" de los haros (solo dev, ver melon_funcionesDev): Temas va
    en un iframe, así que le pide al escritorio que saque la notificación
    de prueba (lo atiende assets/dev/dev-desktop.php, también solo dev). */
 (function(){
