@@ -96,6 +96,13 @@ require_once __DIR__ . '/assets/php/active-interface.php';
 /* Flag de build solo-dev (define MELON_DEV_BUILD). En main vale false →
    las funciones exclusivas de dev no se renderizan. */
 require_once __DIR__ . '/assets/dev-build.php';
+/* Modo dev (assets/php/modo-dev.php): lo solo-dev se ve en la build de
+   dev o, en la normal, si eres dev y tienes puesto el "Modo dev" del menú
+   Inicio (la casilla solo la ven los devs, y no en la build de dev). */
+require_once __DIR__ . '/assets/php/modo-dev.php';
+[$esDevUsuario, $modoDev] = melon_estadoDev($pdo, $desktopUserKey);
+$funcionesDev = melon_funcionesDev($pdo, $desktopUserKey);
+$casillaModoDev = $esDevUsuario && !(defined('MELON_DEV_BUILD') && MELON_DEV_BUILD);
 /* Programa beta (assets/php/beta.php): con la suscripción, <html class="mh-beta">
    y window.MELON_BETA; lo marcado solo-beta solo se ve así. */
 require_once __DIR__ . '/assets/php/beta.php';
@@ -804,8 +811,8 @@ window.DesktopState.whenReady = function(cb){
         ?></div>
         <span>Juegos</span>
     </div>
-    <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
-    <!-- Icono de mascotas (SOLO DEV — gated por MELON_DEV_BUILD). -->
+    <?php if ($funcionesDev): ?>
+    <!-- Icono de mascotas (SOLO DEV — melon_funcionesDev: build de dev o modo dev). -->
     <div class="desktop-icon" id="mascota-desktop-icon">
         <div class="desktop-icon-img"><?php
             $_mascotaIcon = 'assets/img/appIcons/mascotaIcon.png';
@@ -1023,6 +1030,10 @@ window.DesktopState.whenReady = function(cb){
             <a class="menu-item" href="#" id="menu-reports">Reportes...</a>
             <!-- Programa beta: casilla (marcada si estás suscrito) que abre la ventana que lo explica. -->
             <a class="menu-item" href="#" id="menu-beta"><span class="menu-casilla<?php echo $esBeta ? ' on' : ''; ?>" aria-hidden="true"></span>Beta tester...</a>
+            <?php if ($casillaModoDev): ?>
+            <!-- Modo dev (solo devs, solo en la Melon Hub normal): casilla que lo pone o quita y recarga. -->
+            <a class="menu-item" href="#" id="menu-modo-dev"><span class="menu-casilla<?php echo $modoDev ? ' on' : ''; ?>" aria-hidden="true"></span>Modo dev</a>
+            <?php endif; ?>
             <a class="menu-item" href="#" id="menu-change-password">Cambiar contraseña...</a>
             <a class="menu-item" href="#" id="menu-desktop-app" style="display:none">Descargar app de escritorio...</a>
             <a class="menu-item" href="logout.php">Cerrar sesión...</a>
@@ -1411,6 +1422,27 @@ document.addEventListener('click', function() {
    (lo marcado solo-beta aparece o se va ya); lo que se decide en el
    servidor sale al recargar. */
 window.MELON_BETA = <?php echo $esBeta ? 'true' : 'false'; ?>;
+/* Modo dev (assets/php/modo-dev.php): la casilla del menú Inicio lo
+   cambia y recarga, porque lo solo-dev lo pinta el servidor. */
+(function(){
+    var link = document.getElementById('menu-modo-dev');
+    if (!link) return;
+    var ocupado = false;
+    link.addEventListener('click', function(e){
+        e.preventDefault();
+        if (ocupado) return;
+        ocupado = true;
+        var quiere = !link.querySelector('.menu-casilla').classList.contains('on');
+        fetch('assets/dev/modo-api.php', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modo: quiere })
+        }).then(function(r){ return r.json(); }).then(function(d){
+            if (!d || !d.ok) throw new Error(d && d.error || 'error');
+            location.reload();
+        }).catch(function(){ ocupado = false; });
+    });
+})();
 (function(){
     var link = document.getElementById('menu-beta');
     if (!link) return;
@@ -5099,8 +5131,8 @@ window.notifSystem = (function() {
 
 <?php
 /* Sección exclusiva de DEV (banner Wrapped + marca de agua "Dev Build").
-   Solo se incluye si MELON_DEV_BUILD es true (en main es false → nada). */
-if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD) {
+   Solo se incluye en la build de dev o con el modo dev. */
+if ($funcionesDev) {
     include __DIR__ . '/assets/dev/dev-desktop.php';
 }
 ?>

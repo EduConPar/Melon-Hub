@@ -5,7 +5,7 @@ header('Expires: 0');
 
 session_start();
 require_once dirname(__DIR__) . '/assets/config.php';
-require_once dirname(__DIR__) . '/assets/dev-build.php';   /* MELON_DEV_BUILD: cajita "DEV" de darse puntos */
+require_once dirname(__DIR__) . '/assets/php/modo-dev.php';   /* melon_funcionesDev: cajita "DEV" de darse puntos */
 require_once dirname(__DIR__) . '/assets/tienda/catalogo.php';   /* pestañas de la tienda (catalogo.json) */
 require_once dirname(__DIR__) . '/assets/themes/theme-helpers.php';
 
@@ -623,8 +623,8 @@ if ($activeTheme !== '' && isset(((array)$_userThemes['themes'])[$activeTheme]))
                 <span id="tienda-balance-v">—</span>
             </div>
             <div id="tienda-wallet-unit">puntos de Autismo</div>
-            <?php if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD): ?>
-            <!-- Solo en la build de dev: darse puntos para probar la tienda. -->
+            <?php if (melon_funcionesDev()): ?>
+            <!-- Solo en dev o con el modo dev: darse puntos para probar la tienda. -->
             <div id="tienda-dev" style="margin-top:6px;padding:4px;border:1px dashed var(--error-text,#c00);font-size:10px;display:flex;gap:4px;align-items:center;">
                 <b style="color:var(--error-text,#c00);">DEV</b>
                 <input type="number" id="tienda-dev-amount" value="1000" min="1" max="100000" style="width:64px;">

@@ -2,9 +2,10 @@
 /* ════════════════════════════════════════════════════════════════════
    SECCIÓN EXCLUSIVA DE DEV (escritorio)
    --------------------------------------------------------------------
-   Todo lo que haya aquí solo se ve en la build de desarrollo. Se incluye
-   desde desktop-base.php únicamente cuando MELON_DEV_BUILD es TRUE, así
-   que en producción (main, flag FALSE) nada de esto aparece.
+   Todo lo que haya aquí solo se ve en la build de desarrollo o con el
+   modo dev (assets/php/modo-dev.php). Se incluye desde desktop-base.php
+   únicamente cuando melon_funcionesDev() es true, así que en producción
+   solo lo ve un dev que se ha puesto el modo dev.
 
    Contiene:
      - Banner para abrir el Melon Wrapped (modo dev → todas las plays).
@@ -12,10 +13,11 @@
      - Notificación de prueba del haro (botón "Probar" de Temas → Haros).
 
    ¿Quieres añadir MÁS cosas solo-dev? Añádelas aquí (o en otro archivo
-   de assets/dev/ incluido igual). Mientras MELON_DEV_BUILD siga en FALSE
-   en main, no se "pasarán" al hacer dev→main.
+   de assets/dev/ incluido igual) y compruébalas con melon_funcionesDev(),
+   no con MELON_DEV_BUILD a pelo.
    ════════════════════════════════════════════════════════════════════ */
-if (!defined('MELON_DEV_BUILD') || !MELON_DEV_BUILD) return;
+require_once dirname(__DIR__) . '/php/modo-dev.php';
+if (!melon_funcionesDev()) return;
 ?>
 <style>
     /* Banner flotante para abrir el Wrapped. */
