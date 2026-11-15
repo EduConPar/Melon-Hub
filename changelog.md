@@ -206,3 +206,16 @@ Presentamos las aplicaciones de movil y escritorio de la melon hub las cuales se
 - Se ha arreglado el bug que hacia que las fotos de perfil salieran completas cuando el usuario las habia recortado
 - Ahora la conexion de steam desde el movil es mas rapida
 - La ventana de mini reproductor que sale en el escritorio al estar la app en segundo plano ahora se puede resizear desde todos los bordes
+
+---
+
+# Alfa 0.2.2
+
+## Nuevas funciones y cambios
+
+- Se añadió la fuente JetBrains Mono a la tienda.
+- Se han añadido encuestas de satisfacción de usuarios: de vez en cuando el haro aparecerá ofreciéndote hacer una encuesta a cambio de puntos de autismo.
+
+## Bugs y mejoras
+
+- Arreglado el bug que hacía que al darle a la X en el título de la ventana se cargara otra Melon Hub en lugar de volver al menú (eso era lo que causaba el doble reproductor de música).
