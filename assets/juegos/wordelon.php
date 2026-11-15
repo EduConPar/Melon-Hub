@@ -297,7 +297,9 @@ function wordelon_jugadores(PDO $pdo, string $dia): array {
         $jug[] = [
             'uid'       => (int)$r['user_id'],
             'label'     => $label,
-            'ruta'      => $foto !== '' ? dirname(__DIR__, 2) . '/' . $foto : null,
+            /* getUserImage lleva "?v=…" (caché del navegador): aquí hace
+               falta el archivo para dibujarla en la imagen. */
+            'ruta'      => $foto !== '' ? dirname(__DIR__, 2) . '/' . strtok($foto, '?') : null,
             'resultado' => $fin
                 ? ((int)$r['acertado'] ? count($int) : 'X') . '/' . WORDELON_INTENTOS
                 : 'Jugando · ' . count($int) . '/' . WORDELON_INTENTOS,

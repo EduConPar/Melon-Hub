@@ -12,16 +12,24 @@
      publiquen dos veces.
    - Lo anunciado se guarda en app_cache 'changelog_discord':
      { versiones: { "Alfa 0.1.7": { ids: [id de cada mensaje], hash } } }.
-     La primera vez (sin nada guardado) las de MELON_CL_YA_ANUNCIADAS (hasta
-     la 0.2.0, publicadas a mano) cuentan como anunciadas; lo que haya
-     después (la 0.2.1) se publica.
+     Sin nada guardado (una web que empieza de cero) TODO lo que ya hay en
+     el archivo cuenta como anunciado y no se publica nada.
+   - NUNCA dos veces (14/11: la 0.2.1 salió repetida): se publica solo desde
+     el dominio de main (no desde melonhubdev aunque su MELON_DEV_BUILD esté
+     mal), bajo un candado de la BD (GET_LOCK, vale para los dos sitios si
+     comparten BD), y la versión se APUNTA como anunciada ANTES de llamar a
+     Discord. Si Discord dice que no (error HTTP), se quita el apunte y se
+     reintenta a los 10 min; si no contesta (no se sabe si salió) o el
+     proceso se corta, se queda apuntada: mejor un aviso de menos que uno
+     repetido.
    - Versión nueva → mensaje con @everyone y la sección (embed; si pasa de
      ~4000 caracteres, en varios mensajes, solo el primero con @everyone).
    - Versión ya anunciada cuyo texto cambia (una errata) → se EDITAN sus
      mensajes, sin volver a avisar.
-   - Solo en main (MELON_DEV_BUILD false): dev comparte el changelog y
-     publicaría dos veces. CHANGELOG_DISCORD=1 en el .env lo fuerza (pods de
-     prueba) y =0 lo apaga.
+   - Solo en main (MELON_DEV_BUILD false Y la petición llega al dominio de
+     melon_urlMain(), melonhub.es): dev comparte el changelog y publicaría
+     dos veces. CHANGELOG_DISCORD=1 en el .env lo fuerza (pods de prueba) y
+     =0 lo apaga.
    - Canal: el del changelog (MELON_CL_CANAL, 1508966953723625592);
      CHANGELOG_DISCORD_CHANNEL en el .env lo cambia. Token:
      DISCORD_BOT_TOKEN. Base de la API: DISCORD_API_BASE (pruebas).
@@ -34,16 +42,19 @@ if (!function_exists('melon_changelogComprobar')) {
 
     /* Canal del changelog en Discord (el de los anuncios de versiones). */
     define('MELON_CL_CANAL', '1508966953723625592');
-    /* Lo que ya se había anunciado a mano antes de esto: la primera vez
-       solo esas cuentan como publicadas (la 0.2.1 la publica el bot). */
-    define('MELON_CL_YA_ANUNCIADAS', ['Alfa 0.1.1', 'Alfa 0.1.2', 'Alfa 0.1.3', 'Alfa 0.1.4', 'Alfa 0.1.5', 'Alfa 0.1.6', 'Alfa 0.1.7', 'Alfa 0.2.0']);
 
     function melon_changelogActivo(): bool {
         $f = function_exists('env') ? (string)env('CHANGELOG_DISCORD', '') : '';
         if ($f === '0') return false;
         if ($f === '1') return true;
         require_once dirname(__DIR__) . '/dev-build.php';
-        return !(defined('MELON_DEV_BUILD') && MELON_DEV_BUILD);
+        if (defined('MELON_DEV_BUILD') && MELON_DEV_BUILD) return false;
+        /* Y solo en el dominio de main: el flag ya se ha quedado mal dos
+           veces tras un merge y melonhubdev publicaba también. */
+        $sin = fn($h) => preg_replace('/^www\./', '', strtolower(preg_replace('/:\d+$/', '', (string)$h)));
+        $host = $sin($_SERVER['HTTP_HOST'] ?? '');
+        $main = $sin(parse_url(function_exists('melon_urlMain') ? melon_urlMain() : 'https://melonhub.es', PHP_URL_HOST) ?: 'melonhub.es');
+        return $host !== '' && $host === $main;
     }
 
     function melon_changelogRutas(): array {
@@ -130,8 +141,10 @@ if (!function_exists('melon_changelogComprobar')) {
     }
 
     /* Publica (ids = []) o edita (ids de antes) una versión. Devuelve los
-       ids de sus mensajes, o null si Discord ha fallado. */
-    function melon_changelogEnviar(string $canal, array $v, array $ids): ?array {
+       ids de sus mensajes; null si Discord ha dicho que no (se puede
+       reintentar); false si no ha contestado (no se sabe si salió). Si ya
+       había salido algún trozo, devuelve esos ids (no se repite). */
+    function melon_changelogEnviar(string $canal, array $v, array $ids): array|false|null {
         $trozos = melon_changelogTrozos($v['cuerpo']);
         $n = count($trozos);
         $nuevos = [];
@@ -151,7 +164,10 @@ if (!function_exists('melon_changelogComprobar')) {
                 $p['allowed_mentions'] = ['parse' => ['everyone']];
             }
             [$code, $j] = melon_changelogDiscord('POST', $ruta, $p);
-            if ($code < 200 || $code >= 300 || empty($j['id'])) return null;
+            /* Sin respuesta (0): no se sabe si ha salido → false, que el
+               que llama trata como enviado (nunca dos veces). */
+            if ($code === 0) return $nuevos ?: false;
+            if ($code < 200 || $code >= 300 || empty($j['id'])) return $nuevos ?: null;
             $nuevos[] = (string)$j['id'];
         }
         /* Sobran mensajes (el texto se ha acortado): fuera. */
@@ -183,36 +199,64 @@ if (!function_exists('melon_changelogComprobar')) {
                 updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX (expires_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-            $st = $pdo->prepare("SELECT cache_value FROM app_cache WHERE cache_key = 'changelog_discord'");
-            $st->execute();
-            $raw = $st->fetchColumn();
-            $estado = $raw ? (json_decode((string)$raw, true) ?: []) : null;
-            $versiones = melon_changelogVersiones((string)@file_get_contents($md));
-            $falla = false;
-            if ($estado === null) {
-                /* Primera vez: lo anunciado a mano (MELON_CL_YA_ANUNCIADAS)
-                   cuenta como publicado; lo demás se publica abajo. */
-                $estado = ['versiones' => []];
-                foreach ($versiones as $v) {
-                    if (in_array($v['titulo'], MELON_CL_YA_ANUNCIADAS, true)) $estado['versiones'][$v['titulo']] = ['ids' => [], 'hash' => md5($v['cuerpo'])];
+            /* Candado de la BD: si main y dev comparten BD, también vale
+               entre los dos sitios (el flock solo dentro de uno). */
+            if (!(int)$pdo->query("SELECT GET_LOCK('melon_changelog_discord', 0)")->fetchColumn()) return;
+            $guardar = function () use ($pdo, &$estado) {
+                $pdo->prepare("REPLACE INTO app_cache (cache_key, cache_value) VALUES ('changelog_discord', ?)")
+                    ->execute([json_encode($estado, JSON_UNESCAPED_UNICODE)]);
+            };
+            try {
+                $st = $pdo->prepare("SELECT cache_value FROM app_cache WHERE cache_key = 'changelog_discord'");
+                $st->execute();
+                $raw = $st->fetchColumn();
+                $estado = $raw ? (json_decode((string)$raw, true) ?: ['versiones' => []]) : null;
+                $versiones = melon_changelogVersiones((string)@file_get_contents($md));
+                $falla = false;
+                if ($estado === null) {
+                    /* Nada guardado: todo lo que hay cuenta como anunciado. */
+                    $estado = ['versiones' => []];
+                    foreach ($versiones as $v) $estado['versiones'][$v['titulo']] = ['ids' => [], 'hash' => md5($v['cuerpo'])];
+                    $guardar();
+                    $versiones = [];
                 }
-            }
-            {
                 $canal = trim((string)env('CHANGELOG_DISCORD_CHANNEL', '')) ?: MELON_CL_CANAL;
                 foreach ($versiones as $v) {
+                    $t = $v['titulo'];
                     $h = md5($v['cuerpo']);
-                    $prev = $estado['versiones'][$v['titulo']] ?? null;
+                    $prev = $estado['versiones'][$t] ?? null;
                     if ($prev && $prev['hash'] === $h) continue;
-                    /* Ya anunciada antes de esto (sin mensaje): no se publica. */
-                    if ($prev && !$prev['ids']) { $estado['versiones'][$v['titulo']]['hash'] = $h; continue; }
-                    $ids = melon_changelogEnviar($canal, $v, $prev ? $prev['ids'] : []);
-                    if ($ids === null) { $falla = true; error_log('[changelog] Discord no ha aceptado "' . $v['titulo'] . '"'); continue; }
-                    $estado['versiones'][$v['titulo']] = ['ids' => $ids, 'hash' => $h];
+                    /* Anunciada sin mensaje guardado (las de antes del bot, o
+                       una que se cortó a mitad): no se vuelve a publicar. */
+                    if ($prev && !$prev['ids']) { $estado['versiones'][$t]['hash'] = $h; $guardar(); continue; }
+                    if (!$prev) {
+                        /* Nueva: se apunta ANTES de avisar. */
+                        $estado['versiones'][$t] = ['ids' => [], 'hash' => $h, 'enviando' => time()];
+                        $guardar();
+                        $ids = melon_changelogEnviar($canal, $v, []);
+                        if ($ids === null) {
+                            /* Discord ha dicho que no: fuera el apunte, se reintenta. */
+                            unset($estado['versiones'][$t]);
+                            $guardar();
+                            $falla = true;
+                            error_log('[changelog] Discord no ha aceptado "' . $t . '"');
+                            continue;
+                        }
+                        if ($ids === false) { error_log('[changelog] Discord no contesta: "' . $t . '" queda como anunciada'); continue; }
+                        $estado['versiones'][$t] = ['ids' => $ids, 'hash' => $h];
+                        $guardar();
+                        continue;
+                    }
+                    /* Errata en una ya publicada: editar (sin @everyone). */
+                    $ids = melon_changelogEnviar($canal, $v, $prev['ids']);
+                    if (!$ids) { $falla = true; error_log('[changelog] no se ha podido editar "' . $t . '"'); continue; }
+                    $estado['versiones'][$t] = ['ids' => $ids, 'hash' => $h];
+                    $guardar();
                 }
+                @file_put_contents($marca, $falla ? $firma . '|reintentar:' . (time() + 600) : $firma);
+            } finally {
+                try { $pdo->query("SELECT RELEASE_LOCK('melon_changelog_discord')"); } catch (Throwable $_) {}
             }
-            $pdo->prepare("REPLACE INTO app_cache (cache_key, cache_value) VALUES ('changelog_discord', ?)")
-                ->execute([json_encode($estado, JSON_UNESCAPED_UNICODE)]);
-            @file_put_contents($marca, $falla ? $firma . '|reintentar:' . (time() + 600) : $firma);
         } catch (Throwable $e) {
             error_log('[changelog] ' . $e->getMessage());
         } finally {

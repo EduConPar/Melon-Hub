@@ -285,6 +285,23 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <html lang="es"<?= $esBeta ? ' class="mh-beta"' : '' ?>>
 <head>
     <meta charset="UTF-8">
+    <script>
+    /* Una carcasa nunca dentro de otra (14/11, bug "doble reproductor"):
+       si una app del iframe acaba cargando mobile.php (la X de su barra de
+       título, una sesión caducada que redirige aquí…), salía otra carcasa
+       entera dentro, con su reproductor y su disco: dos discos, y lo que se
+       ponía desde el widget y desde el buscador iba por reproductores
+       distintos. Aquí se para antes de cargar nada (ni YouTube) y se pide a
+       la de fuera que enseñe el menú. */
+    (function(){
+        try {
+            if (window.parent === window || !window.parent.document.getElementById('shell-app')) return;
+        } catch (_) { return; }   /* otro origen: no es una carcasa nuestra */
+        try { window.parent.postMessage({ type: 'shell:menu' }, '*'); } catch (_) {}
+        try { window.stop(); } catch (_) {}
+        location.replace('about:blank');
+    })();
+    </script>
     <!-- Antes redirigíamos a la landing si NO estábamos en standalone
          (PWA instalada). Eso causaba dos problemas:
            - Bucle infinito al abrir la PWA sin sesión (las cookies se
@@ -348,6 +365,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     <script src="assets/js/notif-sound.js"></script>
     <script src="assets/js/uso-apps.js?v=<?= @filemtime(__DIR__ . '/assets/js/uso-apps.js') ?>"></script>
     <link rel="stylesheet" href="assets/css/themes.css">
+    <link rel="stylesheet" href="assets/css/encuesta.css?v=<?= @filemtime(__DIR__ . '/assets/css/encuesta.css') ?>">
     <?php if ($activeThemeCss): ?>
     <link rel="stylesheet" id="active-theme-link" href="<?= htmlspecialchars($activeThemeCss); ?>">
     <?php endif; ?>
@@ -457,7 +475,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         }
 
         /* ── MODAL CAMBIAR CONTRASEÑA / REPORTES ── (igual estilo Win98) */
-        #mh-cp-backdrop, #mh-rep-backdrop, #mh-cl-backdrop, #mh-beta-backdrop {
+        #mh-cp-backdrop, #mh-rep-backdrop, #mh-cl-backdrop, #mh-beta-backdrop, #mh-enc-backdrop {
             position: fixed; inset: 0;
             background: rgba(0, 0, 0, 0.45);
             z-index: 90;
@@ -467,7 +485,9 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             padding: 16px;
             box-sizing: border-box;
         }
-        #mh-cp-backdrop.is-open, #mh-rep-backdrop.is-open, #mh-cl-backdrop.is-open, #mh-beta-backdrop.is-open { display: flex; }
+        #mh-cp-backdrop.is-open, #mh-rep-backdrop.is-open, #mh-cl-backdrop.is-open, #mh-beta-backdrop.is-open, #mh-enc-backdrop.is-open { display: flex; }
+        #mh-enc-window { width: 100%; max-width: 380px; max-height: 88vh; display: flex; flex-direction: column; }
+        #mh-enc-window .window-body { padding: 12px; overflow-y: auto; }
         #mh-beta-window { width: 100%; max-width: 340px; display: flex; flex-direction: column; }
         #mh-beta-window .window-body { padding: 14px; }
         #mh-beta-window p { margin: 0 0 8px; font-size: 12px; line-height: 1.45; }
@@ -1501,6 +1521,20 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
     </div>
 </div>
 
+<!-- MODAL ENCUESTA DE SATISFACCIÓN — la abre el aviso (Responder); el
+     formulario lo pinta assets/js/encuesta.js, igual que en el escritorio. -->
+<div id="mh-enc-backdrop">
+    <div class="window" id="mh-enc-window">
+        <div class="title-bar">
+            <div class="title-bar-text" id="mh-enc-titulo">Encuesta</div>
+            <div class="title-bar-controls">
+                <button aria-label="Close" id="mh-enc-close"></button>
+            </div>
+        </div>
+        <div class="window-body" id="mh-enc-cuerpo"></div>
+    </div>
+</div>
+
 <!-- MODAL CAMBIAR CONTRASEÑA — mismo endpoint que el escritorio. -->
 <div id="mh-cp-backdrop">
     <div class="window" id="mh-cp-window">
@@ -1869,6 +1903,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
 <div id="yt-host"><div id="yt-iframe"></div></div>
 
 <script src="assets/js/timbre.js?v=<?= @filemtime(__DIR__ . '/assets/js/timbre.js') ?>"></script>
+<script src="assets/js/encuesta.js?v=<?= @filemtime(__DIR__ . '/assets/js/encuesta.js') ?>"></script>
 <script>
 /* Timbre del móvil (assets/js/timbre.js). Con la app en segundo plano se
    mira cada 15 s (los avisos antes iban cada 60 s en segundo plano). */
@@ -2123,6 +2158,12 @@ if ('serviceWorker' in navigator) {
     window.addEventListener('message', function(ev){
         var d = ev.data || {};
         if (d.type === 'shell:back')      goBack();
+        /* Una mobile.php que se iba a cargar dentro del iframe (ver el
+           principio de la cabecera): fuera la app y al menú. */
+        else if (d.type === 'shell:menu') {
+            showMenu();
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+        }
         else if (d.type === 'shell:open' && d.url) openApp(d.url, d.name);
         else if (d.type === 'theme-activated') {
             /* La app de Temas (iframe) activó un tema nuevo. Refrescamos:
@@ -5916,6 +5957,38 @@ window.MuShell = (function(){
     window.addEventListener('hashchange', function(){
         if (/#notif=/i.test(location.hash)) poll(true);
     });
+})();
+
+/* ── Encuesta de satisfacción (como en el escritorio, donde avisa el
+   haro): se pregunta una vez al abrir si toca; si sí, sale un aviso.
+   Rechazar = no la quiere; Responder abre la ventana. Cerrarla sin
+   enviar la deja pendiente: vuelve a salir la próxima vez. */
+(function mEncuesta(){
+    if (!window.MelonEncuesta || !window.mToast) return;
+    var plat = /MelonHubApp/.test(navigator.userAgent) ? 'app-movil' : 'movil';
+    var bp = document.getElementById('mh-enc-backdrop');
+    function cerrar(){ bp.classList.remove('is-open'); }
+    document.getElementById('mh-enc-close').addEventListener('click', cerrar);
+    function abrir(enc){
+        MelonEncuesta.pintar(document.getElementById('mh-enc-cuerpo'), enc, {
+            plataforma: plat, titulo: document.getElementById('mh-enc-titulo'), cerrar: cerrar
+        });
+        bp.classList.add('is-open');
+    }
+    setTimeout(function(){
+        MelonEncuesta.pedir().then(function(enc){
+            if (!enc) return;
+            window.mToast({
+                id: 'encuesta-' + enc.id,
+                title: '<img src="' + enc.icono + '" alt="" class="enc-tit-ic">Encuesta',
+                message: '¿Nos ayudas a mejorar ' + enc.nombre.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '? Gana hasta ' + (enc.puntos + enc.extra) + ' puntos.',
+                actions: [
+                    { label: 'Rechazar',  fn: function(){ MelonEncuesta.rechazar(enc, plat); } },
+                    { label: 'Responder', fn: function(){ abrir(enc); } }
+                ]
+            });
+        });
+    }, 15000);
 })();
 
 /* ── Ajedrez (como pollAjedrez de desktop-base.php; decidido así, 7/11):

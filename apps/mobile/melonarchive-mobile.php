@@ -435,7 +435,7 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
         <div class="title-bar-controls">
             <button aria-label="Minimize"></button>
             <button aria-label="Maximize" disabled></button>
-            <button aria-label="Close" onclick="window.location.href='../../mobile.php';"></button>
+            <button aria-label="Close" onclick="/* Dentro de la carcasa (iframe): volver al menú; si no, cargaría otra mobile.php dentro con su propio reproductor (dos discos). */ if (window.parent !== window) { try { window.parent.postMessage({ type: 'shell:back' }, '*'); } catch (_) {} } else { window.location.href='../../mobile.php'; }"></button>
         </div>
     </div>
     <div class="window-body">

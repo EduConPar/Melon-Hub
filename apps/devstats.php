@@ -21,6 +21,7 @@ require_once __DIR__ . '/../assets/themes/theme-helpers.php';
 require_once __DIR__ . '/../assets/dev-build.php';
 require_once __DIR__ . '/../assets/php/dev-acceso.php';
 require_once __DIR__ . '/../assets/stats/comun.php';
+require_once __DIR__ . '/../assets/encuestas/encuestas.php';
 
 if (empty($_SESSION['user']) || !isset($loginUsers[$_SESSION['user']])) {
     header('Location: ../index.php'); exit;
@@ -65,6 +66,7 @@ $db = $fuentes[$fuenteSel]['pdo'];
 $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 try { melon_devEsquema($db); } catch (Throwable $_) {}
 try { melon_usoEsquema($db); } catch (Throwable $_) {}
+try { enc_esquema($db); } catch (Throwable $_) {}
 
 /* ── Dar o quitar la tag dev (POST, con token de la sesión) ──────────── */
 if (empty($_SESSION['devstats_csrf'])) $_SESSION['devstats_csrf'] = bin2hex(random_bytes(16));
@@ -94,6 +96,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'tag-d
     }
     $_SESSION['devstats_aviso'] = $aviso;
     header('Location: devstats.php?' . http_build_query(['bd' => $fuenteSel, 'dias' => (int)($_GET['dias'] ?? 30)]) . '#usuarios');
+    exit;
+}
+/* ── Encuestas: normal / shadow ban (le salen menos) / bloqueado ─────── */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'encuesta-modo') {
+    if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
+        $aviso = 'La página había caducado: vuelve a intentarlo.';
+    } else {
+        $modo = (string)($_POST['modo'] ?? '');
+        try {
+            $st = $db->prepare("SELECT id FROM usuarios WHERE user_key = ? OR CONCAT('user', id) = ? LIMIT 1");
+            $st->execute([$userKey, $userKey]);
+            enc_ponerModo($db, (int)($_POST['uid'] ?? 0), $modo, (int)$st->fetchColumn());
+            $aviso = ['normal' => 'Encuestas: vuelve a normal.', 'shadow' => 'Encuestas: shadow ban puesto (le saldrán menos).',
+                      'bloqueado' => 'Encuestas: bloqueado (no le saldrá ninguna).'][$modo] ?? 'Nada que cambiar.';
+        } catch (Throwable $e) {
+            error_log('[devstats] encuesta-modo: ' . $e->getMessage());
+            $aviso = 'No se ha podido guardar.';
+        }
+    }
+    $_SESSION['devstats_aviso'] = $aviso;
+    header('Location: devstats.php?' . http_build_query(['bd' => $fuenteSel, 'dias' => (int)($_GET['dias'] ?? 30)]) . '#encuestas');
     exit;
 }
 if (!empty($_SESSION['devstats_aviso'])) { $aviso = $_SESSION['devstats_aviso']; unset($_SESSION['devstats_aviso']); }
@@ -235,6 +258,52 @@ $comentarios = q1($db, "SELECT COUNT(*) FROM profile_comments WHERE created_at >
 $eventos     = q1($db, "SELECT COUNT(*) FROM events WHERE created_at >= ?", [$desde]);
 $conMovil    = q1($db, "SELECT COUNT(DISTINCT user_id) FROM device_tokens");
 $conSteam    = q1($db, "SELECT COUNT(*) FROM usuarios WHERE steam_id IS NOT NULL AND steam_id <> ''");
+
+/* Encuestas (las respuestas, por la fecha en que se respondieron) */
+$encTot = q($db, "SELECT COUNT(*) enviadas, SUM(estado = 'respondida') resp, SUM(estado = 'rechazada') rech,
+                         SUM(estado = 'pendiente') pend, SUM(comentario IS NOT NULL) coment, COALESCE(SUM(puntos),0) puntos
+                  FROM encuestas WHERE creada >= ?", [$desde]);
+$encTot = $encTot[0] ?? null;
+/* Título corto de cada nota (columnas de ENC_NOTAS, mismo orden). */
+$NOTAS_ENC = ['intuitiva' => 'Intuitiva', 'util' => 'Útil', 'uso' => 'Uso', 'bonita' => 'Bonita', 'rapida' => 'Rápida',
+              'recomendar' => 'Recomendar', 'general' => 'General'];
+$NOTAS_ENC_TIP = ['intuitiva' => '¿Cómo de intuitiva es?', 'util' => '¿Cómo de útil es?', 'uso' => '¿Cuánto la usa?',
+                  'bonita' => '¿Cómo de bonita es?', 'rapida' => '¿Cómo de rápida va?',
+                  'recomendar' => '¿Es una razón para recomendar Melon Hub a un amigo?', 'general' => 'Satisfacción general'];
+$avgs = ''; foreach (ENC_NOTAS as $c) $avgs .= "AVG($c) $c, ";
+$encApps = q($db, "SELECT app, COUNT(*) n, $avgs SUM(comentario IS NOT NULL) c
+                   FROM encuestas WHERE estado = 'respondida' AND respondida >= ? GROUP BY app ORDER BY n DESC", [$desde]) ?? [];
+$encRech = [];
+foreach (q($db, "SELECT app, COUNT(*) n FROM encuestas WHERE estado = 'rechazada' AND respondida >= ? GROUP BY app", [$desde]) ?? [] as $r) $encRech[$r['app']] = (int)$r['n'];
+$encResp = q($db, "SELECT e.id, e.user_id, e.app, e.respondida, e." . implode(', e.', ENC_NOTAS) . ", e.comentario, e.puntos, e.plataforma,
+                          u.label, COALESCE(m.modo, 'normal') modo
+                   FROM encuestas e JOIN usuarios u ON u.id = e.user_id LEFT JOIN encuestas_usuarios m ON m.user_id = e.user_id
+                   WHERE e.estado = 'respondida' AND e.respondida >= ? ORDER BY e.respondida DESC LIMIT 500", [$desde]) ?? [];
+/* Comentarios libres agrupados por app (la que más tiene, primero). */
+$encComent = [];
+foreach ($encResp as $r) if ($r['comentario'] !== null) $encComent[$r['app']][] = $r;
+uasort($encComent, function ($a, $b) { return count($b) - count($a); });
+$encModerados = q($db, "SELECT m.user_id, m.modo, m.cambiado, u.label, p.label por
+                        FROM encuestas_usuarios m JOIN usuarios u ON u.id = m.user_id LEFT JOIN usuarios p ON p.id = m.cambiado_por
+                        WHERE m.modo <> 'normal' ORDER BY m.cambiado DESC") ?? [];
+$MODOS_ENC = ['normal' => 'Normal', 'shadow' => 'Shadow ban', 'bloqueado' => 'Bloqueado'];
+
+/* Botones Normal / Shadow ban / Bloquear de un usuario (el suyo, hundido). */
+function botonesModo(int $uid, string $modo): string {
+    $h = '<form method="post" action="' . e(urlCon([])) . '" class="ds-modo">'
+       . '<input type="hidden" name="accion" value="encuesta-modo"><input type="hidden" name="csrf" value="' . e($GLOBALS['csrf']) . '">'
+       . '<input type="hidden" name="uid" value="' . $uid . '">';
+    foreach (['normal' => 'Normal', 'shadow' => 'Shadow ban', 'bloqueado' => 'Bloquear'] as $m => $t) {
+        $h .= '<button type="submit" name="modo" value="' . $m . '" class="ds-tag-btn' . ($m === $modo ? ' ds-on' : '') . '"'
+            . ($m === $modo ? ' disabled' : '') . '>' . $t . '</button>';
+    }
+    return $h . '</form>';
+}
+/* Media del 1 al 5 con su barrita. */
+function media($v): string {
+    if ($v === null) return '—';
+    return '<span class="ds-pct" style="width:50px"><i style="width:' . round($v / 5 * 100, 1) . '%"></i></span>' . number_format((float)$v, 1, ',', '.');
+}
 
 /* ── Tema del usuario (mismo bloque que el resto de apps) ────────────── */
 refreshActiveThemeCss($userKey, $userLabel);
@@ -396,6 +465,22 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
         .ds-pct i { display: block; height: 100%; background: var(--accent); }
         .ds-tag { display: inline-block; padding: 0 4px; background: var(--accent); color: var(--accent-text); }
         .ds-tag-btn { min-height: 18px !important; padding: 0 6px !important; min-width: 0 !important; }
+        .ds-modo { display: inline-flex; gap: 2px; margin: 0; white-space: nowrap; }
+        /* El modo que tiene: hundido y sin el gris de desactivado de 98.css. */
+        .ds-win .ds-modo button.ds-on:disabled { color: var(--btn-text); text-shadow: none; }
+        .ds-coment { white-space: pre-wrap; word-break: break-word; min-width: 220px; max-width: 520px; }
+        .ds-tag-shadow { background: var(--warning-bg); color: var(--warning-text); }
+        /* Comentarios libres: tarjetas hundidas, agrupadas por app. */
+        .ds-com-app { font-weight: bold; margin: 10px 0 4px; }
+        .ds-coms { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+        .ds-com { padding: 8px; background: var(--input-bg); color: var(--input-text); display: flex; flex-direction: column; gap: 5px;
+            box-shadow: inset -1px -1px var(--bezel-light-1), inset 1px 1px var(--bezel-dark-2),
+                        inset -2px -2px var(--bezel-light-2), inset 2px 2px var(--bezel-dark-1); }
+        .ds-com-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+        .ds-com-cab .ds-nota { margin-left: auto !important; }
+        .ds-com-txt { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.4; }
+        .ds-com-notas { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--text-muted); }
+        .ds-com-notas b { color: var(--input-text); }
 
         /* 98.css: table con fondo blanco y thead plateado con bisel. */
         .ds-win table.ds-calor { border-collapse: separate; border-spacing: 2px; background: transparent; }
@@ -436,6 +521,7 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
             <li role="tab" aria-selected="false" data-tab="musica"><a>Música</a></li>
             <li role="tab" aria-selected="false" data-tab="juegos"><a>Juegos</a></li>
             <li role="tab" aria-selected="false" data-tab="social"><a>Tienda y social</a></li>
+            <li role="tab" aria-selected="false" data-tab="encuestas"><a>Encuestas</a></li>
         </menu>
         <div class="window" role="tabpanel">
 
@@ -674,6 +760,96 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
             </div>
         </section>
 
+        <!-- ── Encuestas ───────────────────────────────────────────── -->
+        <section class="ds-panel" id="p-encuestas">
+            <?php if ($encTot === null): ?><p class="ds-nota">Sin datos en esta BD (las encuestas aún no están en ella).</p><?php else: ?>
+            <div class="ds-cifras">
+                <?= cifra('Enviadas', num($encTot['enviadas']), $RANGOS[$dias]) ?>
+                <?= cifra('Respondidas', num($encTot['resp']), $encTot['enviadas'] ? number_format($encTot['resp'] / $encTot['enviadas'] * 100, 0, ',', '.') . ' % de las enviadas' : '') ?>
+                <?= cifra('Rechazadas', num($encTot['rech'])) ?>
+                <?= cifra('Sin contestar', num($encTot['pend']), 'aún pendientes') ?>
+                <?= cifra('Con comentario', num($encTot['coment'])) ?>
+                <?= cifra('Puntos dados', num($encTot['puntos'])) ?>
+            </div>
+
+            <h3>Por app</h3>
+            <?php if (!$encApps): ?><p class="ds-nota">Ninguna respuesta en este periodo.</p><?php else: ?>
+            <div class="ds-tabla-env"><table class="ds-t ds-ordenable">
+                <thead><tr><th>App</th><th data-tipo="n" class="ds-num">Respuestas</th><th data-tipo="n" class="ds-num">Rechazadas</th>
+                    <?php foreach ($NOTAS_ENC as $c => $t): ?><th data-tipo="n" title="<?= e($NOTAS_ENC_TIP[$c]) ?>"><?= e($t) ?></th><?php endforeach; ?>
+                    <th data-tipo="n" class="ds-num">Comentarios</th></tr></thead>
+                <tbody><?php foreach ($encApps as $a): ?>
+                <tr><td><?= e(enc_nombreApp($a['app'])) ?></td>
+                    <td class="ds-num" data-v="<?= (int)$a['n'] ?>"><?= num($a['n']) ?></td>
+                    <td class="ds-num" data-v="<?= $encRech[$a['app']] ?? 0 ?>"><?= num($encRech[$a['app']] ?? 0) ?></td>
+                    <?php foreach (ENC_NOTAS as $c): ?><td data-v="<?= (float)$a[$c] ?>"><?= media($a[$c]) ?></td><?php endforeach; ?>
+                    <td class="ds-num" data-v="<?= (int)$a['c'] ?>"><?= num($a['c']) ?></td></tr>
+                <?php endforeach; ?></tbody>
+            </table></div>
+            <?php endif; ?>
+
+            <h3>Comentarios</h3>
+            <?php if (!$encComent): ?><p class="ds-nota">Nadie ha escrito qué cambiaría en este periodo.</p><?php else: ?>
+            <?php foreach ($encComent as $app => $lista): ?>
+            <div class="ds-com-app"><?= e(enc_nombreApp($app)) ?> <span class="ds-nota">(<?= count($lista) ?>)</span></div>
+            <div class="ds-coms">
+                <?php foreach ($lista as $r): ?>
+                <div class="ds-com">
+                    <div class="ds-com-cab">
+                        <b><?= e($r['label']) ?></b><?php if ($r['modo'] !== 'normal'): ?> <span class="ds-tag ds-tag-shadow"><?= e($MODOS_ENC[$r['modo']]) ?></span><?php endif; ?>
+                        <span class="ds-nota" style="margin:0"><?= e(date('d/m/Y H:i', strtotime($r['respondida']))) ?> · <?= e($NOMBRE_PLAT[$r['plataforma']] ?? (string)$r['plataforma']) ?></span>
+                    </div>
+                    <div class="ds-com-txt"><?= e($r['comentario']) ?></div>
+                    <div class="ds-com-notas"><?php foreach ($NOTAS_ENC as $c => $t): ?><span title="<?= e($NOTAS_ENC_TIP[$c]) ?>"><?= e($t) ?> <b><?= $r[$c] !== null ? (int)$r[$c] : '—' ?></b></span><?php endforeach; ?></div>
+                    <?= botonesModo((int)$r['user_id'], $r['modo']) ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endforeach; ?>
+            <?php endif; ?>
+
+            <h3>Respuestas</h3>
+            <?php if (!$encResp): ?><p class="ds-nota">Ninguna respuesta en este periodo.</p><?php else: ?>
+            <div class="ds-top">
+                <input type="search" id="ds-buscar-enc" placeholder="Buscar usuario, app o texto…" style="width:240px">
+                <span class="ds-nota" style="margin:0"><?= num(count($encResp)) ?> respuestas (<?= e($RANGOS[$dias]) ?>, las 500 últimas como mucho)</span>
+            </div>
+            <div class="ds-tabla-env"><table class="ds-t ds-ordenable" id="ds-tabla-enc">
+                <thead><tr><th data-tipo="n">Fecha</th><th>Usuario</th><th>App</th>
+                    <?php foreach ($NOTAS_ENC as $c => $t): ?><th data-tipo="n" class="ds-num" title="<?= e($NOTAS_ENC_TIP[$c]) ?>"><?= e($t) ?></th><?php endforeach; ?>
+                    <th>Qué cambiaría o añadiría</th>
+                    <th>Plataforma</th><th>Encuestas</th></tr></thead>
+                <tbody><?php foreach ($encResp as $r): ?>
+                <tr data-buscar="<?= e(mb_strtolower($r['label'] . ' ' . enc_nombreApp($r['app']) . ' ' . $r['comentario'])) ?>">
+                    <td data-v="<?= strtotime($r['respondida']) ?>" title="<?= e($r['respondida']) ?>"><?= e(date('d/m/Y H:i', strtotime($r['respondida']))) ?></td>
+                    <td><?= e($r['label']) ?><?php if ($r['modo'] !== 'normal'): ?> <span class="ds-tag ds-tag-shadow"><?= e($MODOS_ENC[$r['modo']]) ?></span><?php endif; ?></td>
+                    <td><?= e(enc_nombreApp($r['app'])) ?></td>
+                    <?php foreach (ENC_NOTAS as $c): ?><td class="ds-num" data-v="<?= (int)$r[$c] ?>"><?= $r[$c] !== null ? (int)$r[$c] : '—' ?></td><?php endforeach; ?>
+                    <td class="ds-coment"><?= $r['comentario'] !== null ? e($r['comentario']) : '<span style="color:var(--text-muted)">—</span>' ?></td>
+                    <td><?= e($NOMBRE_PLAT[$r['plataforma']] ?? (string)$r['plataforma']) ?></td>
+                    <td><?= botonesModo((int)$r['user_id'], $r['modo']) ?></td>
+                </tr>
+                <?php endforeach; ?></tbody>
+            </table></div>
+            <?php endif; ?>
+
+            <h3>Usuarios con shadow ban o bloqueados</h3>
+            <?php if (!$encModerados): ?><p class="ds-nota">Ninguno.</p><?php else: ?>
+            <div class="ds-tabla-env"><table class="ds-t">
+                <thead><tr><th>Usuario</th><th>Estado</th><th>Desde</th><th>Por</th><th>Cambiar</th></tr></thead>
+                <tbody><?php foreach ($encModerados as $m): ?>
+                <tr><td><?= e($m['label']) ?></td><td><?= e($MODOS_ENC[$m['modo']] ?? $m['modo']) ?></td>
+                    <td><?= $m['cambiado'] ? e(date('d/m/Y', strtotime($m['cambiado']))) : '—' ?></td><td><?= e($m['por'] ?? '—') ?></td>
+                    <td><?= botonesModo((int)$m['user_id'], $m['modo']) ?></td></tr>
+                <?php endforeach; ?></tbody>
+            </table></div>
+            <?php endif; ?>
+            <p class="ds-nota">Cada encuesta pregunta por una app al azar: <?= count(ENC_NOTAS) ?> notas del 1 al 5 (<?= ENC_PUNTOS ?> puntos) y un comentario opcional (<?= ENC_PUNTOS_EXTRA ?> más si tiene <?= ENC_MIN_COMENTARIO ?> letras o más).
+                Normal: como mucho una cada <?= ENC_DIAS ?> días. <b>Shadow ban</b>: una cada <?= ENC_DIAS_SHADOW ?> días como mucho (unas 4 veces menos); no se entera.
+                <b>Bloqueado</b>: no le sale ninguna (la que tuviera sin responder se anula). Se cambia en la BD que estás viendo (<?= e($fuentes[$fuenteSel]['nombre']) ?>).</p>
+            <?php endif; ?>
+        </section>
+
         </div>
     </div>
 </div>
@@ -735,6 +911,15 @@ $NOMBRE_PLAT = ['web' => 'Navegador (PC)', 'electron' => 'App de escritorio', 'm
         b.addEventListener('mouseenter', function (ev) { tip.textContent = b.dataset.tip; tip.style.display = 'block'; moverTip(ev); });
         b.addEventListener('mousemove', moverTip);
         b.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+    });
+
+    /* Buscar en las respuestas de las encuestas. */
+    var buscarEnc = document.getElementById('ds-buscar-enc');
+    if (buscarEnc) buscarEnc.addEventListener('input', function () {
+        var t = buscarEnc.value.trim().toLowerCase();
+        document.querySelectorAll('#ds-tabla-enc tbody tr').forEach(function (f) {
+            f.style.display = (!t || f.dataset.buscar.indexOf(t) !== -1) ? '' : 'none';
+        });
     });
 
     /* Buscar en la lista de usuarios. */
