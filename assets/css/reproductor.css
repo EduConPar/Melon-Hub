@@ -2993,3 +2993,196 @@
 /* (legacy overlay scrolleable eliminado — sustituido por el lyric-video
     arriba: stage centrado + line-wrap entrante/visible/saliente + chars
     con tremble individual.) */
+
+/* ── Ventana "Cola" (colaPintar en reproductor.php) ── */
+#cola-window {
+    display: none;
+    flex-direction: column;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 340px;
+    height: 460px;
+    min-width: 260px;
+    min-height: 220px;
+    max-width: 95vw;
+    max-height: 92vh;
+    z-index: 2050;
+}
+#cola-window-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    background: var(--input-bg);
+    color: var(--input-text, var(--text));
+    padding: 2px 6px 6px;
+    box-shadow:
+        inset -1px -1px var(--bezel-light-1, #fff),
+        inset  1px  1px var(--bezel-dark-2, grey),
+        inset -2px -2px var(--bezel-light-2, #dfdfdf),
+        inset  2px  2px var(--bezel-dark-1, #0a0a0a);
+}
+#cola-window-body .pl-section-title { color: var(--input-text, var(--text)); }
+.cola-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    font-size: 11px;
+}
+.cola-row.is-playing { background: var(--accent); color: var(--accent-text); }
+.cola-row.is-playing .cola-artist,
+.cola-row.is-playing .cola-num,
+.cola-row.is-playing .cola-dur { color: var(--accent-text); }
+.cola-num { width: 18px; flex-shrink: 0; text-align: right; color: var(--text-faint); }
+.cola-thumb { width: 32px; height: 24px; object-fit: cover; flex-shrink: 0; }
+.cola-info { flex: 1; min-width: 0; }
+.cola-title, .cola-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cola-title { font-weight: bold; }
+.cola-artist, .cola-dur { font-size: 10px; color: var(--text-faint); }
+.cola-dur { flex-shrink: 0; }
+
+/* ── Portada de Playlists (renderHome): accesos rápidos, filas
+   horizontales de tarjetas, mixes con franja del acento, recuadro de
+   Tendencias y "Ver todo". Todo con los colores del tema. ── */
+.pt-quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin: 4px 0 6px;
+}
+.pt-quick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    font-size: 11px;
+    box-shadow:
+        inset -1px -1px var(--bezel-dark-1, #0a0a0a),
+        inset  1px  1px var(--bezel-light-1, #fff),
+        inset -2px -2px var(--bezel-dark-2, grey),
+        inset  2px  2px var(--bezel-light-2, #dfdfdf);
+}
+.pt-quick:active {
+    box-shadow:
+        inset  1px  1px var(--bezel-dark-1, #0a0a0a),
+        inset -1px -1px var(--bezel-light-1, #fff),
+        inset  2px  2px var(--bezel-dark-2, grey),
+        inset -2px -2px var(--bezel-light-2, #dfdfdf);
+}
+.pt-quick img, .pt-quick-empty {
+    width: 36px; height: 36px; flex: 0 0 36px;
+    object-fit: cover;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-deep);
+    color: var(--text-faint);
+}
+.pt-quick b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px; }
+
+.pt-sec { margin-bottom: 6px; }
+.pt-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pt-more {
+    font-size: 10px;
+    color: var(--text-faint);
+    text-decoration: underline;
+    cursor: pointer;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.pt-more:hover { color: var(--text); }
+
+/* Fila que se desplaza de lado. */
+.pt-row {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 112px;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+}
+.pt-row:has(.pt-card--round) { grid-auto-columns: 90px; }
+/* Barra horizontal con los colores del tema (la de 98.css es plateada). */
+.pt-row::-webkit-scrollbar { height: 12px; }
+/* 98.css pinta las flechas con :horizontal:start:decrement (más fuerte). */
+.pt-row::-webkit-scrollbar-button,
+.pt-row::-webkit-scrollbar-button:horizontal:start:decrement,
+.pt-row::-webkit-scrollbar-button:horizontal:end:increment { display: none; }
+.pt-row::-webkit-scrollbar-track { background: var(--surface-deep); }
+.pt-row::-webkit-scrollbar-thumb {
+    background-color: var(--btn-bg);
+    box-shadow:
+        inset -1px -1px var(--bezel-dark-1, #0a0a0a),
+        inset  1px  1px var(--bezel-light-1, #fff),
+        inset -2px -2px var(--bezel-dark-2, grey),
+        inset  2px  2px var(--bezel-light-2, #dfdfdf);
+}
+.pt-card { min-width: 0; }
+.pt-card--round .pl-card-name, .pt-card--round .pl-card-sub { text-align: center; }
+.pl-card-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Franja del acento con el nombre del mix, encima de la foto. */
+.pt-band {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 3px 5px 4px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 11px;
+    line-height: 1.15;
+    pointer-events: none;
+}
+.pt-band b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-band + .pl-card-play { bottom: 26px; }
+
+/* Recuadro de Tendencias. */
+.pt-trend {
+    margin: 4px 0 8px;
+    padding: 6px;
+    background: var(--surface-deep);
+    box-shadow:
+        inset  1px  1px var(--bezel-dark-2, grey),
+        inset -1px -1px var(--bezel-light-1, #fff);
+}
+.pt-trend-head {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--text);
+    margin: 0 2px 2px;
+}
+.pt-songs {
+    background: var(--input-bg);
+    color: var(--input-text, var(--text));
+    margin-bottom: 6px;
+    padding: 2px;
+    box-shadow:
+        inset -1px -1px var(--bezel-light-1, #fff),
+        inset  1px  1px var(--bezel-dark-2, grey);
+}
+.pt-song {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    cursor: pointer;
+}
+.pt-song:hover { background: var(--accent); color: var(--accent-text); }
+.pt-song:hover .pt-num, .pt-song:hover .pt-song-a, .pt-song:hover .pt-song-n { color: var(--accent-text); }
+.pt-num { width: 16px; flex-shrink: 0; text-align: right; font-size: 11px; color: var(--text-faint); }
+.pt-song-img { width: 36px; height: 27px; object-fit: cover; flex-shrink: 0; background: var(--surface-deep); }
+.pt-song-tx { flex: 1; min-width: 0; }
+.pt-song-t, .pt-song-a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-song-t { font-size: 11px; font-weight: bold; }
+.pt-song-a, .pt-song-n { font-size: 10px; color: var(--text-faint); }
+.pt-song-n { flex-shrink: 0; }
+
+/* "Ver todo": ◄ Volver + título. */
+.pt-vertodo-head { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+.pt-vertodo-head .pl-section-title { margin: 0; }
+
+/* Visor de un mix: las canciones que aún se están buscando en YouTube. */
+.album-viewer-row.is-pending { opacity: 0.55; }
