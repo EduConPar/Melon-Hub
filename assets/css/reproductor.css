@@ -1296,6 +1296,31 @@
     color: var(--accent-text);
 }
 
+/* "…" del menú de canciones: abre a la derecha un submenú (Descargar,
+   Copiar enlace, Añadir a mi perfil). Mientras está abierto, el "…" se
+   queda resaltado como en los menús de Windows. El submenú es hijo del
+   item pero va en position:fixed (lo coloca showTrackCtxMenu). */
+.pl-menu-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.pl-menu-sub.abierto {
+    background: var(--accent);
+    color: var(--accent-text);
+}
+.pl-menu-sub-arrow { flex-shrink: 0; }
+.pl-submenu {
+    display: none;
+    position: fixed;
+    z-index: 10001;
+    padding: 2px 0;
+    min-width: 140px;
+    cursor: default;
+}
+.pl-submenu.abierto { display: block; }
+
 #import-playlist-dialog,
 #spotify-import-dialog,
 #tidal-import-dialog {

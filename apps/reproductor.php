@@ -1253,6 +1253,59 @@ function openBulkDownloadDialog(set) {
 }
 window.openBulkDownloadDialog = openBulkDownloadDialog;
 
+/* "…" de los menús de clic derecho (canciones, álbumes, playlists): un
+   item que abre a la derecha un submenú con las opciones menos usadas
+   (Descargar, Copiar enlace, Añadir a mi perfil), para que el menú no sea
+   tan largo. El submenú (.pl-submenu) es hijo del item "…": pasar el
+   ratón de uno a otro no lo cierra, y el clic fuera del menú lo cierra con
+   él. Se abre al pasar el ratón o, en táctil, al tocar "…".
+   Uso: var mas = melonMenuMas(menu); mas.sub.appendChild(item)…; y al
+   final mas.fin() (lo añade al menú solo si tiene opciones). */
+function melonMenuMas(menu) {
+    var item = document.createElement('div');
+    item.className = 'pl-menu-item pl-menu-sub';
+    item.innerHTML = '<span>…</span>' +
+        '<svg class="pl-menu-sub-arrow" width="4" height="7" viewBox="0 0 4 7" aria-hidden="true">' +
+        '<path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" fill="currentColor"/></svg>';
+    var sub = document.createElement('div');
+    sub.className = 'window pl-submenu';
+    item.appendChild(sub);
+    function abrir() {
+        if (sub.classList.contains('abierto')) return;
+        sub.classList.add('abierto');
+        item.classList.add('abierto');
+        var r = item.getBoundingClientRect(), m = menu.getBoundingClientRect();
+        var sw = sub.offsetWidth, sh = sub.offsetHeight;
+        var W = window.innerWidth, H = window.innerHeight;
+        /* A la derecha del menú; si no cabe, a la izquierda. */
+        var x = m.right - 3, y = r.top - 3;
+        if (x + sw > W - 4) x = m.left - sw + 3;
+        /* Pantalla estrecha (ni a un lado ni al otro): debajo del "…", o
+           encima del menú si abajo tampoco cabe, para no tapar el menú. */
+        if (x < 4) {
+            x = Math.min(m.left, W - sw - 4);
+            y = (r.bottom + sh <= H - 4) ? r.bottom : m.top - sh;
+        }
+        sub.style.left = Math.max(4, x) + 'px';
+        sub.style.top  = Math.max(4, Math.min(y, H - sh - 4)) + 'px';
+    }
+    item.addEventListener('mouseenter', abrir);
+    item.addEventListener('mouseleave', function() {
+        sub.classList.remove('abierto');
+        item.classList.remove('abierto');
+    });
+    item.addEventListener('click', function(ev) {
+        if (sub.contains(ev.target)) return;
+        /* Algunos menús se cierran con cualquier clic en el documento. */
+        ev.stopPropagation();
+        abrir();
+    });
+    return {
+        sub: sub,
+        fin: function() { if (sub.childNodes.length) menu.appendChild(item); }
+    };
+}
+
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
 function melonPlaySong(tr) {
@@ -1584,6 +1637,49 @@ function historyStep(stack) {
     }
     return -1;
 }
+/* ── Cola ("Añadir a la cola" del clic derecho) ───────────────────────
+   colaEspera guarda las canciones añadidas que aún no han sonado. Al pasar
+   a la siguiente (fin de canción o ⏭), si hay alguna, se mete en `playlist`
+   justo detrás de la actual, marcada con _cola, y suena esa. Al salir de
+   ella se quita de `playlist`, así la playlist sigue por donde iba y todo
+   lo que lee playlist[currentTrack] (letra, wrapped, escuchando ahora,
+   escuchar juntos…) funciona igual con las de la cola. La cola no depende
+   de la playlist: si se cambia de playlist, lo pendiente sigue esperando. */
+let colaEspera = [];
+function colaAnadir(track) {
+    if (!track || !track.videoId) return;
+    const t = { videoId: track.videoId, title: track.title || '', artist: track.artist || '', duration: track.duration || 0 };
+    /* Sin nada cargado en el reproductor no hay "después": suena ya. */
+    if (!playlist.length) { melonPlaySong(t); return; }
+    colaEspera.push(t);
+    if (typeof window.melonAviso === 'function') window.melonAviso('Añadida a la cola');
+}
+window.melonColaAnadir = colaAnadir;
+/* Antes de ir a `index`: si la que suena venía de la cola, se quita de
+   `playlist` (y se corrige el índice destino). Devuelve el índice bueno. */
+function colaSalir(index) {
+    const cur = playlist[currentTrack];
+    if (!cur || !cur._cola || index === currentTrack) return index;
+    playlist.splice(currentTrack, 1);
+    if (index > currentTrack) index--;
+    currentTrack--;   /* puede quedar en -1: así "siguiente" (+1) es la 0 */
+    return playlist.length ? (index + playlist.length) % playlist.length : 0;
+}
+/* Índice de la siguiente canción: la primera de la cola si hay; si no, la
+   que toque (siguienteNormal: aleatoria o la de después). */
+function colaSiguiente(siguienteNormal) {
+    const cur = playlist[currentTrack];
+    if (cur && cur._cola) { playlist.splice(currentTrack, 1); currentTrack--; }
+    if (colaEspera.length) {
+        const t = colaEspera.shift();
+        t._cola = true;
+        playlist.splice(currentTrack + 1, 0, t);
+        return currentTrack + 1;
+    }
+    if (!playlist.length) return 0;
+    return siguienteNormal();
+}
+
 /* Siguiente en aleatorio: la del historial si se había vuelto atrás; si no,
    una al azar distinta de la actual. */
 function nextShuffleIndex() {
@@ -3472,13 +3568,15 @@ function _showAlbumCtxMenu(x, y) {
     if (!menu || !_albumViewerCurrent) return;
     menu.innerHTML = '';
     const cur = _albumViewerCurrent;
+    /* Copiar enlace y Añadir a mi perfil van en el "…" (melonMenuMas). */
+    const mas = melonMenuMas(menu);
     const linkItem = (tipo, valor) => {
         if (typeof window.melonCopyLink !== 'function') return;
         const it = document.createElement('div');
         it.className = 'pl-menu-item';
         it.textContent = '🔗 Copiar enlace';
         it.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink(tipo, valor); });
-        menu.appendChild(it);
+        mas.sub.appendChild(it);
     };
 
     /* Playlist de un enlace: solo guardar copia y el enlace. */
@@ -3511,13 +3609,14 @@ function _showAlbumCtxMenu(x, y) {
         menu.style.display = 'none';
         _addAlbumToProfile();
     });
-    menu.appendChild(addProfile);
 
     /* Enlace del álbum (solo con clave real: itunes:/deezer:/spotify:). */
     if (typeof cur.albumId === 'string' && /^[a-z]+:[A-Za-z0-9_-]+$/.test(cur.albumId) && cur.albumId.indexOf('synthetic:') !== 0) {
         linkItem('album', cur.albumId);
     }
+    mas.sub.appendChild(addProfile);   /* orden: Copiar enlace, Añadir a mi perfil */
     }
+    mas.fin();
 
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
@@ -3675,6 +3774,16 @@ function showSearchAlbumCtxMenu(x, y, album) {
         _addAlbumKeyToPlaylist(album.albumKey, album.name, album.artist);
     });
     menu.appendChild(addPl);
+    /* "…" (melonMenuMas): Copiar enlace y Añadir a mi perfil. */
+    const mas = melonMenuMas(menu);
+    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
+            && typeof window.melonCopyLink === 'function') {
+        const lnk = document.createElement('div');
+        lnk.className = 'pl-menu-item';
+        lnk.textContent = '🔗 Copiar enlace';
+        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
+        mas.sub.appendChild(lnk);
+    }
     const addProf = document.createElement('div');
     addProf.className = 'pl-menu-item';
     addProf.textContent = '🎵 Añadir a mi perfil';
@@ -3682,15 +3791,8 @@ function showSearchAlbumCtxMenu(x, y, album) {
         menu.style.display = 'none';
         _addAlbumObjToProfile(album);
     });
-    menu.appendChild(addProf);
-    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
-            && typeof window.melonCopyLink === 'function') {
-        const lnk = document.createElement('div');
-        lnk.className = 'pl-menu-item';
-        lnk.textContent = '🔗 Copiar enlace';
-        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
-        menu.appendChild(lnk);
-    }
+    mas.sub.appendChild(addProf);
+    mas.fin();
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth  - cw - 8) + 'px';
@@ -4142,11 +4244,13 @@ function onYouTubeIframeAPIReady()
                    propia "siguiente" canción y, además, descuadraba el
                    wrapped/escuchando-ahora. */
                 if (e.data === YT.PlayerState.ENDED && LT_ROLE !== 'guest') {
-                    if (autoplayRandom && playlist.length > 1) {
-                        currentTrack = nextShuffleIndex();
-                    } else {
-                        currentTrack = (currentTrack + 1) % playlist.length;
-                    }
+                    /* Primero lo que haya en la cola (colaSiguiente). */
+                    currentTrack = colaSiguiente(function() {
+                        return (autoplayRandom && playlist.length > 1)
+                            ? nextShuffleIndex()
+                            : (currentTrack + 1) % playlist.length;
+                    });
+                    if (!playlist[currentTrack]) return;
                     updateTrackUI(currentTrack);
                     ytPlayer.loadVideoById(playlist[currentTrack].videoId);
                 }
@@ -4157,6 +4261,9 @@ function onYouTubeIframeAPIReady()
 
 function switchTrack(index, keepPlaying)
 {
+    /* Si sonaba una de la cola, deja de estar en `playlist` al salir. */
+    index = colaSalir(index);
+    if (!playlist[index]) return;
     currentTrack = index;
     updateTrackUI(index);
     if (!ytPlayer) return;
@@ -4194,11 +4301,13 @@ document.getElementById('btn-prev').addEventListener('click', () => {
 document.getElementById('btn-next').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
-    if (autoplayRandom && playlist.length > 1) {
-        switchTrack(nextShuffleIndex(), playing);
-    } else {
-        switchTrack((currentTrack + 1) % playlist.length, playing);
-    }
+    /* colaSiguiente ya quita la de la cola que sonaba: switchTrack no
+       tiene que corregir nada más. */
+    switchTrack(colaSiguiente(function() {
+        return (autoplayRandom && playlist.length > 1)
+            ? nextShuffleIndex()
+            : (currentTrack + 1) % playlist.length;
+    }), playing);
 });
 
 document.getElementById('btn-shuffle').addEventListener('click', () => {
@@ -4670,6 +4779,8 @@ var addTrackCallback = null;
         });
         menu.appendChild(addOther);
 
+        /* "…" (melonMenuMas): Descargar todo y Copiar enlace. */
+        var mas = melonMenuMas(menu);
         /* Descargar todas sus canciones (en el navegador ofrece la app). */
         if ((pl.tracks || []).some(function(t) { return t && t.videoId; })) {
             var dlAll = document.createElement('div');
@@ -4679,7 +4790,7 @@ var addTrackCallback = null;
                 menu.style.display = 'none';
                 openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: pl.tracks });
             });
-            menu.appendChild(dlAll);
+            mas.sub.appendChild(dlAll);
         }
 
         /* Enlace para compartir: cualquiera con sesión la puede ver y
@@ -4689,7 +4800,7 @@ var addTrackCallback = null;
             lnk.className = 'pl-menu-item';
             lnk.textContent = '🔗 Copiar enlace';
             lnk.addEventListener('click', function(){ menu.style.display = 'none'; window.melonCopyLink('playlist', String(pl.id)); });
-            menu.appendChild(lnk);
+            mas.sub.appendChild(lnk);
         }
 
         var del = document.createElement('div');
@@ -4697,6 +4808,7 @@ var addTrackCallback = null;
         del.textContent = pl.sharedFrom ? '⊗ Abandonar' : '✕ Eliminar';
         del.addEventListener('click', function(){ menu.style.display = 'none'; deletePlaylist(pl, idx); });
         menu.appendChild(del);
+        mas.fin();
         menu.style.display = 'block';
         var mw = menu.offsetWidth, mh = menu.offsetHeight;
         menu.style.left = Math.min(e.clientX, window.innerWidth  - mw - 8) + 'px';
@@ -4931,7 +5043,9 @@ var addTrackCallback = null;
             }
             shown++;
             var row = document.createElement('div');
-            row.className = 'pl-item' + (isCurrentPl && i === currentTrack ? ' pl-item--playing' : '');
+            /* Mientras suena una de la cola, ninguna fila de la playlist está sonando. */
+            var colaSuena = !!(playlist[currentTrack] && playlist[currentTrack]._cola);
+            row.className = 'pl-item' + (isCurrentPl && !colaSuena && i === currentTrack ? ' pl-item--playing' : '');
             row.draggable = !filtering;
             row.dataset.index = i;
 
@@ -5183,6 +5297,18 @@ var addTrackCallback = null;
         ctxMenu.innerHTML = '';
         var ex = e.clientX, ey = e.clientY;
 
+        /* Añadir a la cola: suena después de la actual (ver colaAnadir). */
+        if (track && track.videoId) {
+            var cola = document.createElement('div');
+            cola.className = 'pl-menu-item';
+            cola.textContent = 'Añadir a la cola';
+            cola.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                colaAnadir(track);
+            });
+            ctxMenu.appendChild(cola);
+        }
+
         var addPl = document.createElement('div');
         addPl.className = 'pl-menu-item';
         addPl.textContent = '➕ Añadir';
@@ -5208,55 +5334,6 @@ var addTrackCallback = null;
             reportWrongAlbum(track);
         });
         ctxMenu.appendChild(fixAlbum);
-
-        var addProfile = document.createElement('div');
-        addProfile.className = 'pl-menu-item';
-        addProfile.textContent = '🎵 Añadir a mi perfil';
-        addProfile.addEventListener('click', function() {
-            ctxMenu.style.display = 'none';
-            /* Cierra el fullscreen llamando a la función real (expuesta
-               como window.__closeFullscreenPlayer) en vez de simular
-               click() en el botón restore. El click() simulado a veces
-               no se propagaba bien, dejando el flag isOpen en true →
-               el siguiente click en maximize hacía return temprano y
-               necesitabas dos clicks. */
-            if (typeof window.__closeFullscreenPlayer === 'function') {
-                window.__closeFullscreenPlayer();
-            }
-            if (typeof window.profileAddTrackAndReview === 'function') {
-                window.profileAddTrackAndReview(track);
-            }
-        });
-        ctxMenu.appendChild(addProfile);
-
-        /* Descargar: vale para la que suena y para las filas de las
-           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
-           descarga la app de escritorio; en el navegador, que no puede bajar
-           el audio de YouTube, ofrece la app (openGetAppDialog). */
-        if (track && track.videoId) {
-            var dl = document.createElement('div');
-            dl.className = 'pl-menu-item';
-            dl.textContent = '⬇ Descargar…';
-            dl.addEventListener('click', function() {
-                ctxMenu.style.display = 'none';
-                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
-                else openGetAppDialog();
-            });
-            ctxMenu.appendChild(dl);
-        }
-
-        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
-           tiene). */
-        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
-            var lnk = document.createElement('div');
-            lnk.className = 'pl-menu-item';
-            lnk.textContent = '🔗 Copiar enlace';
-            lnk.addEventListener('click', function() {
-                ctxMenu.style.display = 'none';
-                window.melonCopyLink('cancion', track.videoId);
-            });
-            ctxMenu.appendChild(lnk);
-        }
 
         /* Item Listen Together — abre el modal de invitar (o gestiona
            la sesión actual si ya estás en una). */
@@ -5286,6 +5363,60 @@ var addTrackCallback = null;
             });
             ctxMenu.appendChild(ltLeave);
         }
+
+        /* "…" (melonMenuMas): Descargar, Copiar enlace y Añadir a mi perfil. */
+        var mas = melonMenuMas(ctxMenu), sub = mas.sub;
+
+        /* Descargar: vale para la que suena y para las filas de las
+           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
+           descarga la app de escritorio; en el navegador, que no puede bajar
+           el audio de YouTube, ofrece la app (openGetAppDialog). */
+        if (track && track.videoId) {
+            var dl = document.createElement('div');
+            dl.className = 'pl-menu-item';
+            dl.textContent = '⬇ Descargar…';
+            dl.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
+                else openGetAppDialog();
+            });
+            sub.appendChild(dl);
+        }
+
+        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
+           tiene). */
+        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                window.melonCopyLink('cancion', track.videoId);
+            });
+            sub.appendChild(lnk);
+        }
+
+        var addProfile = document.createElement('div');
+        addProfile.className = 'pl-menu-item';
+        addProfile.textContent = '🎵 Añadir a mi perfil';
+        addProfile.addEventListener('click', function() {
+            ctxMenu.style.display = 'none';
+            /* Cierra el fullscreen llamando a la función real (expuesta
+               como window.__closeFullscreenPlayer) en vez de simular
+               click() en el botón restore. El click() simulado a veces
+               no se propagaba bien, dejando el flag isOpen en true →
+               el siguiente click en maximize hacía return temprano y
+               necesitabas dos clicks. */
+            if (typeof window.__closeFullscreenPlayer === 'function') {
+                window.__closeFullscreenPlayer();
+            }
+            if (typeof window.profileAddTrackAndReview === 'function') {
+                window.profileAddTrackAndReview(track);
+            }
+        });
+        sub.appendChild(addProfile);
+
+        mas.fin();
 
         ctxMenu.style.display = 'block';
         var cw = ctxMenu.offsetWidth, ch = ctxMenu.offsetHeight;
@@ -5546,6 +5677,9 @@ var addTrackCallback = null;
                     : { videoId: value.videoId, title: value.title, artist: value.artist }, value.result);
                 syncSystemMedia();
                 break;
+            case 'queue':              /* value: { videoId, title, artist } o nada = la que suena */
+                colaAnadir(value && value.videoId ? value : track);
+                break;
             case 'add-profile':
                 if (typeof window.__closeFullscreenPlayer === 'function') window.__closeFullscreenPlayer();
                 if (track && typeof window.profileAddTrackAndReview === 'function') window.profileAddTrackAndReview(track);
@@ -5637,8 +5771,12 @@ var addTrackCallback = null;
         if (!pl) return;
         pl.tracks = editList.slice();
         if (pl.id === currentPlaylistId) {
+            /* Si suena una de la cola, vuelve a su hueco tras rehacer la
+               lista: si no, currentTrack apuntaría a otra canción. */
+            var colaCur = (playlist[currentTrack] && playlist[currentTrack]._cola) ? playlist[currentTrack] : null;
             playlist.length = 0;
             pl.tracks.forEach(function(t) { playlist.push(t); });
+            if (colaCur) playlist.splice(Math.min(currentTrack, playlist.length), 0, colaCur);
         }
         saveCurrentPlaylist();
     }

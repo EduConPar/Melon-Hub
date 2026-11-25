@@ -3187,9 +3187,41 @@ window.MuShell = (function(){
         }
         return -1;
     }
+    /* ── Cola ("Añadir a la cola" de Música) ── Como en el escritorio
+       (colaAnadir de apps/reproductor.php): COLA guarda las añadidas que
+       aún no han sonado; al pasar a la siguiente, la primera se mete en
+       QUEUE detrás de la actual con _cola y suena; al salir de ella se
+       quita y la playlist sigue por donde iba. No pasa por la TV (allí
+       manda la cola de la TV). */
+    var COLA = [];
+    function enqueue(tr) {
+        if (!tr || !tr.videoId) return;
+        var t = { videoId: tr.videoId, title: tr.title || '', artist: tr.artist || '', duration: tr.duration || 0 };
+        /* Sin nada cargado no hay "después": suena ya. */
+        if (CUR_IDX < 0 || !QUEUE.length) { loadQueue([t], 0, ''); return; }
+        COLA.push(t);
+    }
+    /* Si la que suena venía de la cola, la quita de QUEUE (CUR_IDX queda
+       en la de antes, o -1). */
+    function colaQuitaActual() {
+        if (!QUEUE[CUR_IDX] || !QUEUE[CUR_IDX]._cola) return false;
+        QUEUE.splice(CUR_IDX, 1);
+        CUR_IDX--;
+        return true;
+    }
     function next() {
         if (TV.on) { tvCmd({ c: 'next' }); return; }
         if (CUR_IDX < 0) return;
+        colaQuitaActual();
+        if (COLA.length) {
+            var t = COLA.shift();
+            t._cola = true;
+            QUEUE.splice(CUR_IDX + 1, 0, t);
+            CUR_IDX++;
+            playCurrent();
+            return;
+        }
+        if (!QUEUE.length) return;
         if (SHUFFLE_ON && QUEUE.length > 1) {
             /* Si se había vuelto atrás, la que venía después; si no, al azar. */
             var fwd = historyStep(shuffleForward);
@@ -3208,6 +3240,13 @@ window.MuShell = (function(){
     function prev() {
         if (TV.on) { tvCmd({ c: 'prev' }); return; }
         if (CUR_IDX < 0) return;
+        /* ⏮ desde una de la cola: vuelve a la que sonaba antes de ella. */
+        if (colaQuitaActual()) {
+            if (!QUEUE.length) return;
+            if (CUR_IDX < 0) CUR_IDX = QUEUE.length - 1;
+            playCurrent();
+            return;
+        }
         /* En aleatorio, a la que sonaba antes (si queda en el historial);
            si no, la anterior de la lista, como sin aleatorio. */
         var back = SHUFFLE_ON ? historyStep(shuffleBack) : -1;
@@ -4628,6 +4667,7 @@ window.MuShell = (function(){
         var d = ev.data || {};
         if (d.type === 'mushell:load')          { loadQueue(d.queue, d.idx); subscribers.push(ev.source); }
         else if (d.type === 'mushell:subscribe') { subscribers.push(ev.source); }
+        else if (d.type === 'mushell:enqueue')  enqueue(d.track);
         else if (d.type === 'mushell:next')     next();
         else if (d.type === 'mushell:prev')     prev();
         else if (d.type === 'mushell:toggle')   togglePlay();
@@ -4740,7 +4780,7 @@ window.MuShell = (function(){
     })();
 
     return {
-        loadQueue: loadQueue, next: next, prev: prev, toggle: togglePlay,
+        loadQueue: loadQueue, enqueue: enqueue, next: next, prev: prev, toggle: togglePlay,
         openFullscreen: openFullscreen, openLock: openLock, getState: getState,
         tvEmparejar: tvEmparejar,
         getCurrentTime: getCurrentTime, getDuration: getDuration,
