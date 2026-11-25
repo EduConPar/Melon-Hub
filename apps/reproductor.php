@@ -1750,7 +1750,7 @@ function colaPintar() {
     const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const fila = (t, num, cls) => '<div class="cola-row' + (cls ? ' ' + cls : '') + '">' +
         '<span class="cola-num">' + num + '</span>' +
-        '<img class="cola-thumb" alt="" src="https://i.ytimg.com/vi/' + encodeURIComponent(t.videoId) + '/default.jpg">' +
+        '<img class="cola-thumb" alt="" data-vid="' + esc(t.videoId) + '" data-title="' + esc(t.title).replace(/"/g, '&quot;') + '" data-artist="' + esc(t.artist || '').replace(/"/g, '&quot;') + '" src="https://i.ytimg.com/vi/' + encodeURIComponent(t.videoId) + '/mqdefault.jpg">' +
         '<div class="cola-info"><div class="cola-title">' + esc(t.title) + '</div><div class="cola-artist">' + esc(t.artist || '') + '</div></div>' +
         '<span class="cola-dur">' + (t.duration ? formatTime(t.duration) : '') + '</span></div>';
     let html = '';
@@ -1774,6 +1774,13 @@ function colaPintar() {
         html += sig.length ? sig.map((t, i) => fila(t, i + 1)).join('') : '<div class="pl-home-msg">No hay más canciones.</div>';
     }
     body.innerHTML = html;
+    /* Fotos cuadradas: la carátula del álbum en cuanto se sepa (find-album,
+       con caché); mientras, la miniatura de YouTube recortada. */
+    if (typeof _resolveSongThumb === 'function') {
+        body.querySelectorAll('.cola-thumb').forEach(img => {
+            _resolveSongThumb({ videoId: img.dataset.vid, title: img.dataset.title, artist: img.dataset.artist }, img);
+        });
+    }
 }
 /* Antes de ir a `index`: si la que suena venía de la cola, se quita de
    `playlist` (y se corrige el índice destino). Devuelve el índice bueno. */
@@ -5234,7 +5241,7 @@ var addTrackCallback = null;
        en la misma ventana con ◄ Volver. Mixes y tendencias vienen de
        assets/music/para-ti.php y se guardan en memoria mientras la página
        está abierta (tendencias, 30 min). */
-    var _pt = { inicio: null, pInicio: null, tend: null, tendT: 0, pTend: null };
+    var _pt = { inicio: null, pInicio: null, tend: null, tendT: 0, pTend: null, rec: null, recT: 0 };
     var PT_VACIO = { daily: [], mixes: [], descubre: [] };
     function ptInicio() {
         if (_pt.inicio) return Promise.resolve(_pt.inicio);
@@ -5344,6 +5351,37 @@ var addTrackCallback = null;
             });
         }
     }
+    /* ▶ de un acceso rápido: lo pone a sonar sin abrir nada. */
+    function ptReproducirReciente(it) {
+        if (it.type === 'song') { melonPlaySong({ videoId: it.key, title: it.name, artist: it.artist }); return; }
+        if (it.type === 'mix') { ptBuscarMix(it.key).then(function(m){ if (m) melonPlayMix(m, 0); }); return; }
+        if (it.type === 'playlist') {
+            var found = null;
+            allPlaylists.forEach(function(p){ if (String(p.id) === String(it.key)) found = p; });
+            if (found) playPlaylist(found);
+            else if (/^\d+$/.test(String(it.key))) melonPlayPlaylistById(it.key, 0);
+            return;
+        }
+        if (it.type === 'album') {
+            /* Sus canciones (album-tracks), buscadas en YouTube, como cola
+               del álbum (igual que el ▶ del visor). */
+            var key = String(it.key);
+            var url = 'assets/music/api.php?action=album-tracks&' + (key.indexOf(':') !== -1 ? 'key=' : 'id=') + encodeURIComponent(key);
+            if (it.name) url += '&name=' + encodeURIComponent(it.name);
+            if (it.artist) url += '&artist=' + encodeURIComponent(it.artist);
+            if (typeof window.melonAviso === 'function') window.melonAviso('Preparando ' + (it.name || 'el álbum') + '…');
+            fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(meta){
+                var ts = (meta && meta.tracks) || [];
+                if (!ts.length) return null;
+                return colaResolver(ts.map(function(t){ return { title: t.title, artist: t.artist || meta.artist || it.artist || '', duration: t.duration || 0, videoId: t.videoId || null }; }))
+                    .then(function(ok){
+                        if (!ok.length) return;
+                        _loadAlbumQueue(key, { name: meta.name || it.name, artist: meta.artist || it.artist || '', image: meta.image || it.image || '' }, ok, 0);
+                        melonRecordRecent('album', key, it.name, it.image, it.artist);
+                    });
+            }).catch(function(){});
+        }
+    }
     function ptMenuReciente(e, it) {
         if (it.type === 'song') {
             e.preventDefault();
@@ -5381,10 +5419,13 @@ var addTrackCallback = null;
     function ptCancionFila(c, i) {
         var row = ptEl('div', 'pt-song');
         row.appendChild(ptEl('span', 'pt-num', String(i + 1)));
+        /* Cuadrada: la carátula del álbum (find-album) en cuanto se sepa;
+           mientras, la miniatura de YouTube recortada. */
         var th = document.createElement('img');
         th.className = 'pt-song-img'; th.alt = ''; th.loading = 'lazy';
-        th.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(c.videoId) + '/default.jpg';
+        th.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(c.videoId) + '/mqdefault.jpg';
         row.appendChild(th);
+        if (typeof _resolveSongThumb === 'function') _resolveSongThumb({ videoId: c.videoId, title: c.title, artist: c.artist }, th);
         var tx = ptEl('div', 'pt-song-tx');
         tx.appendChild(ptEl('div', 'pt-song-t', c.title));
         tx.appendChild(ptEl('div', 'pt-song-a', c.artist));
@@ -5403,7 +5444,8 @@ var addTrackCallback = null;
     }
     function ptGustaCard(g) {
         if (g.tipo === 'cancion') {
-            return ptCard({ img: g.imagen, name: g.nombre, sub: g.sub,
+            return ptCard({ img: 'https://i.ytimg.com/vi/' + encodeURIComponent(g.videoId) + '/mqdefault.jpg', name: g.nombre, sub: g.sub,
+                onImg: function(im){ if (typeof _resolveSongThumb === 'function') _resolveSongThumb({ videoId: g.videoId, title: g.nombre, artist: g.artist }, im); },
                 onClick: function(){ melonPlaySong({ videoId: g.videoId, title: g.nombre, artist: g.artist }); },
                 onMenu: function(e){ window.openTrackCtxMenu(e, { videoId: g.videoId, title: g.nombre, artist: g.artist, duration: 0 }); } });
         }
@@ -5481,81 +5523,89 @@ var addTrackCallback = null;
         return g;
     }
 
-    function renderHome(scrollTo) {
-        plHomeList.innerHTML = '';
-        var esperas = [];
-
-        /* 1) Accesos rápidos: lo último escuchado (playlists, mixes, álbumes). */
-        var quick = ptEl('div', 'pt-quick-grid');
-        plHomeList.appendChild(quick);
-        var pRecientes = fetch('assets/music/api.php?action=get-recent')
+    /* Recientes: en memoria 1 min, para que volver de "Ver todo" no
+       tenga que esperar. */
+    function ptRecientes() {
+        if (_pt.rec && Date.now() - _pt.recT < 60 * 1000) return Promise.resolve(_pt.rec);
+        return fetch('assets/music/api.php?action=get-recent')
             .then(function(r){ return r.json(); })
-            .then(function(d){ return (d && d.ok && d.items) ? d.items : []; })
+            .then(function(d){ var items = (d && d.ok && d.items) ? d.items : []; _pt.rec = items; _pt.recT = Date.now(); return items; })
             .catch(function(){ return null; });
-        esperas.push(pRecientes.then(function(items){
-            (items || []).filter(function(it){ return it.type === 'playlist' || it.type === 'mix' || it.type === 'album'; })
-                .slice(0, 6).forEach(function(it){
-                    var q = ptEl('div', 'pt-quick');
-                    q.setAttribute('role', 'button');
-                    var src = ptRecienteImg(it);
-                    if (src) { var im = document.createElement('img'); im.src = src; im.alt = ''; im.onerror = function(){ im.style.visibility = 'hidden'; }; q.appendChild(im); }
-                    else q.appendChild(ptEl('span', 'pt-quick-empty', '♪'));
-                    var b = ptEl('b', null, it.name || ''); b.title = it.name || '';
-                    q.appendChild(b);
-                    q.addEventListener('click', function(){ ptAbrirReciente(it); });
-                    q.addEventListener('contextmenu', function(e){ ptMenuReciente(e, it); });
-                    quick.appendChild(q);
-                });
-            if (!quick.childNodes.length) quick.style.display = 'none';
-        }));
+    }
+    var _ptRender = 0;
+    /* Toda la portada sale de golpe cuando han llegado recientes, mixes y
+       tendencias (antes las secciones aparecían a destiempo y movían lo
+       de debajo). Mientras, un solo "Cargando…". */
+    function renderHome(scrollTo) {
+        var token = ++_ptRender;
+        var listo = _pt.inicio && _pt.tend && _pt.rec;
+        if (!listo) {
+            plHomeList.innerHTML = '';
+            plHomeList.appendChild(ptMsg(_pt.inicio ? 'Cargando…' : 'Preparando tus mixes…'));
+        }
+        Promise.all([ptRecientes(), ptInicio(), ptTendencias()]).then(function(r){
+            if (token !== _ptRender) return;
+            ptPintarPortada(r[0], r[1], r[2]);
+            if (typeof scrollTo === 'number') plHomeList.scrollTop = scrollTo;
+        });
+    }
+    function ptPintarPortada(items, d, t) {
+        plHomeList.innerHTML = '';
+
+        /* 1) Accesos rápidos: lo último escuchado (playlists, mixes,
+           álbumes), con ▶ a la derecha al pasar el ratón. */
+        var quick = ptEl('div', 'pt-quick-grid');
+        (items || []).filter(function(it){ return it.type === 'playlist' || it.type === 'mix' || it.type === 'album'; })
+            .slice(0, 6).forEach(function(it){
+                var q = ptEl('div', 'pt-quick');
+                q.setAttribute('role', 'button');
+                var src = ptRecienteImg(it);
+                if (src) { var im = document.createElement('img'); im.src = src; im.alt = ''; im.onerror = function(){ im.style.visibility = 'hidden'; }; q.appendChild(im); }
+                else q.appendChild(ptEl('span', 'pt-quick-empty', '♪'));
+                var b = ptEl('b', null, it.name || ''); b.title = it.name || '';
+                q.appendChild(b);
+                var play = ptEl('span', 'pl-card-play pt-quick-play', '▶');
+                play.title = 'Reproducir';
+                play.addEventListener('click', function(e){ e.stopPropagation(); ptReproducirReciente(it); });
+                q.appendChild(play);
+                q.addEventListener('click', function(){ ptAbrirReciente(it); });
+                q.addEventListener('contextmenu', function(e){ ptMenuReciente(e, it); });
+                quick.appendChild(q);
+            });
+        if (quick.childNodes.length) plHomeList.appendChild(quick);
 
         /* 2–4) Mixes. */
         var sDaily = ptSeccion(plHomeList, 'Hecho para ti', true);
-        var sDesc  = ptSeccion(plHomeList, 'Descubre', false);
-        var sMixes = ptSeccion(plHomeList, 'Tus mixes', true);
-        if (!_pt.inicio) { sDaily.msg('Preparando tus mixes…'); sDesc.ocultar(); sMixes.ocultar(); }
-        esperas.push(ptInicio().then(function(d){
-            if (d.error) { sDaily.msg('No se pudieron preparar tus mixes. Vuelve a abrir Playlists en un rato.'); sDesc.ocultar(); sMixes.ocultar(); return; }
-            if (d.sinEscuchas || (!d.daily.length && !d.mixes.length && !d.descubre.length)) {
-                sDaily.msg('Escucha música y aquí saldrán tus mixes.'); sDesc.ocultar(); sMixes.ocultar(); return;
-            }
-            if (d.daily.length) sDaily.fila(d.daily.map(ptMixCard), function(){
-                ptVerTodo('Hecho para ti', function(c){ c.appendChild(ptGrid(d.daily.map(ptMixCard))); });
-            }); else sDaily.ocultar();
-            if (d.descubre.length) { sDesc.wrap.style.display = ''; sDesc.fila(d.descubre.map(ptMixCard)); }
-            else sDesc.ocultar();
-            if (d.mixes.length) { sMixes.wrap.style.display = ''; sMixes.fila(d.mixes.map(ptMixCard), function(){
-                ptVerTodo('Tus mixes', function(c){ c.appendChild(ptGrid(d.mixes.map(ptMixCard))); });
-            }); } else sMixes.ocultar();
-        }));
+        if (d.error) sDaily.msg('No se pudieron preparar tus mixes. Vuelve a abrir Playlists en un rato.');
+        else if (d.sinEscuchas || (!d.daily.length && !d.mixes.length && !d.descubre.length)) sDaily.msg('Escucha música y aquí saldrán tus mixes.');
+        else if (d.daily.length) sDaily.fila(d.daily.map(ptMixCard), function(){
+            ptVerTodo('Hecho para ti', function(c){ c.appendChild(ptGrid(d.daily.map(ptMixCard))); });
+        });
+        else sDaily.ocultar();
+        if (!d.error && d.descubre.length) ptSeccion(plHomeList, 'Descubre', false).fila(d.descubre.map(ptMixCard));
+        if (!d.error && d.mixes.length) ptSeccion(plHomeList, 'Tus mixes', true).fila(d.mixes.map(ptMixCard), function(){
+            ptVerTodo('Tus mixes', function(c){ c.appendChild(ptGrid(d.mixes.map(ptMixCard))); });
+        });
 
         /* 5) Tendencias en Melon Hub. */
         var trend = ptEl('div', 'pt-trend');
         trend.appendChild(ptEl('div', 'pt-trend-head', '🔥 Tendencias en Melon Hub'));
         plHomeList.appendChild(trend);
         var sCanc = ptSeccion(trend, 'Canciones más escuchadas esta semana', true);
-        var sArt  = ptSeccion(trend, 'Artistas del momento', false);
-        var sGusta = ptSeccion(trend, 'Lo que más gusta', false);
-        if (!_pt.tend) { sCanc.msg('Cargando…'); sArt.ocultar(); sGusta.ocultar(); }
-        esperas.push(ptTendencias().then(function(t){
-            if (!t) { sCanc.msg('No se pudieron cargar las tendencias.'); sArt.ocultar(); sGusta.ocultar(); return; }
+        if (!t) sCanc.msg('No se pudieron cargar las tendencias.');
+        else {
             if (t.canciones.length) {
-                sCanc.body.innerHTML = '';
                 sCanc.body.appendChild(ptCanciones(t.canciones.slice(0, 5)));
                 if (t.canciones.length > 5) sCanc.verTodo(function(){
                     ptVerTodo('Canciones más escuchadas esta semana', function(c){ c.appendChild(ptCanciones(t.canciones)); });
                 });
             } else sCanc.msg('Esta semana aún no ha sonado nada.');
-            if (t.artistas.length) {
-                sArt.wrap.style.display = '';
-                sArt.fila(t.artistas.map(function(a){
-                    return ptCard({ img: a.imagen, round: true, name: a.nombre, sub: a.oyentes + (a.oyentes === 1 ? ' oyente' : ' oyentes'),
-                        onClick: function(){ openArtistWindow(a.nombre); } });
-                }));
-            } else sArt.ocultar();
-            if (t.gusta.length) { sGusta.wrap.style.display = ''; sGusta.fila(t.gusta.map(ptGustaCard)); }
-            else sGusta.ocultar();
-        }));
+            if (t.artistas.length) ptSeccion(trend, 'Artistas del momento', false).fila(t.artistas.map(function(a){
+                return ptCard({ img: a.imagen, round: true, name: a.nombre, sub: a.oyentes + (a.oyentes === 1 ? ' oyente' : ' oyentes'),
+                    onClick: function(){ openArtistWindow(a.nombre); } });
+            }));
+            if (t.gusta.length) ptSeccion(trend, 'Lo que más gusta', false).fila(t.gusta.map(ptGustaCard));
+        }
 
         /* 6) Tus playlists. */
         var sPl = ptSeccion(plHomeList, 'Tus playlists', true);
@@ -5566,18 +5616,9 @@ var addTrackCallback = null;
 
         /* 7) Escuchas recientes. */
         var sRec = ptSeccion(plHomeList, 'Escuchas recientes', false);
-        sRec.msg('Cargando…');
-        esperas.push(pRecientes.then(function(items){
-            if (items === null) { sRec.msg('No se pudieron cargar.'); return; }
-            if (!items.length) { sRec.msg('Aún no has escuchado nada.'); return; }
-            sRec.fila(items.map(ptRecienteCard));
-        }));
-
-        /* Al volver de "Ver todo", al mismo sitio. */
-        if (typeof scrollTo === 'number') {
-            plHomeList.scrollTop = scrollTo;
-            Promise.all(esperas).then(function(){ plHomeList.scrollTop = scrollTo; });
-        }
+        if (items === null) sRec.msg('No se pudieron cargar.');
+        else if (!items.length) sRec.msg('Aún no has escuchado nada.');
+        else sRec.fila(items.map(ptRecienteCard));
     }
 
     window.updatePlaylistPlayingHighlight = function(playlistId, trackIndex) {
