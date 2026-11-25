@@ -69,6 +69,7 @@ $action = $_GET['action'] ?? '';
    soltar la sesión, cada petición esperaría a la anterior. */
 if (strncmp($action, 'ajz-', 4) === 0) session_write_close();
 
+require_once dirname(__DIR__) . '/profile/racha.php';   /* racha_marcar: acabar una partida enciende la racha */
 wordelon_ensure($pdo);
 bm_ensure($pdo);
 if (strncmp($action, 'ajz-', 4) === 0) ajz_ensure($pdo);
@@ -88,6 +89,8 @@ try {
             } catch (InvalidArgumentException $e) {
                 jsonResponse(['ok' => false, 'error' => $e->getMessage()]);
             }
+            /* Acabar la partida de hoy enciende la racha (racha.php). */
+            if (!empty($estado['terminado'])) racha_marcar($pdo, $uid);
             $st = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ?');
             $st->execute([$uid]);
             jsonResponse(['ok' => true, 'estado' => $estado, 'ganados' => $ganados, 'autismo' => (int)$st->fetchColumn()]);
@@ -146,6 +149,13 @@ try {
                 else                                 $r = ['infinito' => bm_infAvanzar($pdo, $uid, $action === 'bm-inf-continuar')];
             } catch (InvalidArgumentException $e) {
                 jsonResponse(['ok' => false, 'error' => $e->getMessage()]);
+            }
+            /* Partida acabada (ganada, perdida o ronda superada) o retirarse
+               del infinito: enciende la racha (racha.php). */
+            if ($action === 'bm-inf-retirarse'
+                || (isset($r['partida']['estado']) && $r['partida']['estado'] !== 'jugando')
+                || (isset($r['infinito']['estado']) && $r['infinito']['estado'] !== 'jugando' && $action !== 'bm-inf-empezar')) {
+                racha_marcar($pdo, $uid);
             }
             $st = $pdo->prepare('SELECT autismo FROM usuarios WHERE id = ?');
             $st->execute([$uid]);
@@ -222,7 +232,7 @@ try {
                     case 'ajz-reto-enlace-aceptar': $r = ajz_retoEnlaceAceptar($pdo, $uid, (string)($b['codigo'] ?? '')); break;
                     case 'ajz-torneo-crear':   $r = ajz_torCrear($pdo, $uid, $b); break;
                     case 'ajz-torneo-editar':  ajz_torEditar($pdo, $uid, $id, $b); break;
-                    case 'ajz-chat-enviar':    $r = ajz_chatEnviar($pdo, $uid, (string)($b['tipo'] ?? ''), $id, (string)($b['texto'] ?? ''), (int)($b['desde'] ?? 0)); break;
+                    case 'ajz-chat-enviar':    $r = ajz_chatEnviar($pdo, $uid, (string)($b['tipo'] ?? ''), $id, (string)($b['texto'] ?? ''), (int)($b['desde'] ?? 0)); racha_marcar($pdo, $uid); break;
                     case 'ajz-torneo-apuntarse': ajz_torApuntarse($pdo, $uid, $id); break;
                     case 'ajz-torneo-salir':   ajz_torSalir($pdo, $uid, $id); break;
                     case 'ajz-torneo-cancelar': ajz_torCancelar($pdo, $uid, $id); break;
@@ -231,6 +241,8 @@ try {
                         elseif ($action === 'ajz-rendirse') $p = ajz_rendirse($pdo, $uid, $id);
                         else                                $p = ajz_tablas($pdo, $uid, $id, (string)($b['tipo'] ?? ''));
                         $r = ['ahora' => bm_ms(), 'partida' => ajz_vista($pdo, $p, $uid, bm_ms())];
+                        /* Partida de ajedrez acabada: enciende la racha (racha.php). */
+                        if (($r['partida']['estado'] ?? '') === 'terminada') racha_marcar($pdo, $uid);
                 }
             } catch (InvalidArgumentException $e) {
                 jsonResponse(['ok' => false, 'error' => $e->getMessage(), 'autismo' => ajz_saldo($pdo, $uid)]);

@@ -40,8 +40,13 @@ const APP_ORIGIN = new URL(START_URL).origin;
    Discord: el OAuth de vincular cuenta (discord-oauth/start.php) pasa
    por discord.com y vuelve a discord-oauth/callback.php. Steam: igual con
    el inicio de sesión de Steam del perfil (profile/steam-login.php →
-   steamcommunity.com → profile/steam-callback.php). */
-const INTERNAL_HOSTS = ['discord.com', 'steamcommunity.com'];
+   steamcommunity.com → profile/steam-callback.php). Google
+   (accounts.google.com): el "Conectar Google Drive" de la Galería y de las
+   Capturas del perfil abre un popup de Google Identity Services que
+   devuelve el token por window.opener; en el navegador externo no hay
+   opener y la pestaña se quedaba en blanco para siempre. Solo ese host:
+   el resto de Google (docs, drive…) sigue saliendo al navegador. */
+const INTERNAL_HOSTS = ['discord.com', 'steamcommunity.com', 'accounts.google.com'];
 
 /* Orígenes a los que se conceden permisos (notificaciones, portapapeles,
    pantalla completa…). YouTube va dentro del reproductor. */

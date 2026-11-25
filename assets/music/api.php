@@ -337,7 +337,8 @@ case 'record-recent': {
     $b = jsonBody();
     $type = (string)($b['type'] ?? '');
     $key  = trim((string)($b['key'] ?? ''));
-    if (!in_array($type, ['song', 'album', 'playlist'], true) || $key === '') {
+    /* 'mix': un mix de Para ti (para-ti.php), clave = su id. */
+    if (!in_array($type, ['song', 'album', 'playlist', 'mix'], true) || $key === '') {
         jsonResponse(['ok' => false]);
     }
     _ensureRecentTable($pdo);

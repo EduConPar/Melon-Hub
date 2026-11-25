@@ -199,6 +199,20 @@
         .mp-menu-item { padding: 4px 16px 4px 8px; white-space: nowrap; color: var(--text); }
         .mp-menu-item:hover { background: var(--accent); color: var(--accent-text); }
         .mp-menu-item.disabled { opacity: 0.5; pointer-events: none; }
+        /* "…" con su submenú a la derecha (lo coloca subMenu()). */
+        .mp-menu-sub { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 8px; }
+        .mp-menu-sub.abierto { background: var(--accent); color: var(--accent-text); }
+        .mp-submenu {
+            display: none;
+            position: fixed;
+            z-index: 11;
+            min-width: 150px;
+            padding: 2px;
+            background: var(--win-bg);
+            box-shadow: inset -1px -1px var(--bezel-dark-2), inset 1px 1px var(--bezel-light-1),
+                        inset -2px -2px var(--bezel-dark-1), inset 2px 2px var(--bezel-light-2);
+        }
+        .mp-menu-sub.abierto > .mp-submenu { display: block; }
     </style>
 </head>
 <body>
@@ -1373,13 +1387,54 @@
     /* ── Clic derecho: las mismas opciones que el reproductor del
        escritorio (showTrackCtxMenu de apps/reproductor.php). ── */
     var menu = $('mp-menu');
-    function menuItem(html, onClick, disabled) {
+    function menuItem(html, onClick, disabled, parent) {
         var it = document.createElement('div');
         it.className = 'mp-menu-item' + (disabled ? ' disabled' : '');
         it.innerHTML = html;
         it.addEventListener('click', function() { hideMenu(); onClick(); });
-        menu.appendChild(it);
+        (parent || menu).appendChild(it);
+        return it;
     }
+    /* "…": submenú a la derecha (o a la izquierda si no cabe) con las
+       opciones menos usadas, como en el reproductor del escritorio. Es hijo
+       del item: pasar el ratón al submenú no lo cierra. Se abre al pasar el
+       ratón o al hacer clic en "…". Devuelve el contenedor donde se meten
+       sus opciones; si al final queda vacío, se quita. */
+    function subMenu() {
+        var it = document.createElement('div');
+        it.className = 'mp-menu-item mp-menu-sub';
+        it.innerHTML = '<span>…</span><svg width="4" height="7" viewBox="0 0 4 7" aria-hidden="true">' +
+            '<path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" fill="currentColor"/></svg>';
+        var sub = document.createElement('div');
+        sub.className = 'mp-submenu';
+        it.appendChild(sub);
+        function abrir() {
+            if (it.classList.contains('abierto')) return;
+            it.classList.add('abierto');
+            /* Medidas en px de pantalla; left/top van sin el zoom (scale). */
+            var r = it.getBoundingClientRect(), m = menu.getBoundingClientRect(), s = sub.getBoundingClientRect();
+            var W = window.innerWidth, H = window.innerHeight;
+            var x = m.right - 2, y = r.top - 2;
+            if (x + s.width > W - 2) x = m.left - s.width + 2;
+            /* Ventana estrecha (ni a la derecha ni a la izquierda): debajo
+               del "…", o encima del menú si abajo tampoco cabe, para no
+               tapar el menú. */
+            if (x < 2) {
+                x = Math.min(m.left, W - s.width - 2);
+                y = (r.bottom + s.height <= H - 2) ? r.bottom : m.top - s.height;
+            }
+            x = Math.max(2, x);
+            y = Math.max(2, Math.min(y, H - s.height - 2));
+            sub.style.left = x / scale + 'px';
+            sub.style.top = y / scale + 'px';
+        }
+        it.addEventListener('mouseenter', abrir);
+        it.addEventListener('mouseleave', function() { it.classList.remove('abierto'); });
+        it.addEventListener('click', function(e) { if (!sub.contains(e.target)) abrir(); });
+        menu.appendChild(it);
+        return sub;
+    }
+    function quitaSubVacio(sub) { if (!sub.childNodes.length) sub.parentNode.remove(); }
     function hideMenu() { menu.style.display = 'none'; }
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
@@ -1387,27 +1442,34 @@
         /* Sobre una canción del panel (playlist, búsqueda, álbum): descargar
            esa canción. */
         var row = e.target.closest && e.target.closest('#mp-lists-box .mp-row');
-        if (row && row.song && (md.download || window.melonCopyLink)) {
-            if (md.download) menuItem('⬇ Descargar…', function() { dlSong = row.song; show('dl'); });
-            var rowVid = row.song.videoId;
-            if (rowVid && window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', rowVid); });
+        if (row && row.song && row.song.videoId) {
+            var song = row.song;
+            /* "Añadir a la cola": la cola vive en el reproductor de la
+               ventana principal (melonTrackAction 'queue'). */
+            menuItem('Añadir a la cola', function() { cmd('queue', song); });
+            var subRow = subMenu();
+            if (md.download) menuItem('⬇ Descargar…', function() { dlSong = song; show('dl'); }, false, subRow);
+            if (window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', song.videoId); }, false, subRow);
+            quitaSubVacio(subRow);
             placeMenu(e);
             return;
         }
         var noTrack = !state.hasTrack;
+        menuItem('Añadir a la cola', function() { cmd('queue'); }, noTrack || !state.videoId);
         menuItem('➕ Añadir', function() { show('lists'); }, noTrack);
         menuItem('<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:5px;">Corregir…',
                  function() { show('fix'); }, noTrack);
-        menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack);
-        /* Descargar: la app de escritorio 0.3.5 o posterior. */
-        if (md.download) menuItem('⬇ Descargar…', function() { show('dl'); }, noTrack);
-        /* Enlace para compartir la que suena (enlace.php?cancion=…). */
-        if (window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', state.videoId); }, noTrack || !state.videoId);
         var lt = state.ltRole === 'host' ? '🎧 Invitar a más usuarios…'
                : state.ltRole === 'guest' ? '🎧 Ver sesión actual'
                : '🎧 Escuchar juntos…';
         menuItem(lt, function() { show('lt'); });
         if (state.ltRole) menuItem('✕ Salir de la sesión', function() { cmd('leave-session'); });
+        /* "…": Descargar (app 0.3.5 o posterior), Copiar enlace y Añadir a
+           mi perfil, en ese orden, como en el escritorio. */
+        var sub = subMenu();
+        if (md.download) menuItem('⬇ Descargar…', function() { show('dl'); }, noTrack, sub);
+        if (window.melonCopyLink) menuItem('🔗 Copiar enlace', function() { window.melonCopyLink('cancion', state.videoId); }, noTrack || !state.videoId, sub);
+        menuItem('🎵 Añadir a mi perfil', function() { cmd('add-profile'); }, noTrack, sub);
         placeMenu(e);
     });
     function placeMenu(e) {

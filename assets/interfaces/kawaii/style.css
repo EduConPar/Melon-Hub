@@ -1115,7 +1115,8 @@ input[type="radio"]:focus + label:before {
     text-shadow: none !important;
 }
 
-.pl-menu-item:hover {
+.pl-menu-item:hover,
+.pl-menu-sub.abierto {
     background: var(--hover-bg, #CCE7F7) !important;                  /* azul claro consistente */
     color: var(--text) !important;
 }

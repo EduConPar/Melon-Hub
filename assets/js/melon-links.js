@@ -56,6 +56,9 @@
         t.style.top = Math.max(4, y) + 'px';
         setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 1500);
     }
+    /* El mismo aviso junto al ratón para otras acciones rápidas (p. ej.
+       "Añadida a la cola" en el reproductor). */
+    window.melonAviso = aviso;
 
     function copiarViejo(txt) {
         var ta = document.createElement('textarea');

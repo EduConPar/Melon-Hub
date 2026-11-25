@@ -121,6 +121,13 @@ function actionLog(): void {
         VALUES (?, ?, ?, ?, ?, ?)
     ")->execute([$userId, $videoId, $title, $artist, $playlistId, $durationS]);
 
+    /* Escuchar una canción (al menos 30 s) enciende la racha del día
+       (assets/profile/racha.php). */
+    if ($durationS >= 30) {
+        require_once dirname(__DIR__) . '/profile/racha.php';
+        racha_marcar($pdo, (int)$userId);
+    }
+
     echo json_encode(['ok'=>true]);
 }
 

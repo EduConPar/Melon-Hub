@@ -371,6 +371,9 @@ case 'gift-answer': {
                los regalos al verlo (antes, cada minuto). */
             require_once dirname(__DIR__) . '/php/timbre.php';
             rt_usuario((int)$toId, 'regalo');
+            /* Mandar un regalo enciende la racha (assets/profile/racha.php). */
+            require_once dirname(__DIR__) . '/profile/racha.php';
+            racha_marcar($pdo, (int)$userId);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             jsonError('Error al regalar: ' . $e->getMessage(), 500);

@@ -4583,7 +4583,10 @@ var PROFILE_USERS = <?php
                 return;
             }
             var newTracks = (pl.tracks || []).slice();
-            tracks.forEach(function(t){ newTracks.push({ videoId: t.videoId, title: t.title, artist: t.artist }); });
+            /* "Añadido por": usersInfo es del reproductor (va en el mismo
+               escritorio); en el perfil suelto no existe y se queda vacío. */
+            var me = (typeof usersInfo !== 'undefined' && typeof currentUserKey !== 'undefined' && usersInfo[currentUserKey]) ? usersInfo[currentUserKey].label : '';
+            tracks.forEach(function(t){ newTracks.push({ videoId: t.videoId, title: t.title, artist: t.artist, addedBy: me }); });
             var payload = { id: pl.id, name: pl.name, tracks: newTracks };
             if (pl.sharedFrom) payload.sharedFrom = pl.sharedFrom;
             fetch('assets/music/api.php?action=save-playlist-item', {

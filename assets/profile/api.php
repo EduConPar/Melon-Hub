@@ -33,6 +33,7 @@
    GET   ?action=my-frames
    POST  ?action=set-frame             { slug }            ('' = sin marco)
    POST  ?action=streak-claim          {}                  (racha: racha.php)
+   GET   ?action=racha-aviso                               (racha encendida sola: el aviso, una vez)
    GET   ?action=invites                                   (invitaciones: racha.php)
    GET   ?action=steam-search-games&q=…   (juegos de la tienda que no tiene pero con logros suyos)
    GET   ?action=steam-game-achievements&appid=N
@@ -1263,13 +1264,25 @@ case 'save-lists': {
                 return;
             }
             $reviewedAt = $clean['reviewed_at'] !== null ? (int)$clean['reviewed_at'] : time();
-            $pdo->prepare("INSERT INTO list_item_reviews (item_id, user_id, stars, comment, reviewed_at)
+            /* ¿Reseña nueva o con otras estrellas / otro comentario? (se
+               guarda la lista entera cada vez: las demás no cuentan). */
+            $old = $pdo->prepare("SELECT stars, comment FROM list_item_reviews WHERE item_id = ? AND user_id = ?");
+            $old->execute([$itemId, $uid]);
+            $prev = $old->fetch(PDO::FETCH_ASSOC);
+            $cambia = !$prev || (float)$prev['stars'] !== (float)$stars || (string)$prev['comment'] !== (string)$clean['review_comment'];
+            $st = $pdo->prepare("INSERT INTO list_item_reviews (item_id, user_id, stars, comment, reviewed_at)
                            VALUES (?, ?, ?, ?, FROM_UNIXTIME(?))
                            ON DUPLICATE KEY UPDATE
                              stars = VALUES(stars),
                              comment = VALUES(comment),
-                             reviewed_at = VALUES(reviewed_at)")
-                ->execute([$itemId, $uid, $stars, $clean['review_comment'], $reviewedAt]);
+                             reviewed_at = VALUES(reviewed_at)");
+            $st->execute([$itemId, $uid, $stars, $clean['review_comment'], $reviewedAt]);
+            /* Reseña nueva o cambiada: enciende la racha al acabar la
+               petición, ya confirmada (racha.php). */
+            if ($cambia) {
+                require_once __DIR__ . '/racha.php';
+                racha_marcar($pdo, (int)$uid);
+            }
         };
 
         foreach ($items as $item) {
@@ -2247,6 +2260,11 @@ case 'send-message': {
     /* ── Trigger Web Push al destinatario ──
        Best-effort: si falla, el mensaje ya está guardado. Errores 410
        (Gone) limpian la subscripción muerta. */
+    /* Mandar un mensaje enciende la racha (racha.php; antes del push, que
+       puede fallar). */
+    require_once __DIR__ . '/racha.php';
+    racha_marcar($pdo, (int)$uid);
+
     pf_tryWebPush($pdo, $toUid, $userKey, $text);
 
     jsonResponse(['ok' => true, 'message' => [
@@ -2388,6 +2406,8 @@ case 'wall-comment': {
     if ($text === '') jsonError('El comentario está vacío');
     $pdo->prepare("INSERT INTO profile_comments (profile_user_id, author_id, text) VALUES (?, ?, ?)")
         ->execute([$tid, $uid, $text]);
+    require_once __DIR__ . '/racha.php';
+    racha_marcar($pdo, (int)$uid);   /* comentar en un muro enciende la racha */
     jsonResponse(['ok' => true, 'comments' => pf2_comments($pdo, $tid, $uid)]);
 }
 
@@ -2416,6 +2436,22 @@ case 'streak-claim': {
     $r = racha_pulsar($pdo, $uid);
     if (!$r['ok']) jsonError($r['error'], 409);
     jsonResponse($r);
+}
+
+/* Racha encendida sola (racha.php, racha_auto): el aviso, una vez. La
+   pide el escritorio al sonar el timbre 'racha'. */
+case 'racha-aviso': {
+    require_once __DIR__ . '/racha.php';
+    $uid = pf_uid($pdo, $userKey);
+    if (!$uid) jsonError('Usuario no encontrado', 500);
+    $a = racha_aviso($pdo, $uid);
+    if (!$a) jsonResponse(['ok' => true, 'aviso' => null]);
+    $dias = (int)($a['racha']['current'] ?? 0);
+    jsonResponse(['ok' => true, 'aviso' => [
+        'titulo'  => 'Racha de ' . $dias . ($dias === 1 ? ' día' : ' días'),
+        'mensaje' => racha_avisoTexto($a['ganado'] ?? []),
+        'racha'   => $a['racha'],
+    ]]);
 }
 
 /* Invitaciones (racha.php): las mías, para la ventana "Invitar". */

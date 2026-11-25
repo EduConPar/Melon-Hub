@@ -1489,6 +1489,26 @@ if ($activeTheme !== '' && isset($_userThemes['themes'][$activeTheme]['colors'][
             color: var(--input-text, var(--text, #000));
         }
         .mu-modal-list-item:last-child { border-bottom: none; }
+        /* "…" de los menús de opciones (muListaHtml): al tocarlo se
+           despliegan debajo, sangradas, las opciones menos usadas (Copiar
+           enlace, Añadir a mi perfil); otro toque las recoge. */
+        .mu-mas {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            font-size: 12px;
+            color: var(--input-text, var(--text, #000));
+            border-top: 1px dotted var(--text-faint, #aaa);
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mu-mas .item-main { flex: 1; }
+        .mu-mas svg { flex-shrink: 0; transition: transform .12s ease; }
+        .mu-mas.abierto svg { transform: rotate(90deg); }
+        .mu-mas:active { background: var(--accent, #000080); color: var(--accent-text, #fff); }
+        .mu-mas-sub .mu-modal-list-item { padding-left: 24px; }
+        .mu-mas-sub .mu-modal-list-item:first-child { border-top: 1px dotted var(--text-faint, #aaa); }
         .mu-modal-list-item:active {
             background: var(--accent, #000080);
             color: var(--accent-text, #fff);
@@ -2693,6 +2713,48 @@ document.getElementById('mu-full-add').addEventListener('click', function(){
     muOpenAddCurrentToPlaylist(QUEUE[CUR_IDX]);
 });
 
+/* "Añadir a la cola": la cola vive en el reproductor del shell
+   (MuShell.enqueue en mobile.php), que es el que suena. Sin shell
+   (musica-mobile suelto) no hay cola: la opción no sale. */
+function muCanQueue() { return !!(SHELL && SHELL.enqueue); }
+function muEnqueue(tr) {
+    if (!tr || !tr.videoId || !muCanQueue()) return;
+    SHELL.enqueue({ videoId: tr.videoId, title: tr.title || '', artist: tr.artist || '', duration: tr.duration || 0 });
+    if (window.melonAviso) window.melonAviso('Añadida a la cola');
+}
+
+/* Lista de opciones de los menús de mantener pulsado. Las que llevan
+   `mas: true` (Copiar enlace, Añadir a mi perfil) van al final dentro de
+   un "…" que las despliega debajo (muEngancharMas), para que la lista no
+   sea tan larga; como el "…" del escritorio (melonMenuMas). */
+function muListaHtml(items) {
+    function fila(it) {
+        return '<div class="mu-modal-list-item" data-act="' + it.act + '">' +
+                 '<div class="item-main" style="' + (it.danger ? 'color:var(--error-text, #c00);font-weight:bold;' : '') + '">' + it.label + '</div>' +
+               '</div>';
+    }
+    var main = '', mas = '';
+    items.forEach(function(it){ if (it.mas) mas += fila(it); else main += fila(it); });
+    if (mas) {
+        main += '<div class="mu-mas" role="button" aria-expanded="false"><div class="item-main">…</div>' +
+                  '<svg width="4" height="7" viewBox="0 0 4 7" aria-hidden="true"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" fill="currentColor"/></svg>' +
+                '</div><div class="mu-mas-sub" hidden>' + mas + '</div>';
+    }
+    return '<div class="mu-modal-list">' + main + '</div>';
+}
+function muEngancharMas(root) {
+    var t = root.querySelector('.mu-mas');
+    if (!t) return;
+    t.addEventListener('click', function(){
+        var sub = t.nextElementSibling;
+        var abrir = sub.hasAttribute('hidden');
+        if (abrir) sub.removeAttribute('hidden'); else sub.setAttribute('hidden', '');
+        t.classList.toggle('abierto', abrir);
+        t.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+        if (abrir) sub.lastElementChild.scrollIntoView({ block: 'nearest' });
+    });
+}
+
 /* ─── MENÚ DE LA CANCIÓN ACTUAL (long-press en el vinilo) ────────────
    Mantener pulsado el vinilo del reproductor grande abre el mismo menú
    de opciones que el long-press de una canción en la lista, incluida
@@ -2704,24 +2766,22 @@ function muOpenNowPlayingMenu() {
         { act: 'fixAlbum', label: MU_FIX_ICON + 'Corregir' },
         { act: 'addPl',    label: '📋 Añadir' }
     ];
-    if (tr.videoId) items.push({ act: 'link', label: '🔗 Copiar enlace' });
+    if (tr.videoId && muCanQueue()) items.unshift({ act: 'queue', label: 'Añadir a la cola' });
+    if (tr.videoId) items.push({ act: 'link', label: '🔗 Copiar enlace', mas: true });
     var bodyHtml = '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint, #666);">' +
                      esc(tr.title || tr.videoId || 'Canción') +
                      (tr.artist ? ' — ' + esc(tr.artist) : '') +
-                   '</p><div class="mu-modal-list">';
-    items.forEach(function(it){
-        bodyHtml += '<div class="mu-modal-list-item" data-act="' + it.act + '">' +
-                      '<div class="item-main">' + it.label + '</div>' +
-                    '</div>';
-    });
-    bodyHtml += '</div><div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
+                   '</p>' + muListaHtml(items);
+    bodyHtml += '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
 
     var m = muOpenModal({ title: 'Opciones', body: bodyHtml });
+    muEngancharMas(m.body);
     m.body.querySelector('[data-act="cancel"]').addEventListener('click', m.close);
     m.body.querySelectorAll('.mu-modal-list-item').forEach(function(el){
         el.addEventListener('click', function(){
             var act = el.dataset.act;
             m.close();
+            if (act === 'queue')    muEnqueue(tr);
             if (act === 'fixAlbum') muReportWrongAlbum(tr);
             if (act === 'addPl')    muOpenAddCurrentToPlaylist(tr);
             if (act === 'link' && window.melonCopyLink) window.melonCopyLink('cancion', tr.videoId);
@@ -3275,23 +3335,18 @@ function muOpenPlaylistMenu(idx) {
         { act: 'edit',      label: '<img src="../../assets/img/appIcons/drawingIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;">️ Renombrar' }
     ];
     /* Enlace para compartir (cualquiera con sesión puede verla y copiarla). */
-    if (/^\d+$/.test(String(pl.id))) items.push({ act: 'link', label: '🔗 Copiar enlace' });
+    if (/^\d+$/.test(String(pl.id))) items.push({ act: 'link', label: '🔗 Copiar enlace', mas: true });
     if (isOwn) {
         items.push({ act: 'collab', label: '<img src="../../assets/img/appIcons/profileIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin:0 4px 0 0;"> Colaboradores' });
         items.push({ act: 'delete', label: '<img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Eliminar playlist', danger: true });
     } else {
         items.push({ act: 'leave',  label: '🚪 Abandonar (dejar de colaborar)', danger: true });
     }
-    var bodyHtml = '<div class="mu-modal-list">';
-    items.forEach(function(it){
-        bodyHtml += '<div class="mu-modal-list-item" data-act="' + it.act + '">' +
-                      '<div class="item-main" style="' + (it.danger ? 'color:var(--error-text, #c00);font-weight:bold;' : '') + '">' + it.label + '</div>' +
-                    '</div>';
-    });
-    bodyHtml += '</div>';
+    var bodyHtml = muListaHtml(items);
     bodyHtml += '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
 
     var m = muOpenModal({ title: pl.name, body: bodyHtml });
+    muEngancharMas(m.body);
     m.body.querySelector('[data-act="cancel"]').addEventListener('click', m.close);
     m.body.querySelectorAll('.mu-modal-list-item').forEach(function(el){
         el.addEventListener('click', function(){
@@ -3351,31 +3406,28 @@ function muOpenTrackMenu(pi, ti) {
     var tr = (pl.tracks || [])[ti];
     if (!tr) return;
     var items = [
-        { act: 'addProfile', label: '➕ Añadir a mi perfil' },
         { act: 'addPl',      label: '📋 Añadir' },
         { act: 'fixAlbum',   label: MU_FIX_ICON + 'Corregir' },
-        { act: 'link',       label: '🔗 Copiar enlace' },
+        { act: 'link',       label: '🔗 Copiar enlace', mas: true },
+        { act: 'addProfile', label: '➕ Añadir a mi perfil', mas: true },
         { act: 'remove',     label: '<img src="../../assets/img/appIcons/trashIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:-2px;margin-right:4px;">Quitar de la playlist', danger: true }
     ];
+    if (tr.videoId && muCanQueue()) items.unshift({ act: 'queue', label: 'Añadir a la cola' });
     var bodyHtml = '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint, #666);">' +
                      esc(tr.title || tr.videoId || 'Canción') +
                      (tr.artist ? ' — ' + esc(tr.artist) : '') +
                    '</p>';
-    bodyHtml += '<div class="mu-modal-list">';
-    items.forEach(function(it){
-        bodyHtml += '<div class="mu-modal-list-item" data-act="' + it.act + '">' +
-                      '<div class="item-main" style="' + (it.danger ? 'color:var(--error-text, #c00);font-weight:bold;' : '') + '">' + it.label + '</div>' +
-                    '</div>';
-    });
-    bodyHtml += '</div>';
+    bodyHtml += muListaHtml(items);
     bodyHtml += '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
 
     var m = muOpenModal({ title: 'Opciones', body: bodyHtml });
+    muEngancharMas(m.body);
     m.body.querySelector('[data-act="cancel"]').addEventListener('click', m.close);
     m.body.querySelectorAll('.mu-modal-list-item').forEach(function(el){
         el.addEventListener('click', function(){
             var act = el.dataset.act;
             m.close();
+            if (act === 'queue')      muEnqueue(tr);
             if (act === 'addProfile') addTrackToProfile(pi, ti);
             if (act === 'addPl')      muOpenAddCurrentToPlaylist(tr);
             if (act === 'fixAlbum')   muReportWrongAlbum(tr);
@@ -5238,21 +5290,41 @@ function _muOpenAlbumTrackMenu(album, idx) {
         '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint,#666);">' +
             esc(t.title || 'Canción') + (t.artist ? ' — ' + esc(t.artist) : '') +
         '</p>' +
-        '<div class="mu-modal-list">' +
-            '<div class="mu-modal-list-item" data-act="play"><div class="item-main">▶ Reproducir</div></div>' +
-            '<div class="mu-modal-list-item" data-act="profile"><div class="item-main">➕ Añadir al perfil y reseñar</div></div>' +
-        '</div>' +
+        muListaHtml((muCanQueue() ? [{ act: 'queue', label: 'Añadir a la cola' }] : []).concat([
+            { act: 'play',    label: '▶ Reproducir' },
+            { act: 'profile', label: '➕ Añadir al perfil y reseñar', mas: true }
+        ])) +
         '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
     var m = muOpenModal({ title: 'Opciones', body: bodyHtml });
+    muEngancharMas(m.body);
     m.body.querySelector('[data-act="cancel"]').addEventListener('click', m.close);
     m.body.querySelectorAll('.mu-modal-list-item').forEach(function(el){
         el.addEventListener('click', function(){
             var act = el.dataset.act;
             m.close();
+            if (act === 'queue')   _muEnqueueAlbumTrack(album, idx);
             if (act === 'play')    _muPlayAlbumFrom(album, idx);
             if (act === 'profile') _muAddAlbumTrackToProfile(album, idx);
         });
     });
+}
+
+/* Canción del álbum a la cola. Los tracks de iTunes/Deezer/Spotify no
+   traen videoId: se busca en YouTube (yt-search-batch) como al añadirla
+   al perfil. */
+function _muEnqueueAlbumTrack(album, idx) {
+    var t = album.tracks[idx];
+    if (!t || !t.title) return;
+    if (t.videoId) { muEnqueue({ videoId: t.videoId, title: t.title, artist: t.artist || album.artist || '', duration: t.duration || 0 }); return; }
+    apiPost('yt-search-batch', { tracks: [{ title: t.title, artist: t.artist || album.artist || '', duration: t.duration || 0 }] })
+        .then(function(r){
+            var found = (r.ok && r.data && r.data.tracks) || [];
+            var hit = found.find(function(x){
+                return x && x.title && x.title.toLowerCase() === (t.title || '').toLowerCase();
+            }) || found[0];
+            if (!hit || !hit.videoId) { muAlert('No se encontró "' + (t.title || 'la canción') + '" en YouTube.'); return; }
+            muEnqueue({ videoId: hit.videoId, title: t.title, artist: t.artist || album.artist || '', duration: t.duration || 0 });
+        });
 }
 
 /* Añade UNA canción del álbum al perfil del usuario, resolviendo
@@ -5310,21 +5382,15 @@ function _muAddAlbumTrackToProfile(album, idx) {
 function muOpenAlbumMenu(albumId, albumName, albumArtist) {
     var items = [
         { act: 'open',       label: '👁 Ver álbum' },
-        { act: 'addProfile', label: '➕ Añadir a mi perfil' },
-        { act: 'addPl',      label: '📋 Añadir a playlist' }
+        { act: 'addPl',      label: '📋 Añadir a playlist' },
+        { act: 'addProfile', label: '➕ Añadir a mi perfil', mas: true }
     ];
     var bodyHtml = '<p class="modal-msg" style="margin:0 0 6px;color:var(--text-faint,#666);">' +
                      esc(albumName || 'Álbum') +
-                   '</p>' +
-                   '<div class="mu-modal-list">';
-    items.forEach(function(it){
-        bodyHtml += '<div class="mu-modal-list-item" data-act="' + it.act + '">' +
-                      '<div class="item-main">' + it.label + '</div>' +
-                    '</div>';
-    });
-    bodyHtml += '</div>' +
-                '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
+                   '</p>' + muListaHtml(items) +
+                   '<div class="modal-actions"><button class="button" data-act="cancel" type="button">Cerrar</button></div>';
     var m = muOpenModal({ title: 'Álbum', body: bodyHtml });
+    muEngancharMas(m.body);
     m.body.querySelector('[data-act="cancel"]').addEventListener('click', m.close);
     m.body.querySelectorAll('.mu-modal-list-item').forEach(function(el){
         el.addEventListener('click', function(){

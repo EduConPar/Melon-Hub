@@ -359,6 +359,28 @@ $youtubePlaylist = array_merge($youtubePlaylist, $stmt->fetchAll(PDO::FETCH_ASSO
 </div>
 
 <!-- ARTIST WINDOW — todos los álbumes de un artista. -->
+<!-- Cola del reproductor ("Ver cola" del clic derecho): lo que suena, lo
+     añadido a la cola y lo siguiente de la playlist. La pinta colaPintar(). -->
+<div class="window" id="cola-window">
+    <div class="title-bar">
+        <div class="title-bar-text">
+            <img src="assets/img/appIcons/musicaIcon.png" alt="" class="album-viewer-titlebar-icon">
+            Cola
+        </div>
+        <div class="title-bar-controls">
+            <button aria-label="Close" id="cola-window-close"></button>
+        </div>
+    </div>
+    <div class="window-body" id="cola-window-body"></div>
+    <div class="av-resize av-resize-n"  data-edge="n"></div>
+    <div class="av-resize av-resize-s"  data-edge="s"></div>
+    <div class="av-resize av-resize-w"  data-edge="w"></div>
+    <div class="av-resize av-resize-e"  data-edge="e"></div>
+    <div class="av-resize av-resize-nw" data-edge="nw"></div>
+    <div class="av-resize av-resize-ne" data-edge="ne"></div>
+    <div class="av-resize av-resize-sw" data-edge="sw"></div>
+    <div class="av-resize av-resize-se" data-edge="se"></div>
+</div>
 <div class="window" id="artist-window">
     <div class="title-bar" id="artist-window-titlebar">
         <div class="title-bar-text">
@@ -1253,6 +1275,59 @@ function openBulkDownloadDialog(set) {
 }
 window.openBulkDownloadDialog = openBulkDownloadDialog;
 
+/* "…" de los menús de clic derecho (canciones, álbumes, playlists): un
+   item que abre a la derecha un submenú con las opciones menos usadas
+   (Descargar, Copiar enlace, Añadir a mi perfil), para que el menú no sea
+   tan largo. El submenú (.pl-submenu) es hijo del item "…": pasar el
+   ratón de uno a otro no lo cierra, y el clic fuera del menú lo cierra con
+   él. Se abre al pasar el ratón o, en táctil, al tocar "…".
+   Uso: var mas = melonMenuMas(menu); mas.sub.appendChild(item)…; y al
+   final mas.fin() (lo añade al menú solo si tiene opciones). */
+function melonMenuMas(menu) {
+    var item = document.createElement('div');
+    item.className = 'pl-menu-item pl-menu-sub';
+    item.innerHTML = '<span>…</span>' +
+        '<svg class="pl-menu-sub-arrow" width="4" height="7" viewBox="0 0 4 7" aria-hidden="true">' +
+        '<path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" fill="currentColor"/></svg>';
+    var sub = document.createElement('div');
+    sub.className = 'window pl-submenu';
+    item.appendChild(sub);
+    function abrir() {
+        if (sub.classList.contains('abierto')) return;
+        sub.classList.add('abierto');
+        item.classList.add('abierto');
+        var r = item.getBoundingClientRect(), m = menu.getBoundingClientRect();
+        var sw = sub.offsetWidth, sh = sub.offsetHeight;
+        var W = window.innerWidth, H = window.innerHeight;
+        /* A la derecha del menú; si no cabe, a la izquierda. */
+        var x = m.right - 3, y = r.top - 3;
+        if (x + sw > W - 4) x = m.left - sw + 3;
+        /* Pantalla estrecha (ni a un lado ni al otro): debajo del "…", o
+           encima del menú si abajo tampoco cabe, para no tapar el menú. */
+        if (x < 4) {
+            x = Math.min(m.left, W - sw - 4);
+            y = (r.bottom + sh <= H - 4) ? r.bottom : m.top - sh;
+        }
+        sub.style.left = Math.max(4, x) + 'px';
+        sub.style.top  = Math.max(4, Math.min(y, H - sh - 4)) + 'px';
+    }
+    item.addEventListener('mouseenter', abrir);
+    item.addEventListener('mouseleave', function() {
+        sub.classList.remove('abierto');
+        item.classList.remove('abierto');
+    });
+    item.addEventListener('click', function(ev) {
+        if (sub.contains(ev.target)) return;
+        /* Algunos menús se cierran con cualquier clic en el documento. */
+        ev.stopPropagation();
+        abrir();
+    });
+    return {
+        sub: sub,
+        fin: function() { if (sub.childNodes.length) menu.appendChild(item); }
+    };
+}
+
 /* Reproduce una sola canción reemplazando la cola actual (usado por la
    búsqueda y por la sección de recientes). */
 function melonPlaySong(tr) {
@@ -1536,6 +1611,11 @@ function _winDragResize(winId, minW, minH) {
    → arrastrables + redimensionables aquí. (album-viewer y playlist-editor
    ya tienen su propio wiring; el resto va por el WindowManager.) */
 _winDragResize('artist-window', 300, 260);
+_winDragResize('cola-window', 260, 220);
+(function(){
+    var c = document.getElementById('cola-window-close');
+    if (c) c.addEventListener('click', colaCerrar);
+})();
 _winDragResize('edit-playlist-dialog', 260, 180);
 _winDragResize('lt-modal', 260, 200);
 
@@ -1584,6 +1664,149 @@ function historyStep(stack) {
     }
     return -1;
 }
+/* ── Cola ("Añadir a la cola" del clic derecho) ───────────────────────
+   colaEspera guarda las canciones añadidas que aún no han sonado. Al pasar
+   a la siguiente (fin de canción o ⏭), si hay alguna, se mete en `playlist`
+   justo detrás de la actual, marcada con _cola, y suena esa. Al salir de
+   ella se quita de `playlist`, así la playlist sigue por donde iba y todo
+   lo que lee playlist[currentTrack] (letra, wrapped, escuchando ahora,
+   escuchar juntos…) funciona igual con las de la cola. La cola no depende
+   de la playlist: si se cambia de playlist, lo pendiente sigue esperando. */
+let colaEspera = [];
+/* Busca en YouTube las que no traen videoId (canciones de un álbum o de un
+   artista que aún no se han resuelto) con yt-search-batch, como el visor
+   de álbumes. Devuelve las que tienen videoId, en el mismo orden. */
+async function colaResolver(tracks) {
+    const limpia = t => ({ videoId: t.videoId, title: t.title || '', artist: t.artist || '', duration: t.duration || 0 });
+    const falta = tracks.filter(t => t && !t.videoId && t.title);
+    if (falta.length) {
+        let res = [];
+        try {
+            const r = await fetch('assets/music/api.php?action=yt-search-batch', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tracks: falta.map(t => ({ title: t.title, artist: t.artist || '', duration: t.duration || 0 })) })
+            });
+            const d = await r.json();
+            res = (d && d.tracks) || [];
+        } catch (_) {}
+        /* Vuelven en orden y solo las encontradas: si están todas, por
+           posición (el título puede venir corregido); si no, por título. */
+        const n = s => String(s || '').toLowerCase().trim();
+        if (res.length === falta.length) {
+            falta.forEach((t, i) => { t.videoId = res[i].videoId; if (!t.duration) t.duration = res[i].duration || 0; });
+        } else {
+            let j = 0;
+            falta.forEach(t => {
+                if (res[j] && n(res[j].title) === n(t.title).substr(0, 200)) { t.videoId = res[j].videoId; t.duration = t.duration || res[j].duration || 0; j++; }
+            });
+        }
+    }
+    return tracks.filter(t => t && t.videoId).map(limpia);
+}
+/* Añade a la cola una o varias canciones (un álbum entero). Sin nada
+   cargado en el reproductor, la primera suena ya y el resto queda en cola. */
+async function colaAnadirVarias(tracks) {
+    tracks = (tracks || []).map(t => Object.assign({}, t));
+    const aviso = m => { if (typeof window.melonAviso === 'function') window.melonAviso(m); };
+    if (tracks.some(t => !t.videoId)) aviso('Buscando en YouTube…');
+    const ok = await colaResolver(tracks);
+    if (!ok.length) { aviso('No se encontró en YouTube'); return; }
+    if (!playlist.length) melonPlaySong(ok.shift());   /* suena ya: sin aviso */
+    ok.forEach(t => colaEspera.push(t));
+    if (ok.length) aviso(ok.length === 1 ? 'Añadida a la cola' : ok.length + ' canciones añadidas a la cola');
+    colaPintar();
+}
+function colaAnadir(track) {
+    if (!track || (!track.videoId && !track.title)) return;
+    return colaAnadirVarias([track]);
+}
+window.melonColaAnadir = colaAnadir;
+window.melonColaAnadirVarias = colaAnadirVarias;
+
+/* ── Ventana "Cola" ── Sonando ahora, lo añadido a la cola (colaEspera)
+   y lo siguiente de la playlist (en aleatorio no se sabe: se dice). Se
+   repinta al cambiar de canción (updateTrackUI) y al añadir. Solo se ve:
+   no se reordena ni se quita nada desde aquí. */
+function colaAbrir() {
+    const win = document.getElementById('cola-window');
+    if (!win) return;
+    if (window.taskbarManager) {
+        if (taskbarManager.isRegistered('cola-window')) taskbarManager.restore('cola-window');
+        else taskbarManager.register('cola-window', 'Cola', '<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">', 'flex');
+    } else { win.style.display = 'flex'; }
+    colaPintar();
+}
+function colaCerrar() {
+    const win = document.getElementById('cola-window');
+    if (!win) return;
+    if (window.taskbarManager) { try { taskbarManager.unregister('cola-window'); } catch (_) {} }
+    win.style.display = 'none';
+}
+window.melonColaAbrir = colaAbrir;
+function colaPintar() {
+    const win = document.getElementById('cola-window');
+    const body = document.getElementById('cola-window-body');
+    if (!win || !body || win.style.display === 'none' || !win.style.display) return;
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fila = (t, num, cls) => '<div class="cola-row' + (cls ? ' ' + cls : '') + '">' +
+        '<span class="cola-num">' + num + '</span>' +
+        '<img class="cola-thumb" alt="" data-vid="' + esc(t.videoId) + '" data-title="' + esc(t.title).replace(/"/g, '&quot;') + '" data-artist="' + esc(t.artist || '').replace(/"/g, '&quot;') + '" src="https://i.ytimg.com/vi/' + encodeURIComponent(t.videoId) + '/mqdefault.jpg">' +
+        '<div class="cola-info"><div class="cola-title">' + esc(t.title) + '</div><div class="cola-artist">' + esc(t.artist || '') + '</div></div>' +
+        '<span class="cola-dur">' + (t.duration ? formatTime(t.duration) : '') + '</span></div>';
+    let html = '';
+    const cur = playlist[currentTrack];
+    html += '<div class="pl-section-title">Sonando ahora</div>';
+    html += cur ? fila(cur, '►', 'is-playing') : '<div class="pl-home-msg">No suena nada.</div>';
+    html += '<div class="pl-section-title">Siguientes en la cola</div>';
+    html += colaEspera.length
+        ? colaEspera.map((t, i) => fila(t, i + 1)).join('')
+        : '<div class="pl-home-msg">Vacía. Clic derecho en una canción o un álbum → Añadir a la cola.</div>';
+    const nombre = (document.getElementById('player-pl-name') || {}).textContent || '';
+    html += '<div class="pl-section-title">Siguientes de ' + esc(nombre || 'la playlist') + '</div>';
+    if (autoplayRandom && playlist.length > 1) {
+        html += '<div class="pl-home-msg">En aleatorio: la siguiente se elige al azar.</div>';
+    } else {
+        const sig = [];
+        for (let k = 1; k < playlist.length && sig.length < 50; k++) {
+            const t = playlist[(currentTrack + k) % playlist.length];
+            if (t && !t._cola) sig.push(t);
+        }
+        html += sig.length ? sig.map((t, i) => fila(t, i + 1)).join('') : '<div class="pl-home-msg">No hay más canciones.</div>';
+    }
+    body.innerHTML = html;
+    /* Fotos cuadradas: la carátula del álbum en cuanto se sepa (find-album,
+       con caché); mientras, la miniatura de YouTube recortada. */
+    if (typeof _resolveSongThumb === 'function') {
+        body.querySelectorAll('.cola-thumb').forEach(img => {
+            _resolveSongThumb({ videoId: img.dataset.vid, title: img.dataset.title, artist: img.dataset.artist }, img);
+        });
+    }
+}
+/* Antes de ir a `index`: si la que suena venía de la cola, se quita de
+   `playlist` (y se corrige el índice destino). Devuelve el índice bueno. */
+function colaSalir(index) {
+    const cur = playlist[currentTrack];
+    if (!cur || !cur._cola || index === currentTrack) return index;
+    playlist.splice(currentTrack, 1);
+    if (index > currentTrack) index--;
+    currentTrack--;   /* puede quedar en -1: así "siguiente" (+1) es la 0 */
+    return playlist.length ? (index + playlist.length) % playlist.length : 0;
+}
+/* Índice de la siguiente canción: la primera de la cola si hay; si no, la
+   que toque (siguienteNormal: aleatoria o la de después). */
+function colaSiguiente(siguienteNormal) {
+    const cur = playlist[currentTrack];
+    if (cur && cur._cola) { playlist.splice(currentTrack, 1); currentTrack--; }
+    if (colaEspera.length) {
+        const t = colaEspera.shift();
+        t._cola = true;
+        playlist.splice(currentTrack + 1, 0, t);
+        return currentTrack + 1;
+    }
+    if (!playlist.length) return 0;
+    return siguienteNormal();
+}
+
 /* Siguiente en aleatorio: la del historial si se había vuelto atrás; si no,
    una al azar distinta de la actual. */
 function nextShuffleIndex() {
@@ -2550,6 +2773,7 @@ function updateTrackUI(index)
 {
     if (!playlist.length) return;
     const track = playlist[index];
+    setTimeout(colaPintar, 0);   /* ventana "Cola" abierta: al día */
     rememberListened(index, track);
     shuffleNav = false;
     playerTitle.textContent  = track.title;
@@ -2792,6 +3016,145 @@ function _albumViewerSetMode(win, mode) {
         try { taskbarManager.unregister('album-viewer'); } catch (_) {}
     }
 }
+
+/* ── Mixes "Para ti" (assets/music/para-ti.php) ─────────────────────
+   Un mix trae canciones con videoId (las que ya escuchas) y sin él (las
+   nuevas de Last.fm/Deezer). Al abrirlo o darle a ▶ se buscan las que
+   faltan en YouTube (colaResolver) y se guardan en el servidor (mix-ids)
+   para no volver a buscarlas. Se abre en el visor de álbumes, en modo
+   playlist, y suena como cola suelta (como una playlist de un enlace). */
+const _mixResolviendo = {};
+function melonMixResolver(mix) {
+    if (!mix) return Promise.resolve(mix);
+    if (!mix.tracks.some(t => !t.videoId)) return Promise.resolve(mix);
+    if (_mixResolviendo[mix.id]) return _mixResolviendo[mix.id];
+    const falta = mix.tracks.filter(t => !t.videoId).map(t => Object.assign({}, t));
+    _mixResolviendo[mix.id] = colaResolver(falta).then(ok => {
+        /* colaResolver deja el videoId en los objetos de `falta`. */
+        const porClave = {};
+        falta.forEach(t => { if (t.videoId) porClave[t.title + '\x1f' + t.artist] = t; });
+        mix.tracks.forEach(t => {
+            const r = porClave[t.title + '\x1f' + t.artist];
+            if (!t.videoId && r) { t.videoId = r.videoId; t.duration = t.duration || r.duration || 0; }
+        });
+        /* Sin las que no se encontraron, para no volver a buscarlas. */
+        mix.tracks = mix.tracks.filter(t => t.videoId);
+        if (ok.length) {
+            fetch('assets/music/para-ti.php?action=mix-ids', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: mix.id, tracks: ok })
+            }).catch(() => {});
+        }
+        delete _mixResolviendo[mix.id];
+        return mix;
+    });
+    return _mixResolviendo[mix.id];
+}
+function _mixTitulo(mix) { return mix.nombre; }
+function melonPlayMix(mix, index) {
+    if (!mix) return;
+    const sonar = () => {
+        const tracks = mix.tracks.filter(t => t.videoId);
+        if (!tracks.length) return;
+        const start = Math.max(0, Math.min(index | 0, tracks.length - 1));
+        window.__melonLinkPlayed = true;
+        currentPlaylistId = null;
+        currentPlaylistHasCollabs = false;
+        playlist.length = 0;
+        tracks.forEach(t => playlist.push({ videoId: t.videoId, title: t.title, artist: t.artist, duration: t.duration || 0 }));
+        currentTrack = start;
+        updatePlayerTitle(_mixTitulo(mix));
+        updateTrackUI(start);
+        if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') ytPlayer.loadVideoById(playlist[start].videoId);
+        melonRecordRecent('mix', mix.id, mix.nombre, mix.imagen || '', mix.sub || '');
+    };
+    /* Si la primera ya está, suena ya y las demás se buscan mientras. */
+    if (mix.tracks[index | 0] && mix.tracks[index | 0].videoId && !mix.tracks.some(t => !t.videoId)) { sonar(); return; }
+    if (typeof window.melonAviso === 'function') window.melonAviso('Preparando ' + mix.nombre + '…');
+    melonMixResolver(mix).then(sonar);
+}
+window.melonPlayMix = melonPlayMix;
+
+async function openMixViewer(mix) {
+    const win = _albumViewerEl('album-viewer');
+    if (!win || !mix) return;
+    const myToken = ++_albumViewerToken;
+    _albumViewerSetMode(win, 'playlist');
+    const nameEl   = _albumViewerEl('album-viewer-name');
+    const artistEl = _albumViewerEl('album-viewer-artist');
+    const metaEl   = _albumViewerEl('album-viewer-meta');
+    const coverEl  = _albumViewerEl('album-viewer-cover');
+    const tracksEl = _albumViewerEl('album-viewer-tracks');
+    const playBtn  = _albumViewerEl('album-viewer-play');
+    const dlBtn    = _albumViewerEl('album-viewer-download');
+    nameEl.textContent = mix.nombre;
+    artistEl.textContent = mix.sub || '';
+    coverEl.src = mix.imagen || '';
+    playBtn.innerHTML = '<span class="album-viewer-play-tri">▶</span> Reproducir';
+    _albumViewerCurrent = { mix: true, mixObj: mix, meta: { name: mix.nombre, image: mix.imagen }, resolved: null };
+    if (window.taskbarManager) {
+        if (taskbarManager.isRegistered('album-viewer')) taskbarManager.restore('album-viewer');
+        else taskbarManager.register('album-viewer', 'Playlist',
+            '<img src="assets/img/appIcons/musicaIcon.png" alt="" style="width:14px;height:14px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;">',
+            'flex');
+    } else {
+        win.style.display = 'flex';
+    }
+    function pintar() {
+        const n = mix.tracks.length;
+        let totalSec = 0;
+        mix.tracks.forEach(t => { totalSec += t.duration || 0; });
+        let metaText = n + (n === 1 ? ' canción' : ' canciones');
+        if (totalSec) {
+            const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60);
+            metaText += ' · ' + (h > 0 ? h + 'h ' : '') + m + 'm';
+        }
+        metaEl.textContent = metaText;
+        tracksEl.innerHTML = '';
+        mix.tracks.forEach((t, i) => {
+            const row = document.createElement('div');
+            row.className = 'album-viewer-row' + (t.videoId ? '' : ' is-pending');
+            const num = document.createElement('span'); num.className = 'album-viewer-num'; num.textContent = i + 1;
+            const info = document.createElement('div'); info.className = 'album-viewer-info';
+            const ttl = document.createElement('div'); ttl.className = 'album-viewer-title'; ttl.textContent = t.title;
+            const ar = document.createElement('div'); ar.className = 'album-viewer-artist'; ar.textContent = t.artist || '';
+            info.appendChild(ttl); info.appendChild(ar);
+            const dur = document.createElement('span'); dur.className = 'album-viewer-dur'; dur.textContent = t.duration ? formatTime(t.duration) : '';
+            row.appendChild(num); row.appendChild(info); row.appendChild(dur);
+            row.addEventListener('click', () => {
+                const vid = t.videoId;
+                melonMixResolver(mix).then(() => {
+                    const k = mix.tracks.filter(x => x.videoId).findIndex(x => x.videoId === (vid || t.videoId));
+                    melonPlayMix(mix, Math.max(0, k));
+                    closeAlbumViewer();
+                });
+            });
+            row.addEventListener('contextmenu', ev => {
+                ev.preventDefault();
+                if (typeof window.openTrackCtxMenu === 'function') {
+                    window.openTrackCtxMenu(ev, { title: t.title, artist: t.artist, videoId: t.videoId || null, duration: t.duration || 0 });
+                }
+            });
+            tracksEl.appendChild(row);
+        });
+    }
+    pintar();
+    const listo = !mix.tracks.some(t => !t.videoId);
+    playBtn.disabled = !listo;
+    dlBtn.disabled = !listo;
+    if (!listo) playBtn.innerHTML = '<span class="album-viewer-play-tri">▶</span> Buscando…';
+    await melonMixResolver(mix);
+    if (myToken !== _albumViewerToken) return;
+    pintar();
+    _albumViewerCurrent.resolved = mix.tracks.slice();
+    playBtn.innerHTML = '<span class="album-viewer-play-tri">▶</span> Reproducir';
+    if (!mix.tracks.length) { tracksEl.innerHTML = '<div class="album-viewer-msg">No se encontraron las canciones en YouTube.</div>'; return; }
+    playBtn.disabled = false;
+    playBtn.onclick = () => { melonPlayMix(mix, 0); closeAlbumViewer(); };
+    dlBtn.disabled = false;
+    dlBtn.onclick = () => openBulkDownloadDialog({ name: mix.nombre, cover: mix.imagen || '', tracks: mix.tracks });
+}
+window.openMixViewer = openMixViewer;
 
 /* Playlist de otra persona abierta desde un enlace: la ve cualquiera con
    sesión (music api shared-playlist). Se reproduce como cola suelta (no
@@ -3472,17 +3835,33 @@ function _showAlbumCtxMenu(x, y) {
     if (!menu || !_albumViewerCurrent) return;
     menu.innerHTML = '';
     const cur = _albumViewerCurrent;
+    /* Copiar enlace y Añadir a mi perfil van en el "…" (melonMenuMas). */
+    const mas = melonMenuMas(menu);
     const linkItem = (tipo, valor) => {
         if (typeof window.melonCopyLink !== 'function') return;
         const it = document.createElement('div');
         it.className = 'pl-menu-item';
         it.textContent = '🔗 Copiar enlace';
         it.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink(tipo, valor); });
-        menu.appendChild(it);
+        mas.sub.appendChild(it);
     };
 
-    /* Playlist de un enlace: solo guardar copia y el enlace. */
-    if (cur.shared) {
+    /* Añadir a la cola el álbum (o la playlist del enlace) entero: las que
+       aún no se han resuelto se buscan en YouTube (colaAnadirVarias). */
+    const tracksCola = (cur.resolved && cur.resolved.length)
+        ? cur.resolved
+        : ((cur.meta && cur.meta.tracks) || []).map(t => ({ title: t.title, artist: t.artist || (cur.meta && cur.meta.artist) || '', duration: t.duration || 0, videoId: t.videoId || null }));
+    if (tracksCola.length) {
+        const it = document.createElement('div');
+        it.className = 'pl-menu-item';
+        it.textContent = 'Añadir a la cola';
+        it.addEventListener('click', () => { menu.style.display = 'none'; colaAnadirVarias(tracksCola); });
+        menu.appendChild(it);
+    }
+
+    /* Playlist de un enlace: solo guardar copia y el enlace. Un mix: solo
+       la cola. */
+    if (cur.shared && !cur.mix) {
         const save = _albumViewerEl('album-viewer-save');
         if (save && save.style.display !== 'none' && !save.disabled) {
             const it = document.createElement('div');
@@ -3494,7 +3873,7 @@ function _showAlbumCtxMenu(x, y) {
         linkItem('playlist', String(cur.playlistId));
     }
 
-    if (!cur.shared) {
+    if (!cur.shared && !cur.mix) {
     const addPl = document.createElement('div');
     addPl.className = 'pl-menu-item';
     addPl.textContent = 'Añadir álbum a playlist';
@@ -3511,13 +3890,14 @@ function _showAlbumCtxMenu(x, y) {
         menu.style.display = 'none';
         _addAlbumToProfile();
     });
-    menu.appendChild(addProfile);
 
     /* Enlace del álbum (solo con clave real: itunes:/deezer:/spotify:). */
     if (typeof cur.albumId === 'string' && /^[a-z]+:[A-Za-z0-9_-]+$/.test(cur.albumId) && cur.albumId.indexOf('synthetic:') !== 0) {
         linkItem('album', cur.albumId);
     }
+    mas.sub.appendChild(addProfile);   /* orden: Copiar enlace, Añadir a mi perfil */
     }
+    mas.fin();
 
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
@@ -3622,12 +4002,18 @@ async function _showAlbumPlaylistPicker(albumName, tracksToAdd) {
                 alert('Todas las canciones del álbum ya estaban en "' + pl.name + '".');
                 return;
             }
-            const merged = (pl.tracks || []).concat(fresh);
+            /* Las nuevas, a mi nombre (el "añadido por" de las compartidas).
+               En una compartida hace falta sharedFrom: sin él el servidor no
+               la encuentra entre las mías y crea una playlist nueva. */
+            const me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
+            const merged = (pl.tracks || []).concat(fresh.map(t => Object.assign({}, t, { addedBy: me })));
+            const payload = { id: pl.id, name: pl.name, tracks: merged };
+            if (pl.sharedFrom) payload.sharedFrom = pl.sharedFrom;
             try {
                 const r = await fetch('assets/music/api.php?action=save-playlist-item', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: pl.id, name: pl.name, tracks: merged }),
+                    body: JSON.stringify(payload),
                 });
                 const data = await r.json();
                 if (data && data.error) throw new Error(data.error);
@@ -3667,6 +4053,25 @@ function showSearchAlbumCtxMenu(x, y, album) {
     const menu = document.getElementById('pl-ctx-menu-el');
     if (!menu || !album || !album.albumKey) return;
     menu.innerHTML = '';
+    /* Añadir a la cola el álbum entero: se piden sus canciones
+       (album-tracks) y se buscan en YouTube. */
+    const cola = document.createElement('div');
+    cola.className = 'pl-menu-item';
+    cola.textContent = 'Añadir a la cola';
+    cola.addEventListener('click', () => {
+        menu.style.display = 'none';
+        const param = album.albumKey.indexOf(':') !== -1 ? 'key=' : 'id=';
+        let url = 'assets/music/api.php?action=album-tracks&' + param + encodeURIComponent(album.albumKey);
+        if (album.name)   url += '&name='   + encodeURIComponent(album.name);
+        if (album.artist) url += '&artist=' + encodeURIComponent(album.artist);
+        if (typeof window.melonAviso === 'function') window.melonAviso('Buscando en YouTube…');
+        fetch(url).then(r => r.ok ? r.json() : null).then(meta => {
+            const ts = (meta && meta.tracks) || [];
+            if (!ts.length) { if (typeof window.melonAviso === 'function') window.melonAviso('No se pudo leer el álbum'); return; }
+            colaAnadirVarias(ts.map(t => ({ title: t.title, artist: t.artist || meta.artist || album.artist || '', duration: t.duration || 0, videoId: t.videoId || null })));
+        }).catch(() => {});
+    });
+    menu.appendChild(cola);
     const addPl = document.createElement('div');
     addPl.className = 'pl-menu-item';
     addPl.textContent = '➕ Añadir a playlist';
@@ -3675,6 +4080,16 @@ function showSearchAlbumCtxMenu(x, y, album) {
         _addAlbumKeyToPlaylist(album.albumKey, album.name, album.artist);
     });
     menu.appendChild(addPl);
+    /* "…" (melonMenuMas): Copiar enlace y Añadir a mi perfil. */
+    const mas = melonMenuMas(menu);
+    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
+            && typeof window.melonCopyLink === 'function') {
+        const lnk = document.createElement('div');
+        lnk.className = 'pl-menu-item';
+        lnk.textContent = '🔗 Copiar enlace';
+        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
+        mas.sub.appendChild(lnk);
+    }
     const addProf = document.createElement('div');
     addProf.className = 'pl-menu-item';
     addProf.textContent = '🎵 Añadir a mi perfil';
@@ -3682,15 +4097,8 @@ function showSearchAlbumCtxMenu(x, y, album) {
         menu.style.display = 'none';
         _addAlbumObjToProfile(album);
     });
-    menu.appendChild(addProf);
-    if (/^[a-z]+:[A-Za-z0-9_-]+$/.test(album.albumKey) && album.albumKey.indexOf('synthetic:') !== 0
-            && typeof window.melonCopyLink === 'function') {
-        const lnk = document.createElement('div');
-        lnk.className = 'pl-menu-item';
-        lnk.textContent = '🔗 Copiar enlace';
-        lnk.addEventListener('click', () => { menu.style.display = 'none'; window.melonCopyLink('album', album.albumKey); });
-        menu.appendChild(lnk);
-    }
+    mas.sub.appendChild(addProf);
+    mas.fin();
     menu.style.display = 'block';
     const cw = menu.offsetWidth, ch = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth  - cw - 8) + 'px';
@@ -4142,11 +4550,13 @@ function onYouTubeIframeAPIReady()
                    propia "siguiente" canción y, además, descuadraba el
                    wrapped/escuchando-ahora. */
                 if (e.data === YT.PlayerState.ENDED && LT_ROLE !== 'guest') {
-                    if (autoplayRandom && playlist.length > 1) {
-                        currentTrack = nextShuffleIndex();
-                    } else {
-                        currentTrack = (currentTrack + 1) % playlist.length;
-                    }
+                    /* Primero lo que haya en la cola (colaSiguiente). */
+                    currentTrack = colaSiguiente(function() {
+                        return (autoplayRandom && playlist.length > 1)
+                            ? nextShuffleIndex()
+                            : (currentTrack + 1) % playlist.length;
+                    });
+                    if (!playlist[currentTrack]) return;
                     updateTrackUI(currentTrack);
                     ytPlayer.loadVideoById(playlist[currentTrack].videoId);
                 }
@@ -4157,6 +4567,9 @@ function onYouTubeIframeAPIReady()
 
 function switchTrack(index, keepPlaying)
 {
+    /* Si sonaba una de la cola, deja de estar en `playlist` al salir. */
+    index = colaSalir(index);
+    if (!playlist[index]) return;
     currentTrack = index;
     updateTrackUI(index);
     if (!ytPlayer) return;
@@ -4194,11 +4607,13 @@ document.getElementById('btn-prev').addEventListener('click', () => {
 document.getElementById('btn-next').addEventListener('click', () => {
     if (!playlist.length) return;
     const playing = ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
-    if (autoplayRandom && playlist.length > 1) {
-        switchTrack(nextShuffleIndex(), playing);
-    } else {
-        switchTrack((currentTrack + 1) % playlist.length, playing);
-    }
+    /* colaSiguiente ya quita la de la cola que sonaba: switchTrack no
+       tiene que corregir nada más. */
+    switchTrack(colaSiguiente(function() {
+        return (autoplayRandom && playlist.length > 1)
+            ? nextShuffleIndex()
+            : (currentTrack + 1) % playlist.length;
+    }), playing);
 });
 
 document.getElementById('btn-shuffle').addEventListener('click', () => {
@@ -4670,6 +5085,8 @@ var addTrackCallback = null;
         });
         menu.appendChild(addOther);
 
+        /* "…" (melonMenuMas): Descargar todo y Copiar enlace. */
+        var mas = melonMenuMas(menu);
         /* Descargar todas sus canciones (en el navegador ofrece la app). */
         if ((pl.tracks || []).some(function(t) { return t && t.videoId; })) {
             var dlAll = document.createElement('div');
@@ -4679,7 +5096,7 @@ var addTrackCallback = null;
                 menu.style.display = 'none';
                 openBulkDownloadDialog({ name: pl.name, cover: pl.image || '', tracks: pl.tracks });
             });
-            menu.appendChild(dlAll);
+            mas.sub.appendChild(dlAll);
         }
 
         /* Enlace para compartir: cualquiera con sesión la puede ver y
@@ -4689,7 +5106,7 @@ var addTrackCallback = null;
             lnk.className = 'pl-menu-item';
             lnk.textContent = '🔗 Copiar enlace';
             lnk.addEventListener('click', function(){ menu.style.display = 'none'; window.melonCopyLink('playlist', String(pl.id)); });
-            menu.appendChild(lnk);
+            mas.sub.appendChild(lnk);
         }
 
         var del = document.createElement('div');
@@ -4697,6 +5114,7 @@ var addTrackCallback = null;
         del.textContent = pl.sharedFrom ? '⊗ Abandonar' : '✕ Eliminar';
         del.addEventListener('click', function(){ menu.style.display = 'none'; deletePlaylist(pl, idx); });
         menu.appendChild(del);
+        mas.fin();
         menu.style.display = 'block';
         var mw = menu.offsetWidth, mh = menu.offsetHeight;
         menu.style.left = Math.min(e.clientX, window.innerWidth  - mw - 8) + 'px';
@@ -4744,9 +5162,12 @@ var addTrackCallback = null;
         var seen = {};
         merged.forEach(function(t){ if (t.videoId) seen[t.videoId] = 1; });
         var added = 0;
+        /* Las que entran, a nombre de quien las añade (se veía como si no
+           las hubiera añadido nadie en las compartidas). */
+        var me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
         (srcPl.tracks || []).forEach(function(t){
             if (t.videoId && seen[t.videoId]) return;
-            merged.push({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0 });
+            merged.push({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0, addedBy: me });
             if (t.videoId) seen[t.videoId] = 1;
             added++;
         });
@@ -4819,7 +5240,314 @@ var addTrackCallback = null;
     }
 
     /* Sección "Escuchas recientes" (canciones, álbumes, playlists). */
-    function renderRecentSection() {
+    /* ── Portada de Playlists (modelo A + Tendencias, 25/11) ─────────────
+       De arriba abajo: accesos rápidos (lo último escuchado: playlists,
+       mixes y álbumes), Hecho para ti (Daily Mix), Descubre
+       (Descubrimiento semanal y Radar de novedades), Tus mixes, el
+       recuadro de Tendencias en Melon Hub (canciones de la semana,
+       artistas del momento y lo que más gusta), Tus playlists y Escuchas
+       recientes. Filas horizontales; "Ver todo" las enseña en cuadrícula
+       en la misma ventana con ◄ Volver. Mixes y tendencias vienen de
+       assets/music/para-ti.php y se guardan en memoria mientras la página
+       está abierta (tendencias, 30 min). */
+    var _pt = { inicio: null, pInicio: null, tend: null, tendT: 0, pTend: null, rec: null, recT: 0 };
+    var PT_VACIO = { daily: [], mixes: [], descubre: [] };
+    function ptInicio() {
+        if (_pt.inicio) return Promise.resolve(_pt.inicio);
+        if (!_pt.pInicio) {
+            _pt.pInicio = fetch('assets/music/para-ti.php?action=inicio')
+                .then(function(r){ return r.json(); })
+                .then(function(d){ _pt.pInicio = null; if (d && d.ok) { _pt.inicio = d; return d; } return Object.assign({ error: true }, PT_VACIO); })
+                .catch(function(){ _pt.pInicio = null; return Object.assign({ error: true }, PT_VACIO); });
+        }
+        return _pt.pInicio;
+    }
+    function ptTendencias() {
+        if (_pt.tend && Date.now() - _pt.tendT < 30 * 60 * 1000) return Promise.resolve(_pt.tend);
+        if (!_pt.pTend) {
+            _pt.pTend = fetch('assets/music/para-ti.php?action=tendencias')
+                .then(function(r){ return r.json(); })
+                .then(function(d){ _pt.pTend = null; if (d && d.ok) { _pt.tend = d; _pt.tendT = Date.now(); return d; } return null; })
+                .catch(function(){ _pt.pTend = null; return null; });
+        }
+        return _pt.pTend;
+    }
+    function ptBuscarMix(id) {
+        return ptInicio().then(function(d){
+            var todos = [].concat(d.daily || [], d.mixes || [], d.descubre || []);
+            for (var i = 0; i < todos.length; i++) if (todos[i].id === id) return todos[i];
+            return null;
+        });
+    }
+    function ptEl(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+    }
+    function ptMsg(text) { return ptEl('div', 'pl-home-msg', text); }
+    /* Menú del clic derecho con opciones sueltas (#pl-ctx-menu-el). */
+    function ptMenu(e, items) {
+        e.preventDefault();
+        var menu = document.getElementById('pl-ctx-menu-el');
+        if (!menu) return;
+        menu.innerHTML = '';
+        items.forEach(function(it){
+            var d = ptEl('div', 'pl-menu-item', it.label);
+            d.addEventListener('click', function(){ menu.style.display = 'none'; it.fn(); });
+            menu.appendChild(d);
+        });
+        menu.style.display = 'block';
+        menu.style.left = Math.min(e.clientX, window.innerWidth  - menu.offsetWidth  - 8) + 'px';
+        menu.style.top  = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8) + 'px';
+    }
+    /* Tarjeta: portada (foto, o ♪ si no hay), franja del acento con el
+       nombre (mixes), ▶ al pasar el ratón, nombre y subtítulo. */
+    function ptCard(o) {
+        var card = ptEl('div', 'pl-card pt-card' + (o.round ? ' pt-card--round' : ''));
+        var cover = ptEl('div', 'pl-card-cover' + (o.round ? ' pl-card-cover--round' : ''));
+        if (o.img) {
+            var img = document.createElement('img');
+            img.src = o.img; img.alt = ''; img.loading = 'lazy';
+            img.onerror = function(){ cover.classList.add('pl-card-cover--empty'); img.remove(); };
+            cover.appendChild(img);
+            if (o.onImg) o.onImg(img);
+        } else {
+            cover.classList.add('pl-card-cover--empty');
+        }
+        if (o.band) { var band = ptEl('div', 'pt-band'); band.appendChild(ptEl('b', null, o.band)); cover.appendChild(band); }
+        if (o.onPlay) {
+            var play = ptEl('div', 'pl-card-play', '▶');
+            play.title = 'Reproducir';
+            play.addEventListener('click', function(e){ e.stopPropagation(); o.onPlay(); });
+            cover.appendChild(play);
+        }
+        card.appendChild(cover);
+        var nm = ptEl('div', 'pl-card-name', o.name || '');
+        nm.title = o.name || '';
+        card.appendChild(nm);
+        if (o.sub) { var sb = ptEl('div', 'pl-card-sub', o.sub); sb.title = o.sub; card.appendChild(sb); }
+        if (o.onClick) card.addEventListener('click', o.onClick);
+        if (o.onMenu) card.addEventListener('contextmenu', o.onMenu);
+        return card;
+    }
+    function ptMixCard(m) {
+        return ptCard({
+            img: m.imagen, band: m.nombre, name: m.nombre, sub: m.sub,
+            onClick: function(){ openMixViewer(m); },
+            onPlay: function(){ melonPlayMix(m, 0); },
+            onMenu: function(e){ ptMenu(e, [{ label: 'Añadir a la cola', fn: function(){
+                melonMixResolver(m).then(function(){ colaAnadirVarias(m.tracks); });
+            } }]); }
+        });
+    }
+    /* Elemento de "recientes" (también los accesos rápidos): abrir/sonar. */
+    function ptAbrirReciente(it) {
+        if (it.type === 'song') {
+            melonPlaySong({ videoId: it.key, title: it.name, artist: it.artist });
+        } else if (it.type === 'album') {
+            if (typeof openAlbumViewer === 'function') openAlbumViewer(it.key, it.name);
+            melonRecordRecent('album', it.key, it.name, it.image, it.artist);
+        } else if (it.type === 'playlist') {
+            var found = null;
+            allPlaylists.forEach(function(p){ if (String(p.id) === String(it.key)) found = p; });
+            if (found) showEditorView(allPlaylists.indexOf(found));
+            else if (/^\d+$/.test(String(it.key))) openSharedPlaylistViewer(it.key);
+        } else if (it.type === 'mix') {
+            ptBuscarMix(it.key).then(function(m){
+                if (m) openMixViewer(m);
+                else if (typeof window.melonAviso === 'function') window.melonAviso('Ese mix ya no está: hoy tienes otros');
+            });
+        }
+    }
+    /* ▶ de un acceso rápido: lo pone a sonar sin abrir nada. */
+    function ptReproducirReciente(it) {
+        if (it.type === 'song') { melonPlaySong({ videoId: it.key, title: it.name, artist: it.artist }); return; }
+        if (it.type === 'mix') { ptBuscarMix(it.key).then(function(m){ if (m) melonPlayMix(m, 0); }); return; }
+        if (it.type === 'playlist') {
+            var found = null;
+            allPlaylists.forEach(function(p){ if (String(p.id) === String(it.key)) found = p; });
+            if (found) playPlaylist(found);
+            else if (/^\d+$/.test(String(it.key))) melonPlayPlaylistById(it.key, 0);
+            return;
+        }
+        if (it.type === 'album') {
+            /* Sus canciones (album-tracks), buscadas en YouTube, como cola
+               del álbum (igual que el ▶ del visor). */
+            var key = String(it.key);
+            var url = 'assets/music/api.php?action=album-tracks&' + (key.indexOf(':') !== -1 ? 'key=' : 'id=') + encodeURIComponent(key);
+            if (it.name) url += '&name=' + encodeURIComponent(it.name);
+            if (it.artist) url += '&artist=' + encodeURIComponent(it.artist);
+            if (typeof window.melonAviso === 'function') window.melonAviso('Preparando ' + (it.name || 'el álbum') + '…');
+            fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(meta){
+                var ts = (meta && meta.tracks) || [];
+                if (!ts.length) return null;
+                return colaResolver(ts.map(function(t){ return { title: t.title, artist: t.artist || meta.artist || it.artist || '', duration: t.duration || 0, videoId: t.videoId || null }; }))
+                    .then(function(ok){
+                        if (!ok.length) return;
+                        _loadAlbumQueue(key, { name: meta.name || it.name, artist: meta.artist || it.artist || '', image: meta.image || it.image || '' }, ok, 0);
+                        melonRecordRecent('album', key, it.name, it.image, it.artist);
+                    });
+            }).catch(function(){});
+        }
+    }
+    function ptMenuReciente(e, it) {
+        if (it.type === 'song') {
+            e.preventDefault();
+            window.openTrackCtxMenu(e, { videoId: it.key, title: it.name, artist: it.artist || '', duration: 0 });
+        } else if (it.type === 'album') {
+            e.preventDefault();
+            showSearchAlbumCtxMenu(e.clientX, e.clientY, { albumKey: it.key, name: it.name, artist: it.artist || '', image: it.image || '' });
+        } else if (it.type === 'mix') {
+            ptMenu(e, [{ label: 'Añadir a la cola', fn: function(){
+                ptBuscarMix(it.key).then(function(m){ if (m) melonMixResolver(m).then(function(){ colaAnadirVarias(m.tracks); }); });
+            } }]);
+        } else if (it.type === 'playlist') {
+            var idx = -1;
+            allPlaylists.forEach(function(p, i){ if (String(p.id) === String(it.key)) idx = i; });
+            if (idx !== -1) { e.preventDefault(); showPlaylistCardMenu(e, allPlaylists[idx], idx); }
+        }
+    }
+    var PT_TIPO = { song: 'Canción', album: 'Álbum', playlist: 'Playlist', mix: 'Mix' };
+    function ptRecienteImg(it) {
+        return it.image || (it.type === 'song' && it.key ? ('https://i.ytimg.com/vi/' + it.key + '/mqdefault.jpg') : '');
+    }
+    function ptRecienteCard(it) {
+        return ptCard({
+            img: ptRecienteImg(it), band: it.type === 'mix' ? it.name : '', name: it.name, sub: PT_TIPO[it.type] || '',
+            onImg: function(im){
+                if (it.type === 'song' && it.key && typeof _resolveSongThumb === 'function') {
+                    _resolveSongThumb({ videoId: it.key, title: it.name, artist: it.artist }, im);
+                }
+            },
+            onClick: function(){ ptAbrirReciente(it); },
+            onMenu: function(e){ ptMenuReciente(e, it); }
+        });
+    }
+    /* Canción de las tendencias (fila con número, miniatura y escuchas). */
+    function ptCancionFila(c, i) {
+        var row = ptEl('div', 'pt-song');
+        row.appendChild(ptEl('span', 'pt-num', String(i + 1)));
+        /* Cuadrada: la carátula del álbum (find-album) en cuanto se sepa;
+           mientras, la miniatura de YouTube recortada. */
+        var th = document.createElement('img');
+        th.className = 'pt-song-img'; th.alt = ''; th.loading = 'lazy';
+        th.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(c.videoId) + '/mqdefault.jpg';
+        row.appendChild(th);
+        if (typeof _resolveSongThumb === 'function') _resolveSongThumb({ videoId: c.videoId, title: c.title, artist: c.artist }, th);
+        var tx = ptEl('div', 'pt-song-tx');
+        tx.appendChild(ptEl('div', 'pt-song-t', c.title));
+        tx.appendChild(ptEl('div', 'pt-song-a', c.artist));
+        row.appendChild(tx);
+        row.appendChild(ptEl('span', 'pt-song-n', c.escuchas + (c.escuchas === 1 ? ' escucha' : ' escuchas')));
+        row.addEventListener('click', function(){ melonPlaySong(c); });
+        row.addEventListener('contextmenu', function(e){
+            window.openTrackCtxMenu(e, { videoId: c.videoId, title: c.title, artist: c.artist, duration: 0 });
+        });
+        return row;
+    }
+    function ptCanciones(lista) {
+        var box = ptEl('div', 'pt-songs');
+        lista.forEach(function(c, i){ box.appendChild(ptCancionFila(c, i)); });
+        return box;
+    }
+    function ptGustaCard(g) {
+        if (g.tipo === 'cancion') {
+            return ptCard({ img: 'https://i.ytimg.com/vi/' + encodeURIComponent(g.videoId) + '/mqdefault.jpg', name: g.nombre, sub: g.sub,
+                onImg: function(im){ if (typeof _resolveSongThumb === 'function') _resolveSongThumb({ videoId: g.videoId, title: g.nombre, artist: g.artist }, im); },
+                onClick: function(){ melonPlaySong({ videoId: g.videoId, title: g.nombre, artist: g.artist }); },
+                onMenu: function(e){ window.openTrackCtxMenu(e, { videoId: g.videoId, title: g.nombre, artist: g.artist, duration: 0 }); } });
+        }
+        if (g.tipo === 'playlist') {
+            return ptCard({ img: g.imagen, name: g.nombre, sub: g.sub,
+                onClick: function(){ openSharedPlaylistViewer(g.id); } });
+        }
+        /* Álbum: con su clave se abre directo; sin ella, se busca. */
+        function abrir(cb) {
+            if (g.albumKey) { cb(g.albumKey); return; }
+            fetch('assets/music/api.php?action=search-albums&q=' + encodeURIComponent(g.nombre + ' ' + (g.artist || '')))
+                .then(function(r){ return r.json(); })
+                .then(function(d){ var x = d && d.results && d.results[0]; if (x && x.albumKey) { g.albumKey = x.albumKey; cb(x.albumKey); } })
+                .catch(function(){});
+        }
+        return ptCard({ img: g.imagen, name: g.nombre, sub: (g.artist ? g.artist + ' · ' : '') + g.sub,
+            onClick: function(){ abrir(function(k){ openAlbumViewer(k, g.nombre, g.artist || '', g.imagen || ''); }); },
+            onMenu: function(e){ e.preventDefault(); abrir(function(k){
+                showSearchAlbumCtxMenu(e.clientX, e.clientY, { albumKey: k, name: g.nombre, artist: g.artist || '', image: g.imagen || '' });
+            }); } });
+    }
+    /* Sección: título, "Ver todo" opcional y cuerpo. */
+    function ptSeccion(parent, titulo, verTodo) {
+        var wrap = ptEl('div', 'pt-sec');
+        var head = ptEl('div', 'pt-sec-head');
+        head.appendChild(ptEl('span', 'pl-section-title', titulo));
+        var mas = null;
+        if (verTodo) {
+            mas = ptEl('span', 'pt-more', 'Ver todo');
+            mas.setAttribute('role', 'button');
+            mas.tabIndex = 0;
+            mas.style.display = 'none';
+            mas.addEventListener('click', function(){ if (mas._fn) mas._fn(); });
+            mas.addEventListener('keydown', function(e){ if (e.key === 'Enter' && mas._fn) mas._fn(); });
+            head.appendChild(mas);
+        }
+        wrap.appendChild(head);
+        var body = ptEl('div', 'pt-sec-body');
+        wrap.appendChild(body);
+        parent.appendChild(wrap);
+        return {
+            wrap: wrap, body: body,
+            /* Pone las tarjetas en una fila; "Ver todo" si hay más de las que caben. */
+            fila: function(cards, todo) {
+                body.innerHTML = '';
+                var row = ptEl('div', 'pt-row');
+                cards.forEach(function(c){ row.appendChild(c); });
+                body.appendChild(row);
+                if (mas && todo) { mas._fn = todo; mas.style.display = ''; }
+            },
+            verTodo: function(fn){ if (mas) { mas._fn = fn; mas.style.display = ''; } },
+            msg: function(t){ body.innerHTML = ''; body.appendChild(ptMsg(t)); },
+            ocultar: function(){ wrap.style.display = 'none'; }
+        };
+    }
+    /* "Ver todo": cuadrícula (o lista) en la misma ventana, con ◄ Volver. */
+    function ptVerTodo(titulo, rellenar) {
+        var scroll = plHomeList.scrollTop;
+        plHomeList.innerHTML = '';
+        var head = ptEl('div', 'pt-vertodo-head');
+        var volver = ptEl('button', 'button', '◄ Volver');
+        volver.type = 'button';
+        volver.addEventListener('click', function(){ renderHome(scroll); });
+        head.appendChild(volver);
+        head.appendChild(ptEl('span', 'pl-section-title', titulo));
+        plHomeList.appendChild(head);
+        var cont = ptEl('div');
+        plHomeList.appendChild(cont);
+        rellenar(cont);
+        plHomeList.scrollTop = 0;
+    }
+    function ptGrid(cards) {
+        var g = ptEl('div', 'pl-card-grid');
+        cards.forEach(function(c){ g.appendChild(c); });
+        return g;
+    }
+
+    /* Recientes: en memoria 1 min, para que volver de "Ver todo" no
+       tenga que esperar. */
+    function ptRecientes() {
+        if (_pt.rec && Date.now() - _pt.recT < 60 * 1000) return Promise.resolve(_pt.rec);
+        return fetch('assets/music/api.php?action=get-recent')
+            .then(function(r){ return r.json(); })
+            .then(function(d){ var items = (d && d.ok && d.items) ? d.items : []; _pt.rec = items; _pt.recT = Date.now(); return items; })
+            .catch(function(){ return null; });
+    }
+    /* ── Portada clásica (sin beta) ──
+       La de antes del revamp (6160ad5): "Tus playlists" + "Escuchas
+       recientes". La nueva (mixes "Para ti", tendencias…) es beta: solo
+       la ven los suscritos (window.MELON_BETA; para-ti.php también lo
+       comprueba). Sacarla al público = borrar esto y el if de renderHome. */
+    /* Sección "Escuchas recientes" (canciones, álbumes, playlists). */
+    function renderRecentClasica() {
         var title = document.createElement('div');
         title.className = 'pl-section-title';
         title.textContent = 'Escuchas recientes';
@@ -4831,7 +5559,8 @@ var addTrackCallback = null;
         fetch('assets/music/api.php?action=get-recent')
         .then(function(r){ return r.json(); })
         .then(function(d){
-            var items = (d && d.ok && d.items) ? d.items : [];
+            /* Los mixes (de cuando era beta) solo los sabe abrir la portada nueva. */
+            var items = ((d && d.ok && d.items) ? d.items : []).filter(function(it){ return it.type !== 'mix'; });
             if (!items.length) { box.innerHTML = '<div class="pl-home-msg">Aún no has escuchado nada.</div>'; return; }
             box.innerHTML = '';
             var grid = document.createElement('div'); grid.className = 'pl-card-grid';
@@ -4885,7 +5614,7 @@ var addTrackCallback = null;
         .catch(function(){ box.innerHTML = '<div class="pl-home-msg">No se pudieron cargar.</div>'; });
     }
 
-    function renderHome() {
+    function renderHomeClasica() {
         plHomeList.innerHTML = '';
         var title = document.createElement('div');
         title.className = 'pl-section-title';
@@ -4901,7 +5630,101 @@ var addTrackCallback = null;
             allPlaylists.forEach(function(pl, idx){ grid.appendChild(buildPlaylistCard(pl, idx)); });
             plHomeList.appendChild(grid);
         }
-        renderRecentSection();
+        renderRecentClasica();
+    }
+
+    var _ptRender = 0;
+    /* Toda la portada sale de golpe cuando han llegado recientes, mixes y
+       tendencias (antes las secciones aparecían a destiempo y movían lo
+       de debajo). Mientras, un solo "Cargando…". */
+    function renderHome(scrollTo) {
+        if (!window.MELON_BETA) { ++_ptRender; renderHomeClasica(); return; }
+        var token = ++_ptRender;
+        var listo = _pt.inicio && _pt.tend && _pt.rec;
+        if (!listo) {
+            plHomeList.innerHTML = '';
+            plHomeList.appendChild(ptMsg(_pt.inicio ? 'Cargando…' : 'Preparando tus mixes…'));
+        }
+        Promise.all([ptRecientes(), ptInicio(), ptTendencias()]).then(function(r){
+            if (token !== _ptRender) return;
+            ptPintarPortada(r[0], r[1], r[2]);
+            if (typeof scrollTo === 'number') plHomeList.scrollTop = scrollTo;
+        });
+    }
+    function ptPintarPortada(items, d, t) {
+        plHomeList.innerHTML = '';
+
+        /* 1) Accesos rápidos: lo último escuchado (playlists, mixes,
+           álbumes), con ▶ a la derecha al pasar el ratón. */
+        var quick = ptEl('div', 'pt-quick-grid');
+        (items || []).filter(function(it){ return it.type === 'playlist' || it.type === 'mix' || it.type === 'album'; })
+            .slice(0, 6).forEach(function(it){
+                var q = ptEl('div', 'pt-quick');
+                q.setAttribute('role', 'button');
+                var src = ptRecienteImg(it);
+                if (src) { var im = document.createElement('img'); im.src = src; im.alt = ''; im.onerror = function(){ im.style.visibility = 'hidden'; }; q.appendChild(im); }
+                else q.appendChild(ptEl('span', 'pt-quick-empty', '♪'));
+                var b = ptEl('b', null, it.name || ''); b.title = it.name || '';
+                q.appendChild(b);
+                var play = ptEl('span', 'pl-card-play pt-quick-play', '▶');
+                play.title = 'Reproducir';
+                play.addEventListener('click', function(e){ e.stopPropagation(); ptReproducirReciente(it); });
+                q.appendChild(play);
+                q.addEventListener('click', function(){ ptAbrirReciente(it); });
+                q.addEventListener('contextmenu', function(e){ ptMenuReciente(e, it); });
+                quick.appendChild(q);
+            });
+        if (quick.childNodes.length) plHomeList.appendChild(quick);
+
+        /* 2–4) Mixes. */
+        var sDaily = ptSeccion(plHomeList, 'Hecho para ti', true);
+        /* Etiqueta BETA (notas/beta.md) en la primera sección de mixes. */
+        var betaTag = ptEl('span', 'beta-tag', 'BETA');
+        betaTag.style.marginLeft = '6px';
+        sDaily.wrap.querySelector('.pl-section-title').appendChild(betaTag);
+        if (d.error) sDaily.msg('No se pudieron preparar tus mixes. Vuelve a abrir Playlists en un rato.');
+        else if (d.sinEscuchas || (!d.daily.length && !d.mixes.length && !d.descubre.length)) sDaily.msg('Escucha música y aquí saldrán tus mixes.');
+        else if (d.daily.length) sDaily.fila(d.daily.map(ptMixCard), function(){
+            ptVerTodo('Hecho para ti', function(c){ c.appendChild(ptGrid(d.daily.map(ptMixCard))); });
+        });
+        else sDaily.ocultar();
+        if (!d.error && d.descubre.length) ptSeccion(plHomeList, 'Descubre', false).fila(d.descubre.map(ptMixCard));
+        if (!d.error && d.mixes.length) ptSeccion(plHomeList, 'Tus mixes', true).fila(d.mixes.map(ptMixCard), function(){
+            ptVerTodo('Tus mixes', function(c){ c.appendChild(ptGrid(d.mixes.map(ptMixCard))); });
+        });
+
+        /* 5) Tendencias en Melon Hub. */
+        var trend = ptEl('div', 'pt-trend');
+        trend.appendChild(ptEl('div', 'pt-trend-head', '🔥 Tendencias en Melon Hub'));
+        plHomeList.appendChild(trend);
+        var sCanc = ptSeccion(trend, 'Canciones más escuchadas esta semana', true);
+        if (!t) sCanc.msg('No se pudieron cargar las tendencias.');
+        else {
+            if (t.canciones.length) {
+                sCanc.body.appendChild(ptCanciones(t.canciones.slice(0, 5)));
+                if (t.canciones.length > 5) sCanc.verTodo(function(){
+                    ptVerTodo('Canciones más escuchadas esta semana', function(c){ c.appendChild(ptCanciones(t.canciones)); });
+                });
+            } else sCanc.msg('Esta semana aún no ha sonado nada.');
+            if (t.artistas.length) ptSeccion(trend, 'Artistas del momento', false).fila(t.artistas.map(function(a){
+                return ptCard({ img: a.imagen, round: true, name: a.nombre, sub: a.oyentes + (a.oyentes === 1 ? ' oyente' : ' oyentes'),
+                    onClick: function(){ openArtistWindow(a.nombre); } });
+            }));
+            if (t.gusta.length) ptSeccion(trend, 'Lo que más gusta', false).fila(t.gusta.map(ptGustaCard));
+        }
+
+        /* 6) Tus playlists. */
+        var sPl = ptSeccion(plHomeList, 'Tus playlists', true);
+        if (!allPlaylists.length) sPl.msg('Sin playlists. Crea una nueva.');
+        else sPl.fila(allPlaylists.map(function(pl, idx){ return buildPlaylistCard(pl, idx); }), function(){
+            ptVerTodo('Tus playlists', function(c){ c.appendChild(ptGrid(allPlaylists.map(function(pl, idx){ return buildPlaylistCard(pl, idx); }))); });
+        });
+
+        /* 7) Escuchas recientes. */
+        var sRec = ptSeccion(plHomeList, 'Escuchas recientes', false);
+        if (items === null) sRec.msg('No se pudieron cargar.');
+        else if (!items.length) sRec.msg('Aún no has escuchado nada.');
+        else sRec.fila(items.map(ptRecienteCard));
     }
 
     window.updatePlaylistPlayingHighlight = function(playlistId, trackIndex) {
@@ -4931,7 +5754,9 @@ var addTrackCallback = null;
             }
             shown++;
             var row = document.createElement('div');
-            row.className = 'pl-item' + (isCurrentPl && i === currentTrack ? ' pl-item--playing' : '');
+            /* Mientras suena una de la cola, ninguna fila de la playlist está sonando. */
+            var colaSuena = !!(playlist[currentTrack] && playlist[currentTrack]._cola);
+            row.className = 'pl-item' + (isCurrentPl && !colaSuena && i === currentTrack ? ' pl-item--playing' : '');
             row.draggable = !filtering;
             row.dataset.index = i;
 
@@ -5168,11 +5993,16 @@ var addTrackCallback = null;
        La usan el selector "Añadir" y el reproductor flotante. */
     function addTrackToPlaylist(pl, track) {
         var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
-        if (!already) pl.tracks.push(Object.assign({}, track));
+        /* A mi nombre, y con sharedFrom si es compartida (si no, el servidor
+           no la encuentra entre las mías y crea otra playlist). */
+        var me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
+        if (!already) pl.tracks.push(Object.assign({}, track, { addedBy: me }));
+        var payload = { id: pl.id, name: pl.name, tracks: pl.tracks };
+        if (pl.sharedFrom) payload.sharedFrom = pl.sharedFrom;
         fetch('assets/music/api.php?action=save-playlist-item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
+            body: JSON.stringify(payload)
         }).then(function(r) { return r.json(); }).then(function(data) {
             if (data.error) alert(data.error);
         }).catch(function() {});
@@ -5182,6 +6012,28 @@ var addTrackCallback = null;
         e.preventDefault();
         ctxMenu.innerHTML = '';
         var ex = e.clientX, ey = e.clientY;
+
+        /* Añadir a la cola: suena después de la actual (ver colaAnadir).
+           Sin videoId (canción de un álbum aún sin resolver) se busca en
+           YouTube al añadirla. */
+        if (track && (track.videoId || track.title)) {
+            var cola = document.createElement('div');
+            cola.className = 'pl-menu-item';
+            cola.textContent = 'Añadir a la cola';
+            cola.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                colaAnadir(track);
+            });
+            ctxMenu.appendChild(cola);
+        }
+        var verCola = document.createElement('div');
+        verCola.className = 'pl-menu-item';
+        verCola.textContent = 'Ver cola';
+        verCola.addEventListener('click', function() {
+            ctxMenu.style.display = 'none';
+            colaAbrir();
+        });
+        ctxMenu.appendChild(verCola);
 
         var addPl = document.createElement('div');
         addPl.className = 'pl-menu-item';
@@ -5208,55 +6060,6 @@ var addTrackCallback = null;
             reportWrongAlbum(track);
         });
         ctxMenu.appendChild(fixAlbum);
-
-        var addProfile = document.createElement('div');
-        addProfile.className = 'pl-menu-item';
-        addProfile.textContent = '🎵 Añadir a mi perfil';
-        addProfile.addEventListener('click', function() {
-            ctxMenu.style.display = 'none';
-            /* Cierra el fullscreen llamando a la función real (expuesta
-               como window.__closeFullscreenPlayer) en vez de simular
-               click() en el botón restore. El click() simulado a veces
-               no se propagaba bien, dejando el flag isOpen en true →
-               el siguiente click en maximize hacía return temprano y
-               necesitabas dos clicks. */
-            if (typeof window.__closeFullscreenPlayer === 'function') {
-                window.__closeFullscreenPlayer();
-            }
-            if (typeof window.profileAddTrackAndReview === 'function') {
-                window.profileAddTrackAndReview(track);
-            }
-        });
-        ctxMenu.appendChild(addProfile);
-
-        /* Descargar: vale para la que suena y para las filas de las
-           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
-           descarga la app de escritorio; en el navegador, que no puede bajar
-           el audio de YouTube, ofrece la app (openGetAppDialog). */
-        if (track && track.videoId) {
-            var dl = document.createElement('div');
-            dl.className = 'pl-menu-item';
-            dl.textContent = '⬇ Descargar…';
-            dl.addEventListener('click', function() {
-                ctxMenu.style.display = 'none';
-                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
-                else openGetAppDialog();
-            });
-            ctxMenu.appendChild(dl);
-        }
-
-        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
-           tiene). */
-        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
-            var lnk = document.createElement('div');
-            lnk.className = 'pl-menu-item';
-            lnk.textContent = '🔗 Copiar enlace';
-            lnk.addEventListener('click', function() {
-                ctxMenu.style.display = 'none';
-                window.melonCopyLink('cancion', track.videoId);
-            });
-            ctxMenu.appendChild(lnk);
-        }
 
         /* Item Listen Together — abre el modal de invitar (o gestiona
            la sesión actual si ya estás en una). */
@@ -5286,6 +6089,60 @@ var addTrackCallback = null;
             });
             ctxMenu.appendChild(ltLeave);
         }
+
+        /* "…" (melonMenuMas): Descargar, Copiar enlace y Añadir a mi perfil. */
+        var mas = melonMenuMas(ctxMenu), sub = mas.sub;
+
+        /* Descargar: vale para la que suena y para las filas de las
+           playlists y la búsqueda (sin videoId no hay qué descargar). Solo
+           descarga la app de escritorio; en el navegador, que no puede bajar
+           el audio de YouTube, ofrece la app (openGetAppDialog). */
+        if (track && track.videoId) {
+            var dl = document.createElement('div');
+            dl.className = 'pl-menu-item';
+            dl.textContent = '⬇ Descargar…';
+            dl.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                if (window.melonDesktop && window.melonDesktop.download) openDownloadDialog(track);
+                else openGetAppDialog();
+            });
+            sub.appendChild(dl);
+        }
+
+        /* Enlace para compartir (enlace.php?cancion=…, abre la app si la
+           tiene). */
+        if (track && track.videoId && typeof window.melonCopyLink === 'function') {
+            var lnk = document.createElement('div');
+            lnk.className = 'pl-menu-item';
+            lnk.textContent = '🔗 Copiar enlace';
+            lnk.addEventListener('click', function() {
+                ctxMenu.style.display = 'none';
+                window.melonCopyLink('cancion', track.videoId);
+            });
+            sub.appendChild(lnk);
+        }
+
+        var addProfile = document.createElement('div');
+        addProfile.className = 'pl-menu-item';
+        addProfile.textContent = '🎵 Añadir a mi perfil';
+        addProfile.addEventListener('click', function() {
+            ctxMenu.style.display = 'none';
+            /* Cierra el fullscreen llamando a la función real (expuesta
+               como window.__closeFullscreenPlayer) en vez de simular
+               click() en el botón restore. El click() simulado a veces
+               no se propagaba bien, dejando el flag isOpen en true →
+               el siguiente click en maximize hacía return temprano y
+               necesitabas dos clicks. */
+            if (typeof window.__closeFullscreenPlayer === 'function') {
+                window.__closeFullscreenPlayer();
+            }
+            if (typeof window.profileAddTrackAndReview === 'function') {
+                window.profileAddTrackAndReview(track);
+            }
+        });
+        sub.appendChild(addProfile);
+
+        mas.fin();
 
         ctxMenu.style.display = 'block';
         var cw = ctxMenu.offsetWidth, ch = ctxMenu.offsetHeight;
@@ -5546,6 +6403,9 @@ var addTrackCallback = null;
                     : { videoId: value.videoId, title: value.title, artist: value.artist }, value.result);
                 syncSystemMedia();
                 break;
+            case 'queue':              /* value: { videoId, title, artist } o nada = la que suena */
+                colaAnadir(value && value.videoId ? value : track);
+                break;
             case 'add-profile':
                 if (typeof window.__closeFullscreenPlayer === 'function') window.__closeFullscreenPlayer();
                 if (track && typeof window.profileAddTrackAndReview === 'function') window.profileAddTrackAndReview(track);
@@ -5637,8 +6497,12 @@ var addTrackCallback = null;
         if (!pl) return;
         pl.tracks = editList.slice();
         if (pl.id === currentPlaylistId) {
+            /* Si suena una de la cola, vuelve a su hueco tras rehacer la
+               lista: si no, currentTrack apuntaría a otra canción. */
+            var colaCur = (playlist[currentTrack] && playlist[currentTrack]._cola) ? playlist[currentTrack] : null;
             playlist.length = 0;
             pl.tracks.forEach(function(t) { playlist.push(t); });
+            if (colaCur) playlist.splice(Math.min(currentTrack, playlist.length), 0, colaCur);
         }
         saveCurrentPlaylist();
     }
