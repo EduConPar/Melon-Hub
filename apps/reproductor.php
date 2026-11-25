@@ -4002,12 +4002,18 @@ async function _showAlbumPlaylistPicker(albumName, tracksToAdd) {
                 alert('Todas las canciones del álbum ya estaban en "' + pl.name + '".');
                 return;
             }
-            const merged = (pl.tracks || []).concat(fresh);
+            /* Las nuevas, a mi nombre (el "añadido por" de las compartidas).
+               En una compartida hace falta sharedFrom: sin él el servidor no
+               la encuentra entre las mías y crea una playlist nueva. */
+            const me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
+            const merged = (pl.tracks || []).concat(fresh.map(t => Object.assign({}, t, { addedBy: me })));
+            const payload = { id: pl.id, name: pl.name, tracks: merged };
+            if (pl.sharedFrom) payload.sharedFrom = pl.sharedFrom;
             try {
                 const r = await fetch('assets/music/api.php?action=save-playlist-item', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: pl.id, name: pl.name, tracks: merged }),
+                    body: JSON.stringify(payload),
                 });
                 const data = await r.json();
                 if (data && data.error) throw new Error(data.error);
@@ -5156,9 +5162,12 @@ var addTrackCallback = null;
         var seen = {};
         merged.forEach(function(t){ if (t.videoId) seen[t.videoId] = 1; });
         var added = 0;
+        /* Las que entran, a nombre de quien las añade (se veía como si no
+           las hubiera añadido nadie en las compartidas). */
+        var me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
         (srcPl.tracks || []).forEach(function(t){
             if (t.videoId && seen[t.videoId]) return;
-            merged.push({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0 });
+            merged.push({ videoId: t.videoId, title: t.title, artist: t.artist || '', duration: t.duration || 0, addedBy: me });
             if (t.videoId) seen[t.videoId] = 1;
             added++;
         });
@@ -5887,11 +5896,16 @@ var addTrackCallback = null;
        La usan el selector "Añadir" y el reproductor flotante. */
     function addTrackToPlaylist(pl, track) {
         var already = pl.tracks.some(function(t) { return t.videoId === track.videoId; });
-        if (!already) pl.tracks.push(Object.assign({}, track));
+        /* A mi nombre, y con sharedFrom si es compartida (si no, el servidor
+           no la encuentra entre las mías y crea otra playlist). */
+        var me = usersInfo[currentUserKey] ? usersInfo[currentUserKey].label : '';
+        if (!already) pl.tracks.push(Object.assign({}, track, { addedBy: me }));
+        var payload = { id: pl.id, name: pl.name, tracks: pl.tracks };
+        if (pl.sharedFrom) payload.sharedFrom = pl.sharedFrom;
         fetch('assets/music/api.php?action=save-playlist-item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pl.id, name: pl.name, tracks: pl.tracks })
+            body: JSON.stringify(payload)
         }).then(function(r) { return r.json(); }).then(function(data) {
             if (data.error) alert(data.error);
         }).catch(function() {});
