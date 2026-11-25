@@ -170,6 +170,18 @@ try {
     }
 } catch (Throwable $e) { }
 
+/* ── RACHA ENCENDIDA SOLA (assets/profile/racha.php, racha_auto) ──
+   'racha' = al escuchar, reseñar, jugar o escribir se ha encendido la
+   racha del día; sale una vez (racha_aviso la borra). */
+try {
+    require_once dirname(__DIR__) . '/profile/racha.php';
+    if ($a = racha_aviso($pdo, (int)$userId)) {
+        $dias = (int)($a['racha']['current'] ?? 0);
+        $invites[] = ['source' => 'racha', 'id' => racha_hoy(), 'titulo' => 'Racha de ' . $dias . ($dias === 1 ? ' día' : ' días'),
+                      'mensaje' => racha_avisoTexto($a['ganado'] ?? [])];
+    }
+} catch (Throwable $e) { }
+
 /* ── REGALOS DE LA TIENDA (assets/tienda/api.php) ────────────────
    'regalo' = te han regalado algo y está sin abrir ("Abrir" lleva a la
    tienda con ?regalo=ID). En el PC es el aviso del haro (pollGifts). */

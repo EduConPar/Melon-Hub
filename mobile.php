@@ -5902,6 +5902,16 @@ window.MuShell = (function(){
                 ],
             });
         },
+        /* Racha encendida sola (racha.php, racha_auto). */
+        'racha': function(inv, asSheet){
+            mToast({
+                id:    'racha-' + inv.id,
+                sheet: asSheet,
+                title: '🔥 ' + esc(inv.titulo || 'Racha'),
+                message: esc(inv.mensaje || ''),
+                duration: 6000,
+            });
+        },
         /* Invitación cumplida (racha.php): en el PC sale en la campana. */
         'invita': function(inv, asSheet){
             mToast({
@@ -5986,7 +5996,7 @@ window.MuShell = (function(){
             pendiente = setTimeout(function(){ pendiente = null; poll(false); }, 50);
         };
         window.melonTimbre.on('lt', pedir, 15000);
-        ['musica', 'items', 'pareja', 'amigos', 'invita', 'regalo'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
+        ['musica', 'items', 'pareja', 'amigos', 'invita', 'regalo', 'racha'].forEach(function(t){ window.melonTimbre.on(t, pedir); });
         document.addEventListener('visibilitychange', function(){
             if (document.visibilityState === 'visible') pedir();
         });

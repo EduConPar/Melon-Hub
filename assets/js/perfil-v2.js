@@ -718,6 +718,12 @@
             el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); claimRacha(); } });
         }
     }
+    /* Racha encendida sola (desktop-base.php, pollRacha): fueguito al día. */
+    window.addEventListener('melon:racha', function (e) {
+        if (!e.detail || !(S.ctx && S.ctx.own) || !S.v2) return;
+        S.v2.racha = e.detail;
+        renderRacha();
+    });
     function claimRacha() {
         var r = S.v2 && S.v2.racha;
         if (!r || r.today || !(S.ctx && S.ctx.own) || S.claiming) return;

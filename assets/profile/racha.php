@@ -19,6 +19,16 @@
        protector sigue guardado (no ha salvado nada).
      - Mientras no se pulsa, la racha que se ve es la de ayer (o 0 si ya
        está rota): el fueguito sale apagado.
+     - Se enciende SOLA (25/11) al hacer algo en Melon Hub: escuchar una
+       canción (≥ 30 s, la escucha del Wrapped), poner o cambiar una
+       reseña, acabar una partida (Wordelon, Buscaminas, Ajedrez), comentar
+       en un muro, mandar un mensaje del chat o un regalo. Esas APIs llaman
+       a racha_marcar(); al acabar la petición racha_auto() hace lo mismo
+       que pulsar el fueguito (que se puede seguir pulsando a mano), deja
+       el resultado en user_streaks.aviso y toca el timbre 'racha': el
+       escritorio lo enseña con el aviso del haro (desktop-base.php,
+       action racha-aviso de la API del perfil) y el móvil con el de la
+       carcasa (pending.php, fuente 'racha').
 
    Invitaciones: enlace.php?invitar=<user_key> deja la cookie
    melon_invita y register-user.php apunta la invitación al crear la
@@ -55,6 +65,10 @@ function racha_ensure(PDO $pdo): void {
                 last_day  DATE NULL,
                 hitos     TINYINT NOT NULL DEFAULT 0
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            /* aviso: lo ganado al encenderse sola, hasta que una ventana
+               lo enseña (racha_aviso). */
+            try { $pdo->exec("ALTER TABLE user_streaks ADD COLUMN IF NOT EXISTS aviso TEXT NULL"); }
+            catch (Throwable $e) { error_log('[racha] columna aviso: ' . $e->getMessage()); }
             $pdo->exec("CREATE TABLE IF NOT EXISTS user_invites (
                 invitee_id  INT PRIMARY KEY,
                 inviter_id  INT NOT NULL,
@@ -208,6 +222,66 @@ function racha_pulsar(PDO $pdo, int $uid): array {
     $st = $pdo->prepare("SELECT autismo FROM usuarios WHERE id = ?");
     $st->execute([$uid]);
     return ['ok' => true, 'racha' => racha_estado($pdo, $uid, true), 'ganado' => $ganado, 'total' => array_sum(array_column($ganado['hitos'], 'puntos')) + $ganado['dia'] + (int)$ganado['invitacion'], 'autismo' => (int)$st->fetchColumn()];
+}
+
+/* ── Racha automática ─────────────────────────────────────────────── */
+
+/* Lo llaman las APIs después de una acción que cuenta (ver la cabecera).
+   No enciende nada todavía: lo deja para el final de la petición, cuando
+   la acción ya está guardada (algunas van en una transacción). */
+function racha_marcar(PDO $pdo, int $uid): void {
+    if ($uid <= 0 || !empty($GLOBALS['_racha_auto'])) return;
+    $GLOBALS['_racha_auto'] = true;
+    register_shutdown_function(function () use ($pdo, $uid) { racha_auto($pdo, $uid); });
+}
+
+/* Enciende la racha de hoy si aún no lo está (una consulta si ya lo
+   está) y deja el aviso para la ventana. */
+function racha_auto(PDO $pdo, int $uid): void {
+    try {
+        /* Transacción sin confirmar al acabar = la acción no se guardó. */
+        if ($pdo->inTransaction()) return;
+        racha_ensure($pdo);
+        $st = $pdo->prepare("SELECT last_day FROM user_streaks WHERE user_id = ?");
+        $st->execute([$uid]);
+        if ((string)$st->fetchColumn() === racha_hoy()) return;
+        $r = racha_pulsar($pdo, $uid);
+        if (empty($r['ok'])) return;
+        $pdo->prepare("UPDATE user_streaks SET aviso = ? WHERE user_id = ?")
+            ->execute([json_encode(['racha' => $r['racha'], 'ganado' => $r['ganado']]), $uid]);
+        require_once dirname(__DIR__) . '/php/timbre.php';
+        rt_usuario($uid, 'racha');
+        /* rt_vaciar ya puede haber corrido (también va al acabar). */
+        rt_vaciar();
+    } catch (Throwable $e) {
+        error_log('[racha] auto: ' . $e->getMessage());
+    }
+}
+
+/* El aviso de la racha encendida sola, una vez: lo coge la primera
+   ventana que pregunta (escritorio o móvil) y se borra. */
+function racha_aviso(PDO $pdo, int $uid): ?array {
+    racha_ensure($pdo);
+    try {
+        $st = $pdo->prepare("SELECT aviso FROM user_streaks WHERE user_id = ?");
+        $st->execute([$uid]);
+        $v = $st->fetchColumn();
+        if (!$v) return null;
+        $u = $pdo->prepare("UPDATE user_streaks SET aviso = NULL WHERE user_id = ? AND aviso IS NOT NULL");
+        $u->execute([$uid]);
+        if (!$u->rowCount()) return null;   /* otra ventana se lo ha llevado */
+        $d = json_decode((string)$v, true);
+        return is_array($d) ? $d : null;
+    } catch (Throwable $e) { return null; }
+}
+
+/* Texto del aviso (el mismo que al pulsar el fueguito). */
+function racha_avisoTexto(array $ganado): string {
+    $l = ['+' . (int)($ganado['dia'] ?? 0) . ' puntos de autismo'];
+    foreach ($ganado['hitos'] ?? [] as $h) $l[] = '¡' . $h['dias'] . ' días de racha! +' . $h['puntos'] . ' puntos';
+    if (!empty($ganado['invitacion'])) $l[] = 'Invitación cumplida: +' . $ganado['invitacion'] . ' puntos';
+    if (!empty($ganado['protector'])) $l[] = 'Tu protector de racha la ha salvado';
+    return implode(' · ', $l);
 }
 
 /* ── Invitaciones ─────────────────────────────────────────────────── */

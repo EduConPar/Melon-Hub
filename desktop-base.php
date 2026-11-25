@@ -3006,6 +3006,26 @@ window.notifSystem = (function() {
     setTimeout(pollGifts, 6000);
     window.melonTimbre.on('regalo', pollGifts, 60000);
 
+    /* Racha encendida sola (assets/profile/racha.php, racha_auto): al
+       escuchar, reseñar, jugar o escribir, el servidor la enciende y toca
+       el timbre 'racha'; aquí sale el mismo aviso del haro que al pulsar
+       el fueguito, y el fueguito del perfil abierto se pone al día
+       (evento melon:racha, perfil-v2.js). */
+    function pollRacha() {
+        if (!window.notifSystem) return;
+        fetch('assets/profile/api.php?action=racha-aviso', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var a = d && d.aviso;
+                if (!a) return;
+                window.notifSystem.show({ id: 'racha-' + Date.now(), type: 'info', sentAt: Math.floor(Date.now() / 1000), title: a.titulo, message: a.mensaje });
+                try { window.dispatchEvent(new CustomEvent('melon:racha', { detail: a.racha })); } catch (_) {}
+            })
+            .catch(function() {});
+    }
+    setTimeout(pollRacha, 7000);
+    window.melonTimbre.on('racha', pollRacha, 120000);
+
     /* Encuesta de satisfacción (assets/encuestas/encuestas.php): se
        pregunta una vez al abrir el escritorio si toca; si sí, avisa el
        haro. Rechazar = no la quiere (cuenta como rechazada); Responder
