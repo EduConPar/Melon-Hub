@@ -219,3 +219,20 @@ Presentamos las aplicaciones de movil y escritorio de la melon hub las cuales se
 ## Bugs y mejoras
 
 - Arreglado el bug que hacía que al darle a la X en el título de la ventana se cargara otra Melon Hub en lugar de volver al menú (eso era lo que causaba el doble reproductor de música).
+
+---
+
+# Alfa 0.2.3
+
+## Nuevas funciones y cambios
+
+- Se ha añadido un revamp de las playlist como funcion beta
+- Se ha añadido una funcion de mixes diarios, de artistas, etc como una funcion beta
+- Se ha añadido una cola para las canciones, ahora puedes añadir canciones y albumes a la cola
+- Ahora las funciones de copiar enlance, descargar y añadir a mi perfil se han solapado en un menu horizontal, para que el menu al darle click derecho a una cancion no quede tan grande
+- Ahora la racha es interactiva y se activa automaticamente al realizar una acción (escuchar una cancion, poner una reseña, etc) en la Melon HUb
+
+## Bugs y mejoras
+
+- Arreglado el bug que hacia que al importar canciones a una playlist conjunta no saliera quien las habia añadido
+- Arreglado el bug que hacia que no pudieras registrarte a google drive desde el escritorio
