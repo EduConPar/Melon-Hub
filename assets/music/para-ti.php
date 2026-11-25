@@ -42,6 +42,16 @@ $userKey = $u['key'];
 $action  = $_GET['action'] ?? '';
 $GLOBALS['pdo'] = $pdo;   /* cachePdo() reutiliza esta conexión */
 
+/* La portada nueva y los mixes son beta (notas/beta.md): al resto ni se
+   le calcula nada (las llamadas a Last.fm/Deezer son lo caro). */
+require_once dirname(__DIR__) . '/php/beta.php';
+if (!melon_esBeta($pdo, $userKey)) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['error' => 'Solo para beta testers']);
+    exit;
+}
+
 /* Versión del formato: si cambia el algoritmo, sube y se rehace todo. */
 const PT_VER = 'v1';
 /* Last.fm y Deezer (en .env se pueden cambiar para las pruebas, como

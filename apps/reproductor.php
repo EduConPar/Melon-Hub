@@ -5541,11 +5541,104 @@ var addTrackCallback = null;
             .then(function(d){ var items = (d && d.ok && d.items) ? d.items : []; _pt.rec = items; _pt.recT = Date.now(); return items; })
             .catch(function(){ return null; });
     }
+    /* ── Portada clásica (sin beta) ──
+       La de antes del revamp (6160ad5): "Tus playlists" + "Escuchas
+       recientes". La nueva (mixes "Para ti", tendencias…) es beta: solo
+       la ven los suscritos (window.MELON_BETA; para-ti.php también lo
+       comprueba). Sacarla al público = borrar esto y el if de renderHome. */
+    /* Sección "Escuchas recientes" (canciones, álbumes, playlists). */
+    function renderRecentClasica() {
+        var title = document.createElement('div');
+        title.className = 'pl-section-title';
+        title.textContent = 'Escuchas recientes';
+        plHomeList.appendChild(title);
+        var box = document.createElement('div');
+        box.className = 'pl-recent-box';
+        box.innerHTML = '<div class="pl-home-msg">Cargando…</div>';
+        plHomeList.appendChild(box);
+        fetch('assets/music/api.php?action=get-recent')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            /* Los mixes (de cuando era beta) solo los sabe abrir la portada nueva. */
+            var items = ((d && d.ok && d.items) ? d.items : []).filter(function(it){ return it.type !== 'mix'; });
+            if (!items.length) { box.innerHTML = '<div class="pl-home-msg">Aún no has escuchado nada.</div>'; return; }
+            box.innerHTML = '';
+            var grid = document.createElement('div'); grid.className = 'pl-card-grid';
+            items.forEach(function(it){
+                var card = document.createElement('div'); card.className = 'pl-card';
+                var cover = document.createElement('div'); cover.className = 'pl-card-cover';
+                var src = it.image || (it.type === 'song' && it.key ? ('https://i.ytimg.com/vi/' + it.key + '/mqdefault.jpg') : '');
+                if (src) { var im = document.createElement('img'); im.src = src; im.alt = '';
+                    im.onerror = function(){ cover.classList.add('pl-card-cover--empty'); im.remove(); }; cover.appendChild(im);
+                    /* Canción → usa la carátula del álbum si se resuelve. */
+                    if (it.type === 'song' && it.key && typeof _resolveSongThumb === 'function') {
+                        _resolveSongThumb({ videoId: it.key, title: it.name, artist: it.artist }, im);
+                    }
+                }
+                else cover.classList.add('pl-card-cover--empty');
+                var nm = document.createElement('div'); nm.className = 'pl-card-name'; nm.textContent = it.name || ''; nm.title = it.name || '';
+                var sub = document.createElement('div'); sub.className = 'pl-card-sub';
+                sub.textContent = it.type === 'song' ? 'Canción' : (it.type === 'album' ? 'Álbum' : (it.type === 'playlist' ? 'Playlist' : 'Artista'));
+                card.appendChild(cover); card.appendChild(nm); card.appendChild(sub);
+                card.addEventListener('click', function(){
+                    if (it.type === 'song') {
+                        melonPlaySong({ videoId: it.key, title: it.name, artist: it.artist });
+                    } else if (it.type === 'album') {
+                        if (typeof openAlbumViewer === 'function') openAlbumViewer(it.key, it.name);
+                        melonRecordRecent('album', it.key, it.name, it.image, it.artist);
+                    } else if (it.type === 'playlist') {
+                        var found = null;
+                        allPlaylists.forEach(function(p){ if (String(p.id) === String(it.key)) found = p; });
+                        if (found) playPlaylist(found);
+                    }
+                });
+                /* Click derecho → añadir a playlist / al perfil (canciones y
+                   álbumes; las playlists no tienen menú). */
+                card.addEventListener('contextmenu', function(e){
+                    if (it.type === 'song') {
+                        e.preventDefault();
+                        if (typeof window.openTrackCtxMenu === 'function') {
+                            window.openTrackCtxMenu(e, { videoId: it.key, title: it.name, artist: it.artist || '', duration: 0 });
+                        }
+                    } else if (it.type === 'album') {
+                        e.preventDefault();
+                        if (typeof showSearchAlbumCtxMenu === 'function') {
+                            showSearchAlbumCtxMenu(e.clientX, e.clientY, { albumKey: it.key, name: it.name, artist: it.artist || '', image: it.image || '' });
+                        }
+                    }
+                });
+                grid.appendChild(card);
+            });
+            box.appendChild(grid);
+        })
+        .catch(function(){ box.innerHTML = '<div class="pl-home-msg">No se pudieron cargar.</div>'; });
+    }
+
+    function renderHomeClasica() {
+        plHomeList.innerHTML = '';
+        var title = document.createElement('div');
+        title.className = 'pl-section-title';
+        title.textContent = 'Tus playlists';
+        plHomeList.appendChild(title);
+        if (allPlaylists.length === 0) {
+            var msg = document.createElement('div');
+            msg.className = 'pl-home-msg';
+            msg.textContent = 'Sin playlists. Crea una nueva.';
+            plHomeList.appendChild(msg);
+        } else {
+            var grid = document.createElement('div'); grid.className = 'pl-card-grid';
+            allPlaylists.forEach(function(pl, idx){ grid.appendChild(buildPlaylistCard(pl, idx)); });
+            plHomeList.appendChild(grid);
+        }
+        renderRecentClasica();
+    }
+
     var _ptRender = 0;
     /* Toda la portada sale de golpe cuando han llegado recientes, mixes y
        tendencias (antes las secciones aparecían a destiempo y movían lo
        de debajo). Mientras, un solo "Cargando…". */
     function renderHome(scrollTo) {
+        if (!window.MELON_BETA) { ++_ptRender; renderHomeClasica(); return; }
         var token = ++_ptRender;
         var listo = _pt.inicio && _pt.tend && _pt.rec;
         if (!listo) {
@@ -5585,6 +5678,10 @@ var addTrackCallback = null;
 
         /* 2–4) Mixes. */
         var sDaily = ptSeccion(plHomeList, 'Hecho para ti', true);
+        /* Etiqueta BETA (notas/beta.md) en la primera sección de mixes. */
+        var betaTag = ptEl('span', 'beta-tag', 'BETA');
+        betaTag.style.marginLeft = '6px';
+        sDaily.wrap.querySelector('.pl-section-title').appendChild(betaTag);
         if (d.error) sDaily.msg('No se pudieron preparar tus mixes. Vuelve a abrir Playlists en un rato.');
         else if (d.sinEscuchas || (!d.daily.length && !d.mixes.length && !d.descubre.length)) sDaily.msg('Escucha música y aquí saldrán tus mixes.');
         else if (d.daily.length) sDaily.fila(d.daily.map(ptMixCard), function(){
